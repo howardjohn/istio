@@ -189,6 +189,7 @@ func (s *httpServer) start() error {
 	} else {
 		// Listen on the given port and update the port if it changed from what was passed in.
 		listener, p, err = listenOnPort(s.port.Port)
+		log.Errorf("howardjohn: went from %v -> %v", s.port.Port, p)
 		// Store the actual listening port back to the argument.
 		s.port.Port = p
 		s.h.port = p

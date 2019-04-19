@@ -18,6 +18,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/test/application/echo"
@@ -96,6 +97,9 @@ func (c *Config) fillInDefaults(ctx resource.Context) (err error) {
 type AppCallOptions struct {
 	// Protocol indicates the protocol to be used.
 	Protocol AppProtocol
+
+	// Timeout indicates how long to wait before timing out the request
+	Timeout time.Duration
 
 	// Count indicates the number of exchanges that should be made with the service endpoint. If not set (i.e. 0), defaults to 1.
 	Count int

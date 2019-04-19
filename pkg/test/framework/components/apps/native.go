@@ -229,6 +229,11 @@ func (c *nativeComponent) waitForAppConfigDistribution() error {
 	return nil
 }
 
+func ConfigDumpStr(a App) (string) {
+	x, _ :=envoy.GetConfigDumpStr(a.(*nativeApp).agent.GetAdminPort())
+	return x
+}
+
 func configDumpStr(a App) (string, error) {
 	return envoy.GetConfigDumpStr(a.(*nativeApp).agent.GetAdminPort())
 }
@@ -369,20 +374,24 @@ func (a *nativeApp) Call(e AppEndpoint, opts AppCallOptions) ([]*echo.ParsedResp
 	if opts.Count <= 0 {
 		opts.Count = 1
 	}
+	if opts.Timeout <= 0 {
+		opts.Timeout = time.Second
+	}
 
-	// Forward a request from 'this' service to the destination service.
+	//Forward a request from 'this' service to the destination service.
 	dstURL := dst.makeURL(opts)
 
-	dstHost := e.Owner().(*nativeApp).fqdn()
+	//dstHost := e.Owner().(*nativeApp).fqdn()
 	resp, err := a.client.ForwardEcho(&proto.ForwardEchoRequest{
 		Url:   dstURL.String(),
 		Count: int32(opts.Count),
 		Headers: []*proto.Header{
 			{
 				Key:   "Host",
-				Value: dstHost,
+				Value: "istio.io",
 			},
 		},
+		TimeoutMicros: opts.Timeout.Nanoseconds() / int64(time.Microsecond),
 	})
 	if err != nil {
 		return nil, err
