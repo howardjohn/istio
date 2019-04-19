@@ -91,7 +91,7 @@ func newBatchOptions() (echo.BatchOptions, error) {
 
 func main() {
 	flag.Parse()
-
+	fmt.Println("howardjohn in echo")
 	opts, err := newBatchOptions()
 	if err != nil {
 		log.Fatalf("Failed to setup client: %v", err)

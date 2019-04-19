@@ -17,6 +17,7 @@ package pilot
 import (
 	"errors"
 	"io"
+	"istio.io/istio/pilot/pkg/model"
 	"net"
 
 	"github.com/hashicorp/go-multierror"
@@ -69,11 +70,14 @@ func newNative(ctx resource.Context, config Config) (Instance, error) {
 		GrpcAddr:       ":0",
 		SecureGrpcAddr: "",
 	}
-
+	if config.MeshConfig == nil {
+		defaultMesh := model.DefaultMeshConfig()
+		config.MeshConfig = &defaultMesh
+	}
 	bootstrapArgs := bootstrap.PilotArgs{
 		Namespace:        env.SystemNamespace,
 		DiscoveryOptions: options,
-		MeshConfig:       instance.environment.Mesh,
+		MeshConfig:       config.MeshConfig,
 		// Use the config store for service entries as well.
 		Service: bootstrap.ServiceArgs{
 			// A ServiceEntry registry is added by default, which is what we want. Don't include any other registries.

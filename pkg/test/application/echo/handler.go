@@ -141,7 +141,7 @@ func (h handler) ForwardEcho(ctx context.Context, req *proto.ForwardEchoRequest)
 func (h handler) newBatchOptions(req *proto.ForwardEchoRequest) BatchOptions {
 	ops := BatchOptions{
 		URL:     req.Url,
-		Timeout: time.Duration(req.TimeoutMicros) / time.Microsecond,
+		Timeout: time.Duration(req.TimeoutMicros) * time.Microsecond,
 		Count:   int(req.Count),
 		QPS:     int(req.Qps),
 		Message: req.Message,

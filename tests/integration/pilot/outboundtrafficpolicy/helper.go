@@ -2,21 +2,23 @@ package outboundtrafficpolicy
 
 import (
 	"bytes"
+	"encoding/json"
 	"html/template"
+	"istio.io/api/mesh/v1alpha1"
+	"istio.io/istio/pkg/log"
 	"reflect"
 	"testing"
+	"time"
 
+	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/test/framework"
 	"istio.io/istio/pkg/test/framework/components/apps"
-	"istio.io/istio/pkg/test/framework/components/environment"
 	"istio.io/istio/pkg/test/framework/components/galley"
 	"istio.io/istio/pkg/test/framework/components/namespace"
 	"istio.io/istio/pkg/test/framework/components/pilot"
 )
 
 const (
-	IstioSystemScope = `
-`
 	ServiceEntry = `
 apiVersion: networking.istio.io/v1alpha3
 kind: ServiceEntry
@@ -77,18 +79,16 @@ func createSidecarScope(t *testing.T, appsNamespace namespace.Instance, serviceN
 }
 
 // Expected is a map of protocol -> expected response codes
-func RunExternalRequestTest(expected map[string][]string, t *testing.T) {
+func RunExternalRequestTest(t *testing.T, expected map[model.Protocol][]string, mesh *v1alpha1.MeshConfig) {
 	framework.
 		NewTest(t).
-		RequiresEnvironment(environment.Kube).
+		// RequiresEnvironment(environment.Kube).
 		Run(func(ctx framework.TestContext) {
 			g := galley.NewOrFail(t, ctx, galley.Config{})
-			p := pilot.NewOrFail(t, ctx, pilot.Config{Galley: g})
+			p := pilot.NewOrFail(t, ctx, pilot.Config{Galley: g, MeshConfig: mesh})
 
 			appsNamespace := namespace.NewOrFail(t, ctx, "app", true)
 			serviceNamespace := namespace.NewOrFail(t, ctx, "service", true)
-
-			createSidecarScope(t, appsNamespace, serviceNamespace, g)
 
 			// External traffic should work even if we have service entries on the same ports
 			if err := g.ApplyConfig(serviceNamespace, ServiceEntry); err != nil {
@@ -100,48 +100,53 @@ func RunExternalRequestTest(expected map[string][]string, t *testing.T) {
 				Pilot:     p,
 				Galley:    g,
 				AppParams: []apps.AppParam{
-					{Name: "client"},
-					{Name: "destination"},
+					// {Name: "a"},
+					// {Name: "b"},
 				},
 			})
 
-			client := instance.GetAppOrFail("client", t).(apps.KubeApp)
-			dest := instance.GetAppOrFail("destination", t).(apps.KubeApp)
+			createSidecarScope(t, appsNamespace, serviceNamespace, g)
+			time.Sleep(time.Second * 5)
+
+			client := instance.GetAppOrFail("a", t)
+			dest := instance.GetAppOrFail("b", t)
 
 			cases := []struct {
 				name     string
-				protocol string
-				port     int
+				protocol model.Protocol
 			}{
 				{
 					"HTTP Traffic",
-					"http",
-					80,
+					model.ProtocolHTTP,
 				},
 				{
 					"HTTPS Traffic",
-					"https",
-					90,
+					model.ProtocolHTTPS,
 				},
 			}
 			for _, tc := range cases {
-				t.Run(tc.name, func(t *testing.T) {
-					if tc.protocol == "https" {
-						t.Skip("https is currently not supported until #13386 is fixed")
-					}
-					ep := dest.EndpointForPort(tc.port)
-					resp, err := client.Call(ep, apps.AppCallOptions{})
-					if err != nil {
-						t.Errorf("call failed: %v", err)
-					}
-					codes := make([]string, 0, len(resp))
-					for _, r := range resp {
-						codes = append(codes, r.Code)
-					}
-					if !reflect.DeepEqual(codes, expected[tc.protocol]) {
-						t.Errorf("got codes %v, expected %v", codes, expected[tc.protocol])
-					}
-				})
+				for _, ep := range dest.EndpointsForProtocol(tc.protocol) {
+					t.Run(tc.name, func(t *testing.T) {
+						if tc.protocol == model.ProtocolHTTPS {
+							t.Skip("https is currently not supported until #13386 is fixed")
+						}
+						//ep := dest.EndpointsForProtocol(tc.protocol)[0]
+						debug, _ := json.MarshalIndent(ep.NetworkEndpoint(), "howardjohn", "  ")
+						log.Errorf("howardjohn: %s", debug)
+						log.Errorf("howardjohn: %v", apps.ConfigDumpStr(dest))
+						resp, err := client.Call(ep, apps.AppCallOptions{Timeout: time.Second*5})
+						if err != nil {
+							t.Errorf("call failed: %v", err)
+						}
+						codes := make([]string, 0, len(resp))
+						for _, r := range resp {
+							codes = append(codes, r.Code)
+						}
+						if !reflect.DeepEqual(codes, expected[tc.protocol]) {
+							t.Errorf("got codes %v, expected %v", codes, expected[tc.protocol])
+						}
+					})
+				}
 			}
 		})
 }

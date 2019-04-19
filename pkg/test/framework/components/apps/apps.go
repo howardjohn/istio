@@ -18,6 +18,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/test/application/echo"
@@ -110,6 +111,9 @@ type AppCallOptions struct {
 	UseShortHostname bool
 
 	Path string
+
+	// Timeout indicates how long to wait before timing out the request
+	Timeout time.Duration
 }
 
 // AppEndpoint represents a single endpoint in a DeployedApp.

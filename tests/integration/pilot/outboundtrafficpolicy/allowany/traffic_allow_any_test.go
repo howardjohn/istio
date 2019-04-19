@@ -15,10 +15,12 @@
 package allowany
 
 import (
+	"istio.io/api/mesh/v1alpha1"
+	"istio.io/istio/pilot/pkg/model"
+	"os"
 	"testing"
 
 	"istio.io/istio/pkg/test/framework"
-	"istio.io/istio/pkg/test/framework/components/environment"
 	"istio.io/istio/pkg/test/framework/components/istio"
 	"istio.io/istio/tests/integration/pilot/outboundtrafficpolicy"
 )
@@ -26,7 +28,7 @@ import (
 func TestMain(m *testing.M) {
 	var ist istio.Instance
 	framework.NewSuite("outbound_traffic_policy_allow_any", m).
-		RequireEnvironment(environment.Kube).
+		// RequireEnvironment(environment.Kube).
 		Setup(istio.SetupOnKube(&ist, setupConfig)).
 		Run()
 }
@@ -40,9 +42,14 @@ func setupConfig(cfg *istio.Config) {
 }
 
 func TestOutboundTrafficPolicyAllowAny(t *testing.T) {
-	expected := map[string][]string{
-		"http":  {"200"},
-		"https": {"200"},
+	expected := map[model.Protocol][]string{
+		model.ProtocolHTTP:  {"200"},
+		model.ProtocolHTTPS: {"200"},
 	}
-	outboundtrafficpolicy.RunExternalRequestTest(expected, t)
+	if err := os.Setenv("PILOT_ENABLE_FALLTHROUGH_ROUTE", "true"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	meshConfig := model.DefaultMeshConfig()
+	meshConfig.OutboundTrafficPolicy = &v1alpha1.MeshConfig_OutboundTrafficPolicy{Mode: v1alpha1.MeshConfig_OutboundTrafficPolicy_ALLOW_ANY}
+	outboundtrafficpolicy.RunExternalRequestTest(t, expected, &meshConfig)
 }
