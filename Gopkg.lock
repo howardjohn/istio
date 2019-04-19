@@ -2030,6 +2030,14 @@
   revision = "75128f94589837baf76ad7ac125c05717aa19ced"
 
 [[projects]]
+  digest = "1:8b65311c7e621416d74603de3d67d67e17f1b09cd852d13b10af1635798f3e53"
+  name = "sigs.k8s.io/kind"
+  packages = ["pkg/exec"]
+  pruneopts = "NUT"
+  revision = "5e292845d6d7e736515a8ca4da032acd85e153d1"
+  version = "0.2.1"
+
+[[projects]]
   digest = "1:8730e0150dfb2b7e173890c8b9868e7a273082ef8e39f4940e3506a481cf895c"
   name = "sigs.k8s.io/yaml"
   packages = ["."]
@@ -2349,6 +2357,7 @@
     "k8s.io/klog",
     "k8s.io/kubernetes/pkg/apis/core",
     "k8s.io/kubernetes/pkg/kubelet/apis",
+    "sigs.k8s.io/kind/pkg/exec",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"time"
 
 	"istio.io/istio/pkg/test/util/retry"
 
@@ -112,7 +113,7 @@ func deploy(ctx resource.Context, env *kube.Environment, cfg Config) (Instance, 
 
 	// Deploy Istio.
 	i.deployment = deployment.NewYamlDeployment(cfg.SystemNamespace, istioInstallFile)
-	if err = i.deployment.Deploy(env.Accessor, true, retry.Timeout(cfg.DeployTimeout)); err != nil {
+	if err = i.deployment.Deploy(env.Accessor, true, retry.Timeout(1 * time.Minute)); err != nil {
 		return nil, err
 	}
 

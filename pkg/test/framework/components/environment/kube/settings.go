@@ -23,6 +23,11 @@ type Settings struct {
 	// Path to kube config file. Required if the environment is kubernetes.
 	KubeConfig string
 
+	// TODO doc
+	Kind bool
+
+	KindCluster string
+
 	// Indicates that the Ingress Gateway is not available. This typically happens in Minikube. The Ingress
 	// component will fall back to node-port in this case.
 	Minikube bool
@@ -39,6 +44,7 @@ func (s *Settings) String() string {
 
 	result += fmt.Sprintf("KubeConfig:      %s\n", s.KubeConfig)
 	result += fmt.Sprintf("MiniKubeIngress: %v\n", s.Minikube)
+	result += fmt.Sprintf("Kind: %v\n", s.Kind)
 
 	return result
 }

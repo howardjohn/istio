@@ -71,4 +71,6 @@ func init() {
 		"The path to the kube config file for cluster environments")
 	flag.BoolVar(&settingsFromCommandLine.Minikube, "istio.test.kube.minikube", settingsFromCommandLine.Minikube,
 		"Indicates that the target environment is Minikube. Used by Ingress component to obtain the right IP address..")
+	flag.BoolVar(&settingsFromCommandLine.Kind, "istio.test.kube.kind", settingsFromCommandLine.Kind,
+		"todo doc")
 }

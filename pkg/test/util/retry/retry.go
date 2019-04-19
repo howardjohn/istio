@@ -91,7 +91,7 @@ func Do(fn RetriableFunc, options ...Option) (interface{}, error) {
 	}
 
 	var lasterr error
-	to := time.After(cfg.timeout)
+	to := time.After(cfg.timeout*10)
 	for {
 		select {
 		case <-to:

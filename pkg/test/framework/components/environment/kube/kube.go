@@ -15,12 +15,20 @@
 package kube
 
 import (
+	"fmt"
+	"io"
+	"math/rand"
+	"os"
+	"time"
+
+	"istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/test/deployment"
 	"istio.io/istio/pkg/test/framework/components/environment"
 	"istio.io/istio/pkg/test/framework/components/environment/api"
 	"istio.io/istio/pkg/test/framework/resource"
 	"istio.io/istio/pkg/test/kube"
 	"istio.io/istio/pkg/test/scopes"
+	"sigs.k8s.io/kind/pkg/exec"
 )
 
 // Environment is the implementation of a kubernetes environment. It implements environment.Environment,
@@ -33,7 +41,23 @@ type Environment struct {
 	s *Settings
 }
 
+func (e *Environment) Close() error {
+	log.Errorf("howardjohn: Closing %v", e.s.KindCluster)
+	if e.s.Kind {
+		err := exec.Command("kind", "delete", "cluster", "--name", e.s.KindCluster).
+			SetStderr(os.Stderr).
+			SetStdout(os.Stdout).
+			Run()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 var _ resource.Environment = &Environment{}
+
+var _ io.Closer = &Environment{}
 
 // New returns a new Kubernetes environment
 func New(ctx api.Context) (resource.Environment, error) {
@@ -54,6 +78,23 @@ func New(ctx api.Context) (resource.Environment, error) {
 		s:   s,
 	}
 	e.id = ctx.TrackResource(e)
+
+	if s.Kind {
+		rand.Seed(time.Now().UnixNano())
+		cluster := fmt.Sprintf("integration-%v", rand.Intn(20000))
+		err := exec.Command("kind", "create", "cluster", "--name", cluster).
+			SetStderr(os.Stderr).
+			SetStdout(os.Stdout).
+			Run()
+		if err != nil {
+			log.Errorf("howardjohn: failed to created kind: %v", err)
+			return nil, err
+		}
+		//ctx := CreateKindCluster()
+		//s.KubeConfig = ctx.KubeConfigPath()
+		s.KindCluster = cluster
+		s.KubeConfig = "/usr/local/google/home/howardjohn/.kube/kind-config-" + cluster
+	}
 
 	if e.Accessor, err = kube.NewAccessor(s.KubeConfig, workDir); err != nil {
 		return nil, err
