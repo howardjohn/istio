@@ -386,11 +386,11 @@ func (ilw *IstioEgressListenerWrapper) selectVirtualServices(virtualServices []C
 func (ilw *IstioEgressListenerWrapper) selectServices(services []*Service) []*Service {
 
 	importedServices := make([]*Service, 0)
+
 	for _, s := range services {
 		configNamespace := s.Attributes.Namespace
 		// Check if there is an explicit import of form ns/* or ns/host
 		if importedHosts, nsFound := ilw.listenerHosts[configNamespace]; nsFound {
-			hostFound := false
 			for _, importedHost := range importedHosts {
 				// Check if the hostnames match per usual hostname matching rules
 				if importedHost.Matches(s.Hostname) {
@@ -401,12 +401,8 @@ func (ilw *IstioEgressListenerWrapper) selectServices(services []*Service) []*Se
 					//   if service has multiple ports none of which match the listener port, check if there is
 					//   a virtualService with match Port
 					importedServices = append(importedServices, s)
-					hostFound = true
 					break
 				}
-			}
-			if hostFound {
-				continue
 			}
 		}
 
