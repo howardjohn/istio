@@ -17,6 +17,7 @@ package configdump
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	adminapi "github.com/envoyproxy/go-control-plane/envoy/admin/v2alpha"
@@ -62,6 +63,18 @@ func (w *Wrapper) GetDynamicRouteDump(stripVersions bool) (*adminapi.RoutesConfi
 		for i := range drc {
 			drc[i].VersionInfo = ""
 			drc[i].LastUpdated = nil
+		}
+	}
+	for _, r := range drc {
+		sort.Slice(r.RouteConfig.VirtualHosts, func(i, j int) bool {
+			return r.RouteConfig.VirtualHosts[i].Name < r.RouteConfig.VirtualHosts[j].Name
+		})
+		for _, vh := range r.RouteConfig.VirtualHosts {
+			sort.Slice(vh.Routes, func(i, j int) bool {
+				ls, _ := vh.Routes[i].Marshal()
+				rs, _ := vh.Routes[j].Marshal()
+				return strings.Compare(string(ls), string(rs)) < 0
+			})
 		}
 	}
 	return &adminapi.RoutesConfigDump{DynamicRouteConfigs: drc}, nil

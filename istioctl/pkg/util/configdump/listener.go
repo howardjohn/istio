@@ -17,6 +17,7 @@ package configdump
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	adminapi "github.com/envoyproxy/go-control-plane/envoy/admin/v2alpha"
 	proto "github.com/gogo/protobuf/types"
@@ -32,6 +33,14 @@ func (w *Wrapper) GetDynamicListenerDump(stripVersions bool) (*adminapi.Listener
 	sort.Slice(dal, func(i, j int) bool {
 		return dal[i].Listener.Name < dal[j].Listener.Name
 	})
+
+	for _, r := range dal {
+		sort.Slice(r.Listener.FilterChains, func(i, j int) bool {
+			ls, _ := r.Listener.FilterChains[i].FilterChainMatch.Marshal()
+			rs, _ := r.Listener.FilterChains[j].FilterChainMatch.Marshal()
+			return strings.Compare(string(ls), string(rs)) < 0
+		})
+	}
 	if stripVersions {
 		for i := range dal {
 			dal[i].VersionInfo = ""
