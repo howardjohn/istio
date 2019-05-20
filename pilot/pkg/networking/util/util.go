@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -215,6 +216,156 @@ func MessageToStruct(msg proto.Message) *types.Struct {
 		return &types.Struct{}
 	}
 	return s
+}
+
+type isWkt interface {
+	XXX_WellKnownType() string
+}
+
+func FastMessageToStruct(v proto.Message) *types.Struct {
+	m := map[string]*types.Value{}
+	r := reflect.ValueOf(v).Elem()
+	s := types.Struct{
+		Fields: m,
+	}
+
+	switch r.Kind() {
+	case reflect.Map:
+		for _, key := range r.MapKeys() {
+			val := key.MapIndex(key)
+			m[key.String()] = toValue(val)
+		}
+	case reflect.Struct:
+		for f := 0; f < r.NumField(); f++ {
+			m[r.Type().Field(f).Name] = toValue(r.Field(f))
+		}
+
+	}
+	return &s
+}
+
+func ReflectToStruct(v reflect.Value) *types.Value {
+	//switch v.Interface().Ty
+	switch v.Kind() {
+	case reflect.Struct:
+		m := map[string]*types.Value{}
+		s := types.Struct{
+			Fields: m,
+		}
+
+		for _, key := range v.MapKeys() {
+			val := key.MapIndex(key)
+			m[key.String()] = ReflectToStruct(val)
+		}
+		return &types.Value{
+			Kind: &types.Value_StructValue{
+				StructValue: &s,
+			},
+		}
+	}
+	return nil
+}
+
+func toValue(v reflect.Value) *types.Value {
+	switch v.Kind() {
+	case reflect.Bool:
+		return &types.Value{
+			Kind: &types.Value_BoolValue{
+				BoolValue: v.Bool(),
+			},
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return &types.Value{
+			Kind: &types.Value_NumberValue{
+				NumberValue: float64(v.Int()),
+			},
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return &types.Value{
+			Kind: &types.Value_NumberValue{
+				NumberValue: float64(v.Uint()),
+			},
+		}
+	case reflect.Float32, reflect.Float64:
+		return &types.Value{
+			Kind: &types.Value_NumberValue{
+				NumberValue: v.Float(),
+			},
+		}
+	case reflect.Ptr:
+		if v.IsNil() {
+			return nil
+		}
+		return toValue(reflect.Indirect(v))
+	case reflect.Array, reflect.Slice:
+		size := v.Len()
+		if size == 0 {
+			return nil
+		}
+		values := make([]*types.Value, size)
+		for i := 0; i < size; i++ {
+			values[i] = toValue(v.Index(i))
+		}
+		return &types.Value{
+			Kind: &types.Value_ListValue{
+				ListValue: &types.ListValue{
+					Values: values,
+				},
+			},
+		}
+	case reflect.Struct:
+		t := v.Type()
+		size := v.NumField()
+		if size == 0 {
+			return nil
+		}
+		fields := make(map[string]*types.Value, size)
+		for i := 0; i < size; i++ {
+			name := t.Field(i).Name
+			// Better way?
+			if len(name) > 0 && 'A' <= name[0] && name[0] <= 'Z' {
+				fields[name] = toValue(v.Field(i))
+			}
+		}
+		if len(fields) == 0 {
+			return nil
+		}
+		return &types.Value{
+			Kind: &types.Value_StructValue{
+				StructValue: &types.Struct{
+					Fields: fields,
+				},
+			},
+		}
+	case reflect.Map:
+		keys := v.MapKeys()
+		if len(keys) == 0 {
+			return nil
+		}
+		fields := make(map[string]*types.Value, len(keys))
+		for _, k := range keys {
+			if k.Kind() == reflect.String {
+				fields[k.String()] = toValue(v.MapIndex(k))
+			}
+		}
+		if len(fields) == 0 {
+			return nil
+		}
+		return &types.Value{
+			Kind: &types.Value_StructValue{
+				StructValue: &types.Struct{
+					Fields: fields,
+				},
+			},
+		}
+	default:
+		// Last resort
+		return &types.Value{
+			Kind: &types.Value_StringValue{
+				StringValue: fmt.Sprint(v),
+			},
+		}
+	}
 }
 
 // GogoDurationToDuration converts from gogo proto duration to time.duration

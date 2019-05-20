@@ -17,7 +17,6 @@ package v1alpha3
 import (
 	"encoding/json"
 	"fmt"
-
 	"net"
 	"reflect"
 	"sort"
@@ -1689,11 +1688,11 @@ func buildCompleteFilterChain(pluginParams *plugin.InputParams, mutable *plugin.
 				filter := listener.Filter{
 					Name: xdsutil.HTTPConnectionManager,
 				}
-				if util.IsXDSMarshalingToAnyEnabled(pluginParams.Node) {
-					filter.ConfigType = &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(httpConnectionManagers[i])}
-				} else {
-					filter.ConfigType = &listener.Filter_Config{Config: util.MessageToStruct(httpConnectionManagers[i])}
-				}
+				//if util.IsXDSMarshalingToAnyEnabled(pluginParams.Node) {
+				//	filter.ConfigType = &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(httpConnectionManagers[i])}
+				//} else {
+					filter.ConfigType = &listener.Filter_Config{Config: util.FastMessageToStruct(httpConnectionManagers[i])}
+				//}
 				mutable.Listener.FilterChains[i].Filters = append(mutable.Listener.FilterChains[i].Filters, filter)
 				log.Debugf("attached HTTP filter with %d http_filter options to listener %q filter chain %d",
 					len(httpConnectionManagers[i].HttpFilters), mutable.Listener.Name, i)
@@ -1711,6 +1710,7 @@ func buildCompleteFilterChain(pluginParams *plugin.InputParams, mutable *plugin.
 
 	return nil
 }
+
 
 // getActualWildcardAndLocalHost will return corresponding Wildcard and LocalHost
 // depending on value of proxy's IPAddresses. This function checks each element
