@@ -102,7 +102,7 @@ type DiscoveryServer struct {
 	// will not be ready.
 	initRateLimiter *rate.Limiter
 
-	concurrentPushLimit chan struct{}
+	concurrentPushLimit chan string
 
 	// DebugConfigs controls saving snapshots of configs for /debug/adsz.
 	// Defaults to false, can be enabled with PILOT_DEBUG_ADSZ_CONFIG=1
@@ -186,7 +186,7 @@ func NewDiscoveryServer(
 		WorkloadsByID:           map[string]*Workload{},
 		edsUpdates:              map[string]struct{}{},
 		proxyUpdates:            map[string]struct{}{},
-		concurrentPushLimit:     make(chan struct{}, 20), // TODO(hzxuzhonghu): support configuration
+		concurrentPushLimit:     make(chan string, 20), // TODO(hzxuzhonghu): support configuration
 		updateChannel:           make(chan *updateReq, 10),
 	}
 

@@ -424,7 +424,7 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 			if err != nil {
 				return err
 			}
-
+			adsLog.Errorf("howardjohn: got discReq, pushing now")
 			switch discReq.TypeUrl {
 			case ClusterType:
 				if con.CDSWatch {
@@ -605,7 +605,7 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 			// monitored 'routes'. Same for CDS/EDS interval.
 			// It is very tricky to handle due to the protocol - but the periodic push recovers
 			// from it.
-
+			adsLog.Errorf("howardjohn: pushing connection")
 			err := s.pushConnection(con, pushEv)
 			if err != nil {
 				return nil
@@ -854,7 +854,7 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 	// Will keep trying to push to sidecars until another push starts.
 	wg := sync.WaitGroup{}
 	for {
-
+		adsLog.Errorf("howardjohn: Start of startPush: %v", len(s.concurrentPushLimit))
 		if len(pending) == 0 {
 			break
 		}
@@ -872,12 +872,30 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 			}
 			s.proxyUpdatesMutex.Unlock()
 		}
+		t0 := time.Now()
+		adsLog.Errorf("howardjohn: starting rate limiter: %v", client.ConID)
+		ctx, cancel := context.WithTimeout(context.Background(), PushTimeout)
+		e := s.rateLimiter.Wait(ctx) // rate limit the actual push
+		if e != nil {
+			cancel()
+			adsLog.Errorf("howardjohn: Rate limited: %v", e)
+			// This may happen to some clients if the other side is in a bad state and can't receive.
+			// The tests were catching this - one of the client was not reading.
+			pushTimeouts.Add(1)
+			adsLog.Warnf("Failed to push, rate limited for client %s", client.ConID)
+			pushErrors.With(prometheus.Labels{"type": "ratelimited"}).Add(1)
+		}
+		adsLog.Errorf("howardjohn: [%v] finished rate limiter: %v", time.Since(t0), client.ConID)
 
 		wg.Add(1)
-		s.concurrentPushLimit <- struct{}{}
+		adsLog.Errorf("howardjohn: attempting Write to concurrentPushLimit %v: %v", len(s.concurrentPushLimit), client.ConID)
+		s.concurrentPushLimit <- client.ConID
+		adsLog.Errorf("howardjohn: Write to concurrentPushLimit %v: %v", len(s.concurrentPushLimit), client.ConID)
 		go func() {
 			defer func() {
-				<-s.concurrentPushLimit
+				adsLog.Errorf("howardjohn: attempting Read from concurrentPushLimit %v", len(s.concurrentPushLimit))
+				c := <-s.concurrentPushLimit
+				adsLog.Errorf("howardjohn: Read from concurrentPushLimit %v: %v", len(s.concurrentPushLimit), c)
 				wg.Done()
 			}()
 
@@ -893,20 +911,20 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 				adsLog.Infof("PushAll abort %s, push with newer version %s in progress %v", version, currentVersion, time.Since(tstart))
 				return
 			}
-			t0 := time.Now()
-			adsLog.Errorf("howardjohn: starting rate limiter: %v", client.ConID)
-			ctx, cancel := context.WithTimeout(context.Background(), PushTimeout)
-			e := s.rateLimiter.Wait(ctx) // rate limit the actual push
-			if e != nil {
-				cancel()
-				adsLog.Errorf("howardjohn: Rate limited: %v", e)
-				// This may happen to some clients if the other side is in a bad state and can't receive.
-				// The tests were catching this - one of the client was not reading.
-				pushTimeouts.Add(1)
-				adsLog.Warnf("Failed to push, rate limited for client %s", client.ConID)
-				pushErrors.With(prometheus.Labels{"type": "ratelimited"}).Add(1)
-			}
-			adsLog.Errorf("howardjohn: [%v] finished rate limiter: %v", time.Since(t0), client.ConID)
+			//t0 := time.Now()
+			//adsLog.Errorf("howardjohn: starting rate limiter: %v", client.ConID)
+			//ctx, cancel := context.WithTimeout(context.Background(), PushTimeout)
+			//e := s.rateLimiter.Wait(ctx) // rate limit the actual push
+			//if e != nil {
+			//	cancel()
+			//	adsLog.Errorf("howardjohn: Rate limited: %v", e)
+			//	// This may happen to some clients if the other side is in a bad state and can't receive.
+			//	// The tests were catching this - one of the client was not reading.
+			//	pushTimeouts.Add(1)
+			//	adsLog.Warnf("Failed to push, rate limited for client %s", client.ConID)
+			//	pushErrors.With(prometheus.Labels{"type": "ratelimited"}).Add(1)
+			//}
+			//adsLog.Errorf("howardjohn: [%v] finished rate limiter: %v", time.Since(t0), client.ConID)
 
 			select {
 			case client.pushChannel <- &XdsEvent{
