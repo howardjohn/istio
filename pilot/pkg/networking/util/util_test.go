@@ -23,6 +23,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
 	xdsutil "github.com/envoyproxy/go-control-plane/pkg/util"
+	"github.com/gogo/protobuf/proto"
 
 	"github.com/gogo/protobuf/types"
 	messagediff "gopkg.in/d4l3k/messagediff.v1"
@@ -530,5 +531,33 @@ func TestIsHTTPFilterChain(t *testing.T) {
 
 	if IsHTTPFilterChain(tcpFilterChain) {
 		t.Errorf("tcp filter chain detected as http filter chain")
+	}
+}
+
+func TestMessageToStruct(t *testing.T) {
+	pb := &v2.DiscoveryRequest{
+		VersionInfo: "test",
+		Node:        &core.Node{Id: "proxy"},
+	}
+
+	o1 := &v2.DiscoveryRequest{}
+	o2 := &v2.DiscoveryRequest{}
+	checkEquivilent(t, pb, o1, o2)
+}
+
+func checkEquivilent(t *testing.T, msg proto.Message, o1 proto.Message, o2 proto.Message) {
+	old := MessageToStruct(msg)
+	fast := FastMessageToStruct(msg)
+	//m := &jsonpb.Marshaler{}
+	//oldBack, _ := m.MarshalToString(old)
+	//fastBack, _ := m.MarshalToString(fast)
+	if err := xdsutil.StructToMessage(old, o1); err != nil {
+		t.Error(err)
+	}
+	if err := xdsutil.StructToMessage(fast, o2); err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(o1, o2) {
+		t.Errorf("Expected old:\n%v\nto be same as fast:\n%v", o1, o2)
 	}
 }

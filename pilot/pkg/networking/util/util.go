@@ -218,10 +218,6 @@ func MessageToStruct(msg proto.Message) *types.Struct {
 	return s
 }
 
-type isWkt interface {
-	XXX_WellKnownType() string
-}
-
 func FastMessageToStruct(v proto.Message) *types.Struct {
 	m := map[string]*types.Value{}
 	r := reflect.ValueOf(v).Elem()
@@ -233,40 +229,27 @@ func FastMessageToStruct(v proto.Message) *types.Struct {
 	case reflect.Map:
 		for _, key := range r.MapKeys() {
 			val := key.MapIndex(key)
-			m[key.String()] = toValue(val)
+			log.Errorf("howardjohn: calling value on %v", key.String())
+			v := toValue(val)
+			if v != nil {
+				m[key.String()] = v
+			}
 		}
 	case reflect.Struct:
 		for f := 0; f < r.NumField(); f++ {
-			m[r.Type().Field(f).Name] = toValue(r.Field(f))
+			log.Errorf("howardjohn: caling value on %v", r.Type().Field(f).Name)
+			v := toValue(r.Field(f))
+			if v != nil {
+				m[r.Type().Field(f).Name] = v
+			}
 		}
 
 	}
 	return &s
 }
 
-func ReflectToStruct(v reflect.Value) *types.Value {
-	//switch v.Interface().Ty
-	switch v.Kind() {
-	case reflect.Struct:
-		m := map[string]*types.Value{}
-		s := types.Struct{
-			Fields: m,
-		}
-
-		for _, key := range v.MapKeys() {
-			val := key.MapIndex(key)
-			m[key.String()] = ReflectToStruct(val)
-		}
-		return &types.Value{
-			Kind: &types.Value_StructValue{
-				StructValue: &s,
-			},
-		}
-	}
-	return nil
-}
-
 func toValue(v reflect.Value) *types.Value {
+	log.Errorf("howardjohn: %v", v.String())
 	switch v.Kind() {
 	case reflect.Bool:
 		return &types.Value{
@@ -360,12 +343,23 @@ func toValue(v reflect.Value) *types.Value {
 		}
 	default:
 		// Last resort
+		s := v.String()
+		if s == "" {
+			return nil
+		}
 		return &types.Value{
 			Kind: &types.Value_StringValue{
-				StringValue: fmt.Sprint(v),
+				StringValue: s,
 			},
 		}
 	}
+}
+
+func parseTag(tag string) (string, string) {
+	if idx := strings.Index(tag, ","); idx != -1 {
+		return tag[:idx], tag[idx+1:]
+	}
+	return tag, ""
 }
 
 // GogoDurationToDuration converts from gogo proto duration to time.duration
