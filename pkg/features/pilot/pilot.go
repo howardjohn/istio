@@ -40,10 +40,10 @@ var (
 
 	// PushThrottle limits the qps of the actual push. Default is 10 pushes per second.
 	// On larger machines you can increase this to get faster push.
-	PushThrottle = env.RegisterIntVar("PILOT_PUSH_THROTTLE", 10, "").Get()
+	PushThrottle = env.RegisterIntVar("PILOT_PUSH_THROTTLE", 10, "")
 
 	// PushBurst limits the burst of the actual push. Default is 100.
-	PushBurst = env.RegisterIntVar("PILOT_PUSH_BURST", 100, "").Get()
+	PushBurst = env.RegisterIntVar("PILOT_PUSH_BURST", 100, "")
 
 	// DebugConfigs controls saving snapshots of configs for /debug/adsz.
 	// Defaults to false, can be enabled with PILOT_DEBUG_ADSZ_CONFIG=1

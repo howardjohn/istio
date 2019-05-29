@@ -215,11 +215,11 @@ func NewDiscoveryServer(
 
 	out.DebugConfigs = pilot.DebugConfigs
 
-	pushThrottle := pilot.PushThrottle
-	pushBurst := pilot.PushBurst
+	pushThrottle := pilot.PushThrottle.Get()
+	pushBurst := pilot.PushBurst.Get()
 
 	adsLog.Infof("Starting ADS server with rateLimiter=%d burst=%d", pushThrottle, pushBurst)
-	out.rateLimiter = rate.NewLimiter(rate.Limit(pushThrottle), pushBurst)
+	out.rateLimiter = rate.NewLimiter(rate.Limit(pushThrottle), pushThrottle)
 	out.initRateLimiter = rate.NewLimiter(rate.Limit(pushThrottle*2), pushBurst*2)
 
 	return out
