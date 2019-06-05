@@ -28,9 +28,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	networkingapi "istio.io/api/networking/v1alpha3"
-	networking "istio.io/istio/pilot/pkg/networking/core/v1alpha3"
-
 	"istio.io/istio/pilot/pkg/model"
+	networking "istio.io/istio/pilot/pkg/networking/core/v1alpha3"
 	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/loadbalancer"
 	"istio.io/istio/pilot/pkg/networking/util"
 	"istio.io/istio/pilot/pkg/serviceregistry"
@@ -218,7 +217,7 @@ func (s *DiscoveryServer) updateClusterInc(push *model.PushContext, clusterName 
 		return s.updateCluster(push, clusterName, edsCluster)
 	}
 
-	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, labels, clusterName, push)
+	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, labels, clusterName, push, nil)
 	// There is a chance multiple goroutines will update the cluster at the same time.
 	// This could be prevented by a lock - but because the update may be slow, it may be
 	// better to accept the extra computations.
@@ -294,6 +293,7 @@ func (s *DiscoveryServer) updateServiceShards(push *model.PushContext) error {
 						Network:         ep.Endpoint.Network,
 						Locality:        ep.GetLocality(),
 						LbWeight:        ep.Endpoint.LbWeight,
+						Attributes:      ep.Service.Attributes,
 					})
 				}
 			}
@@ -616,6 +616,21 @@ func (s *DiscoveryServer) loadAssignmentsForClusterLegacy(push *model.PushContex
 	return l
 }
 
+// inSidecarScope checks if a given endpoint should be made available to a proxy
+func inSidecarScope(ep *model.IstioEndpoint, proxy *model.Proxy) bool {
+	if proxy != nil && proxy.SidecarScope != nil {
+		for _, egress := range proxy.SidecarScope.EgressListeners {
+			for _, svc := range egress.Services() {
+				if ep.Attributes.Namespace == svc.Attributes.Namespace && ep.Attributes.Name == svc.Attributes.Name {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return true
+}
+
 // loadAssignmentsForClusterIsolated return the endpoints for a proxy in an isolated namespace
 // Initial implementation is computing the endpoints on the flight - caching will be added as needed, based on
 // perf tests. The logic to compute is based on the current UpdateClusterInc
@@ -659,7 +674,7 @@ func (s *DiscoveryServer) loadAssignmentsForClusterIsolated(proxy *model.Proxy, 
 		return s.loadAssignmentsForClusterLegacy(push, clusterName)
 	}
 
-	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, labels, clusterName, push)
+	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, labels, clusterName, push, proxy)
 
 	return &xdsapi.ClusterLoadAssignment{
 		ClusterName: clusterName,
@@ -889,7 +904,8 @@ func buildLocalityLbEndpointsFromShards(
 	svcPort *model.Port,
 	labels model.LabelsCollection,
 	clusterName string,
-	push *model.PushContext) []endpoint.LocalityLbEndpoints {
+	push *model.PushContext,
+	proxy *model.Proxy) []endpoint.LocalityLbEndpoints {
 	localityEpMap := make(map[string]*endpoint.LocalityLbEndpoints)
 
 	shards.mutex.Lock()
@@ -897,6 +913,9 @@ func buildLocalityLbEndpointsFromShards(
 	// for this cluster
 	for _, endpoints := range shards.Shards {
 		for _, ep := range endpoints {
+			if !inSidecarScope(ep, proxy) {
+				continue
+			}
 			if svcPort.Name != ep.ServicePortName {
 				continue
 			}

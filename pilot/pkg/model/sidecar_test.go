@@ -15,7 +15,9 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -263,6 +265,93 @@ func TestCreateSidecarScope(t *testing.T) {
 				}
 			}
 			// TODO destination rule
+		})
+	}
+}
+
+func TestIstioEgressListenerWrapper(t *testing.T) {
+	serviceA8000 := &Service{
+		Hostname:   "host",
+		Ports:      port8000,
+		Attributes: ServiceAttributes{Namespace: "a"},
+	}
+	serviceA9000 := &Service{
+		Hostname:   "host",
+		Ports:      port9000,
+		Attributes: ServiceAttributes{Namespace: "a"},
+	}
+	serviceAalt := &Service{
+		Hostname:   "alt",
+		Ports:      port8000,
+		Attributes: ServiceAttributes{Namespace: "a"},
+	}
+
+	serviceB8000 := &Service{
+		Hostname:   "host",
+		Ports:      port8000,
+		Attributes: ServiceAttributes{Namespace: "b"},
+	}
+	serviceB9000 := &Service{
+		Hostname:   "host",
+		Ports:      port9000,
+		Attributes: ServiceAttributes{Namespace: "b"},
+	}
+	serviceBalt := &Service{
+		Hostname:   "alt",
+		Ports:      port8000,
+		Attributes: ServiceAttributes{Namespace: "b"},
+	}
+	allServices := []*Service{serviceA8000, serviceA9000, serviceAalt, serviceB8000, serviceB9000, serviceBalt}
+
+	tests := []struct {
+		name          string
+		listenerHosts map[string][]Hostname
+		services      []*Service
+		expected      []*Service
+	}{
+		{
+			name:          "*/* imports all",
+			listenerHosts: map[string][]Hostname{wildcardNamespace: {wildcardService}},
+			services:      allServices,
+			expected:      allServices,
+		},
+		{
+			name:          "a/* imports only those in a",
+			listenerHosts: map[string][]Hostname{"a": {wildcardService}},
+			services:      allServices,
+			expected:      []*Service{serviceA8000, serviceA9000, serviceAalt},
+		},
+		{
+			name:          "a/*, a/* imports only those in a",
+			listenerHosts: map[string][]Hostname{"a": {wildcardService, wildcardService}},
+			services:      allServices,
+			expected:      []*Service{serviceA8000, serviceA9000, serviceAalt},
+		},
+		{
+			name:          "*/alt imports alt in all namespaces",
+			listenerHosts: map[string][]Hostname{wildcardNamespace: {"alt"}},
+			services:      allServices,
+			expected:      []*Service{serviceAalt, serviceBalt},
+		},
+		{
+			name:          "a/alt imports alt in a namespaces",
+			listenerHosts: map[string][]Hostname{"a": {"alt"}},
+			services:      allServices,
+			expected:      []*Service{serviceAalt},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ilw := &IstioEgressListenerWrapper{
+				listenerHosts: tt.listenerHosts,
+			}
+			got := ilw.selectServices(tt.services)
+			if !reflect.DeepEqual(got, tt.expected) {
+				gots, _ := json.MarshalIndent(got, "", "  ")
+				expecteds, _ := json.MarshalIndent(tt.expected, "", "  ")
+				t.Errorf("Got %v, expected %v", string(gots), string(expecteds))
+			}
 		})
 	}
 }

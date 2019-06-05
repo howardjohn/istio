@@ -238,6 +238,33 @@ func convertIstioListenerToWrapper(ps *PushContext, configNamespace string,
 	return out
 }
 
+// instancesForService returns all matching ServiceInstances, respecting the SidecarScope
+func (sc *SidecarScope) InstancesForService(env *Environment, hostname Hostname, port int, labels LabelsCollection) ([]*ServiceInstance, error) {
+	// Get all instances for the hostname, including ones that may be not imported
+	allInstances, err := env.InstancesByPort(hostname, port, labels)
+	if err != nil {
+		return nil, err
+	}
+
+	// validServices contains all namespace-name pairs that are imported in the Sidecar config
+	var validServices = make(map[string]struct{})
+	for _, egress := range sc.EgressListeners {
+		for _, svc := range egress.Services() {
+			validServices[svc.Attributes.Namespace+"~"+svc.Attributes.Name] = struct{}{}
+		}
+	}
+
+	var inScopeInstances []*ServiceInstance
+	// Filter down to just instances in scope for the service
+	for _, i := range allInstances {
+		attr := i.Service.Attributes
+		if _, found := validServices[attr.Namespace+"~"+attr.Name]; found {
+			inScopeInstances = append(inScopeInstances, i)
+		}
+	}
+	return inScopeInstances, nil
+}
+
 // Services returns the list of services imported across all egress listeners by this
 // Sidecar config
 func (sc *SidecarScope) Services() []*Service {

@@ -216,7 +216,13 @@ func (node *Proxy) SetServiceInstances(env *Environment) error {
 		return err
 	}
 
-	node.ServiceInstances = instances
+	node.ServiceInstances = []*ServiceInstance{}
+	for _, i := range instances {
+		if node.ConfigNamespace == i.Service.Attributes.Namespace {
+			node.ServiceInstances = append(node.ServiceInstances, i)
+		}
+	}
+
 	return nil
 }
 
