@@ -17,7 +17,10 @@ package v2
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	"io"
+	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/loadbalancer"
+	"istio.io/istio/pilot/pkg/networking/util"
 	"net/http"
 
 	"github.com/gogo/protobuf/jsonpb"
@@ -496,12 +499,19 @@ func (s *DiscoveryServer) ready(w http.ResponseWriter, req *http.Request) {
 
 // edsz implements a status and debug interface for EDS.
 // It is mapped to /debug/edsz on the monitor port (15014).
+// ?push=true will trigger a full push
+// ?locality=region/zone will include the locality LB
 func (s *DiscoveryServer) edsz(w http.ResponseWriter, req *http.Request) {
 	_ = req.ParseForm()
 	w.Header().Add("Content-Type", "application/json")
 
 	if req.Form.Get("push") != "" {
 		AdsPushAll(s)
+	}
+
+	var locality *core.Locality
+	if req.Form.Get("locality") != "" {
+		locality = util.ConvertLocality(req.Form.Get("locality"))
 	}
 
 	edsClusterMutex.RLock()
@@ -514,8 +524,16 @@ func (s *DiscoveryServer) edsz(w http.ResponseWriter, req *http.Request) {
 			} else {
 				comma = true
 			}
+
+			l := eds.LoadAssignment
+			if locality != nil {
+				clonedCLA := util.CloneClusterLoadAssignment(l)
+				l = &clonedCLA
+				loadbalancer.ApplyLocalityLBSetting(locality, l, s.Env.Mesh.LocalityLbSetting, true)
+			}
+
 			jsonm := &jsonpb.Marshaler{Indent: "  "}
-			dbgString, _ := jsonm.MarshalToString(eds.LoadAssignment)
+			dbgString, _ := jsonm.MarshalToString(l)
 			if _, err := w.Write([]byte(dbgString)); err != nil {
 				return
 			}
