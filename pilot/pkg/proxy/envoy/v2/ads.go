@@ -37,6 +37,8 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
 	istiolog "istio.io/pkg/log"
+
+	"github.com/sasha-s/go-deadlock"
 )
 
 var (
@@ -200,7 +202,7 @@ type DiscoveryStream interface {
 // XdsConnection is a listener connection type.
 type XdsConnection struct {
 	// Mutex to protect changes to this XDS connection
-	mu sync.RWMutex
+	mu deadlock.RWMutex
 
 	// PeerAddr is the address of the client envoy, from network layer
 	PeerAddr string
@@ -913,14 +915,11 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 				// This may happen to some clients if the other side is in a bad state and can't receive.
 				// The tests were catching this - one of the client was not reading.
 				pushTimeouts.Add(1)
-				client.mu.Lock()
 				if client.LastPushFailure.IsZero() {
 					client.LastPushFailure = time.Now()
-					client.mu.Unlock()
 					adsLog.Warnf("Failed to push, client busy %s", client.ConID)
 					pushErrors.With(prometheus.Labels{"type": "retry"}).Add(1)
 				} else if time.Since(client.LastPushFailure) > 10*time.Second {
-					client.mu.Unlock()
 					adsLog.Warnf("Repeated failure to push %s", client.ConID)
 					// unfortunately grpc go doesn't allow closing (unblocking) the stream.
 					pushErrors.With(prometheus.Labels{"type": "unrecoverable"}).Add(1)
