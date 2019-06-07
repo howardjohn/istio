@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"istio.io/istio/pkg/spiffe"
 
 	"istio.io/istio/pilot/pkg/model"
@@ -80,7 +82,7 @@ type MemServiceDiscovery struct {
 	EDSUpdater model.XDSUpdater
 
 	// Single mutex for now - it's for debug only.
-	mutex sync.Mutex
+	mutex deadlock.Mutex
 }
 
 // NewMemServiceDiscovery builds an in-memory MemServiceDiscovery

@@ -15,9 +15,8 @@
 package aggregate
 
 import (
-	"sync"
-
-	multierror "github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-multierror"
+	"github.com/sasha-s/go-deadlock"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
@@ -38,13 +37,13 @@ type Registry struct {
 // TODO: rename Name to Type and ClusterID to Name ?
 
 var (
-	clusterAddressesMutex sync.Mutex
+	clusterAddressesMutex deadlock.Mutex
 )
 
 // Controller aggregates data across different registries and monitors for changes
 type Controller struct {
 	registries []Registry
-	storeLock  sync.RWMutex
+	storeLock  deadlock.RWMutex
 }
 
 // NewController creates a new Aggregate controller

@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/pkg/log"
 )
@@ -58,7 +60,7 @@ func NewQueue(errorDelay time.Duration) Queue {
 		delay:   errorDelay,
 		queue:   make([]Task, 0),
 		closing: false,
-		cond:    sync.NewCond(&sync.Mutex{}),
+		cond:    sync.NewCond(&deadlock.Mutex{}),
 	}
 }
 

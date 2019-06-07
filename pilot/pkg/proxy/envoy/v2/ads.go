@@ -261,7 +261,7 @@ type XdsConnection struct {
 	LastPushFailure time.Time
 
 	// pushMutex prevents 2 overlapping pushes for this connection.
-	pushMutex sync.Mutex
+	pushMutex deadlock.Mutex
 }
 
 // configDump converts the connection internal state into an Envoy Admin API config dump proto
@@ -385,7 +385,7 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 	// poor new pilot and overwhelm it.
 	// TODO: instead of readiness probe, let endpoints connect and wait here for
 	// config to become stable. Will better spread the load.
-	_ = s.initRateLimiter.Wait(context.TODO())
+	//_ = s.initRateLimiter.Wait(context.TODO())
 
 	// first call - lazy loading, in tests. This should not happen if readiness
 	// check works, since it assumes ClearCache is called (and as such PushContext
@@ -888,6 +888,7 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 				edsOnly = nil
 			}
 
+			lastPushFailure := timeZero
 		Retry:
 			currentVersion := versionInfo()
 			// Stop attempting to push
@@ -904,8 +905,6 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 				version:            version,
 				edsUpdatedServices: edsOnly,
 			}:
-				client.LastPush = time.Now()
-				client.LastPushFailure = timeZero
 				if !timer.Stop() {
 					<-timer.C
 				}
@@ -915,17 +914,21 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 				// This may happen to some clients if the other side is in a bad state and can't receive.
 				// The tests were catching this - one of the client was not reading.
 				pushTimeouts.Add(1)
-				if client.LastPushFailure.IsZero() {
-					client.LastPushFailure = time.Now()
-					adsLog.Warnf("Failed to push, client busy %s", client.ConID)
-					pushErrors.With(prometheus.Labels{"type": "retry"}).Add(1)
-				} else if time.Since(client.LastPushFailure) > 10*time.Second {
+				if lastPushFailure.IsZero() {
+					lastPushFailure = time.Now()
+
+				}
+				if time.Since(lastPushFailure) > 10*time.Second {
 					adsLog.Warnf("Repeated failure to push %s", client.ConID)
 					// unfortunately grpc go doesn't allow closing (unblocking) the stream.
 					pushErrors.With(prometheus.Labels{"type": "unrecoverable"}).Add(1)
 					pushTimeoutFailures.Add(1)
 					return
 				}
+
+				adsLog.Warnf("Failed to push, client busy %s", client.ConID)
+				pushErrors.With(prometheus.Labels{"type": "retry"}).Add(1)
+
 				goto Retry
 			}
 		}()

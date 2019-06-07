@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sasha-s/go-deadlock"
 
 	networking "istio.io/api/networking/v1alpha3"
 )
@@ -44,7 +45,7 @@ type PushContext struct {
 	// Mutex is used to protect the below store.
 	// All data is set when the PushContext object is populated in `InitContext`,
 	// data should not be changed by plugins.
-	Mutex sync.Mutex `json:"-"`
+	Mutex deadlock.Mutex `json:"-"`
 
 	// Synthesized from env.Mesh
 	defaultServiceExportTo         map[Visibility]bool
@@ -277,7 +278,7 @@ var (
 	// new version.
 	LastPushStatus *PushContext
 	// LastPushMutex will protect the LastPushStatus
-	LastPushMutex sync.Mutex
+	LastPushMutex deadlock.Mutex
 
 	// All metrics we registered.
 	metrics []*PushMetric

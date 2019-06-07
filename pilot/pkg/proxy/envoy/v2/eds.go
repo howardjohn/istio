@@ -26,6 +26,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sasha-s/go-deadlock"
 
 	networkingapi "istio.io/api/networking/v1alpha3"
 	networking "istio.io/istio/pilot/pkg/networking/core/v1alpha3"
@@ -75,7 +76,7 @@ var (
 // EdsCluster tracks eds-related info for monitored cluster. Used in 1.0, where cluster info is not source-dependent.
 type EdsCluster struct {
 	// mutex protects changes to this cluster
-	mutex sync.Mutex
+	mutex deadlock.Mutex
 
 	// LoadAssignment has the pre-computed EDS response for this cluster. Any sidecar asking for the
 	// cluster will get this response.
