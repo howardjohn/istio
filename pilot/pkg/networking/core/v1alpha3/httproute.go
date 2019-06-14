@@ -213,22 +213,79 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundHTTPRouteConfig(env *m
 	if pilot.EnableFallthroughRoute() {
 		// This needs to be the last virtual host, as routes are evaluated in order.
 		if env.Mesh.OutboundTrafficPolicy.Mode == meshconfig.MeshConfig_OutboundTrafficPolicy_ALLOW_ANY {
-			virtualHosts = append(virtualHosts, route.VirtualHost{
+			//block := node.IPAddresses[:]
+			//for _, i := range node.IPAddresses {
+			//	block = append(block, i + ":*")
+			//}
+			//
+			//virtualHosts = append(virtualHosts, route.VirtualHost{
+			//	Name:    "block_self",
+			//	Domains: block,
+			//	Routes: []route.Route{
+			//		{
+			//			Match: route.RouteMatch{
+			//				PathSpecifier: &route.RouteMatch_Prefix{Prefix: "/"},
+			//			},
+			//			Action: &route.Route_DirectResponse{
+			//				DirectResponse: &route.DirectResponseAction{
+			//					Status: 502,
+			//				},
+			//			},
+			//		},
+			//	},
+			//})
+
+			allow := route.VirtualHost{
 				Name:    "allow_any",
 				Domains: []string{"*"},
-				Routes: []route.Route{
-					{
-						Match: route.RouteMatch{
-							PathSpecifier: &route.RouteMatch_Prefix{Prefix: "/"},
-						},
-						Action: &route.Route_Route{
-							Route: &route.RouteAction{
-								ClusterSpecifier: &route.RouteAction_Cluster{Cluster: util.PassthroughCluster},
+			}
+			for _, ip := range node.IPAddresses {
+				allow.Routes = append(allow.Routes, route.Route{
+					Match: route.RouteMatch{
+						PathSpecifier: &route.RouteMatch_Prefix{Prefix: "/"},
+						Headers: []*route.HeaderMatcher{
+							{
+								Name: "X-Forwarded-For",
+								HeaderMatchSpecifier: &route.HeaderMatcher_SuffixMatch{
+									SuffixMatch: ip,
+								},
 							},
 						},
 					},
+					Action: &route.Route_DirectResponse{
+						DirectResponse: &route.DirectResponseAction{
+							Status: 502,
+						},
+					},
+				})
+			}
+			allow.Routes = append(allow.Routes, route.Route{
+				Match: route.RouteMatch{
+					PathSpecifier: &route.RouteMatch_Prefix{Prefix: "/"},
+				},
+				Action: &route.Route_Route{
+					Route: &route.RouteAction{
+						ClusterSpecifier: &route.RouteAction_Cluster{Cluster: util.PassthroughCluster},
+					},
 				},
 			})
+			virtualHosts = append(virtualHosts, allow)
+			//virtualHosts = append(virtualHosts, route.VirtualHost{
+			//	Name:    "allow_any",
+			//	Domains: []string{"*"},
+			//	Routes: []route.Route{
+			//		{
+			//			Match: route.RouteMatch{
+			//				PathSpecifier: &route.RouteMatch_Prefix{Prefix: "/"},
+			//			},
+			//			Action: &route.Route_Route{
+			//				Route: &route.RouteAction{
+			//					ClusterSpecifier: &route.RouteAction_Cluster{Cluster: util.PassthroughCluster},
+			//				},
+			//			},
+			//		},
+			//	},
+			//})
 		} else {
 			virtualHosts = append(virtualHosts, route.VirtualHost{
 				Name:    "block_all",

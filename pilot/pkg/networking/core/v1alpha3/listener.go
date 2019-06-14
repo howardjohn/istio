@@ -213,9 +213,41 @@ func (configgen *ConfigGeneratorImpl) buildSidecarListeners(env *model.Environme
 		// TODO(silentdai): remove `if` branch once split behavior is well verified
 		if !node.IsInboundCaptureAllPorts() {
 			inbound := configgen.buildSidecarInboundListeners(env, node, push, proxyInstances)
+
+			//inboundWildcards := []*xdsapi.Listener{}
+			//for _, ip := range node.IPAddresses {
+			//	wildcardMatch := &listener.FilterChainMatch{}
+			//	tcpFilter := listener.Filter{
+			//		Name: xdsutil.TCPProxy,
+			//	}
+			//	config := &tcp_proxy.TcpProxy{
+			//		StatPrefix:       util.BlackHoleCluster,
+			//		ClusterSpecifier: &tcp_proxy.TcpProxy_Cluster{Cluster: util.BlackHoleCluster},
+			//	}
+			//	if util.IsXDSMarshalingToAnyEnabled(node) {
+			//		tcpFilter.ConfigType = &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(config)}
+			//	} else {
+			//		tcpFilter.ConfigType = &listener.Filter_Config{Config: util.MessageToStruct(config)}
+			//	}
+			//	inboundWildcards = append(inboundWildcards, &xdsapi.Listener{
+			//		Name:    ip + "_*",
+			//		Address: util.BuildAddress(ip, 0),
+			//		DeprecatedV1: &xdsapi.Listener_DeprecatedV1{
+			//			BindToPort: proto.BoolFalse,
+			//		},
+			//		FilterChains: []listener.FilterChain{
+			//			{
+			//				FilterChainMatch: wildcardMatch,
+			//				Filters:          []listener.Filter{tcpFilter},
+			//			},
+			//		},
+			//	})
+			//}
+
 			outbound := configgen.buildSidecarOutboundListeners(env, node, push, proxyInstances)
 
 			listeners = append(listeners, inbound...)
+			//listeners = append(listeners, inboundWildcards...)
 			listeners = append(listeners, outbound...)
 
 			listeners = configgen.generateManagementListeners(node, noneMode, env, listeners)

@@ -103,6 +103,25 @@
   "static_resources": {
     "clusters": [
       {
+        "name": "BlackHoleCluster",
+        "type": "STATIC",
+        "connect_timeout": "10s"
+       },
+      {
+        "name": "PassthroughCluster",
+        "type": "ORIGINAL_DST",
+        "connect_timeout": "10s",
+        "lb_policy": "ORIGINAL_DST_LB",
+        "circuit_breakers": {
+         "thresholds": [
+          {
+           "max_connections": 102400,
+           "max_retries": 24
+          }
+         ]
+        }
+      },
+      {
         "name": "prometheus_stats",
         "type": "STATIC",
         "connect_timeout": "0.250s",
