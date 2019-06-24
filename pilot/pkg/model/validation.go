@@ -2325,7 +2325,7 @@ func validateHTTPRewrite(rewrite *networking.HTTPRewrite) error {
 }
 
 // ValidateServiceEntry validates a service entry.
-func ValidateServiceEntry(_, _ string, config proto.Message) (errs error) {
+func ValidateServiceEntry(_, namespace string, config proto.Message) (errs error) {
 	serviceEntry, ok := config.(*networking.ServiceEntry)
 	if !ok {
 		return fmt.Errorf("cannot cast to service entry")
@@ -2341,6 +2341,7 @@ func ValidateServiceEntry(_, _ string, config proto.Message) (errs error) {
 		} else {
 			errs = appendErrors(errs, ValidateWildcardDomain(host))
 		}
+		errs = appendErrors(errs, validateServiceEntryHostnameNamespace(host, namespace))
 	}
 
 	cidrFound := false
@@ -2468,6 +2469,10 @@ func ValidateServiceEntry(_, _ string, config proto.Message) (errs error) {
 
 	errs = appendErrors(errs, validateExportTo(serviceEntry.ExportTo))
 	return
+}
+
+func validateServiceEntryHostnameNamespace(hostname string, namespace string) error {
+
 }
 
 func validatePortName(name string) error {
