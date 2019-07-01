@@ -25,61 +25,15 @@ set -u
 # Print commands
 set -x
 
-# Check https://github.com/istio/test-infra/blob/master/boskos/configs.yaml
-# for existing resources types
-RESOURCE_TYPE="${RESOURCE_TYPE:-gke-e2e-test}"
-OWNER="${OWNER:-integ}"
-USE_MASON_RESOURCE="${USE_MASON_RESOURCE:-True}"
-CLEAN_CLUSTERS="${CLEAN_CLUSTERS:-True}"
 
-
-# shellcheck source=prow/lib.sh
-source "${ROOT}/prow/lib.sh"
-# shellcheck source=prow/mason_lib.sh
-source "${ROOT}/prow/mason_lib.sh"
-# shellcheck source=prow/cluster_lib.sh
-source "${ROOT}/prow/cluster_lib.sh"
-
-function cleanup() {
-  if [[ "${CLEAN_CLUSTERS}" == "True" ]]; then
-    unsetup_clusters
-  fi
-  if [[ "${USE_MASON_RESOURCE}" == "True" ]]; then
-    mason_cleanup
-    cat "${FILE_LOG}"
-  fi
-}
-
-trap cleanup EXIT
-
-INFO_PATH="$(mktemp /tmp/XXXXX.boskos.info)"
-FILE_LOG="$(mktemp /tmp/XXXXX.boskos.log)"
-
-setup_and_export_git_sha
-
-
-if [ "${CI:-}" == 'bootstrap' ]; then
-  # bootsrap upload all artifacts in _artifacts to the log bucket.
-  ARTIFACTS_DIR=${ARTIFACTS_DIR:-"${GOPATH}/src/istio.io/istio/_artifacts"}
-fi
-
-export HUB=${HUB:-"gcr.io/istio-testing"}
-export TAG="${TAG:-${GIT_SHA}}"
-
-if [[ $HUB == *"istio-testing"* ]]; then
-  export TAG="${TAG:-${GIT_SHA}}"-"$*"
-fi
+export HUB="gcr.io/istio-release"
+export TAG="master-latest-daily"
 
 make init
 
-if [[ $HUB == *"istio-testing"* ]]; then
-  time ISTIO_DOCKER_HUB="${HUB}" make push HUB="${HUB}" TAG="${TAG}"
-fi
+kind create cluster --name test --loglevel trace
+export KUBECONFIG="$(kind get kubeconfig-path --name test)"
 
-get_resource "${RESOURCE_TYPE}" "${OWNER}" "${INFO_PATH}" "${FILE_LOG}"
-setup_cluster
+export T="-v"
 
-JUNIT_UNIT_TEST_XML="${ARTIFACTS_DIR}/junit_unit-tests.xml" \
-T="-v" \
 make "$@"
-
