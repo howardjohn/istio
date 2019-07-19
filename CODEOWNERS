@@ -2,38 +2,31 @@
 # Note that later rules take precedence; owners of * will only be required for changes to directories without owners
 
 *                                                              @costinm @geeknoid @howardjohn @linsun @rshriram
-.circleci/                                                     @costinm @rshriram
-bin/                                                           @costinm @douglas-reid @mandarjog @sdake
 galley/                                                        @geeknoid @ozevren
 install/                                                       @costinm @sdake @linsun @rshriram @howardjohn @mandarjog @morvencao @ostromart
-install/kubernetes/helm/istio/charts/galley/                   @cmluciano @geeknoid @ozevren @ayj
-install/kubernetes/helm/istio/charts/sidecarInjectorWebhook/   @ostromart
 istioctl/                                                      @ozevren @liamawhite @nmittler @esnible @fisherxu @irisdingbj
 mixer/                                                         @douglas-reid @geeknoid @kyessenov @mandarjog
-mixer/test/client/                                             @qiwzhang @JimmyCYJ @kyessenov @lizan
 pilot/                                                         @andraxylia @costinm @diemtvu @GregHanson @hzxuzhonghu @nmittler @rshriram @vadimeisenbergibm @zackbutcher @howardjohn
-pilot/pkg/networking/                                          @costinm @GregHanson @ijsnellf @rshriram @zackbutcher @ostromart
-pilot/pkg/networking/plugin/authn/                             @diemtvu @yangminzhu
-pilot/pkg/networking/plugin/authz/                             @diemtvu @yangminzhu
-pilot/pkg/networking/plugin/mixer/                             @kyessenov @douglas-reid @mandarjog
-pilot/pkg/security/                                            @diemtvu @yangminzhu @quanjielin
+pilot/pkg/networking/plugin/authn/                             @yangminzhu @andraxylia @costinm @diemtvu @GregHanson @hzxuzhonghu @nmittler @rshriram @vadimeisenbergibm @zackbutcher @howardjohn
+pilot/pkg/networking/plugin/authz/                             @yangminzhu @andraxylia @costinm @diemtvu @GregHanson @hzxuzhonghu @nmittler @rshriram @vadimeisenbergibm @zackbutcher @howardjohn
+pilot/pkg/networking/plugin/mixer/                             @kyessenov @douglas-reid @mandarjog @andraxylia @costinm @diemtvu @GregHanson @hzxuzhonghu @nmittler @rshriram @vadimeisenbergibm @zackbutcher @howardjohn
+pilot/pkg/security/                                            @diemtvu @yangminzhu @quanjielin @andraxylia @costinm @GregHanson @hzxuzhonghu @nmittler @rshriram @vadimeisenbergibm @zackbutcher @howardjohn
 pkg/                                                           @geeknoid @nmittler @ozevren
 pkg/bootstrap/                                                 @mandarjog @costinm
 pkg/mcp/                                                       @ozevren @ayj
 prow/                                                          @utka @icygalz @linsun @duderino
-release/                                                       @hklai @rkpagadala @utka
+release/                                                       @utka @icygalz @linsun @duderino
 samples/                                                       @frankbu @kyessenov @rshriram @vadimeisenbergibm @venilnoronha
 security/                                                      @diemtvu @incfly @myidpt @quanjielin @wattli
-tests/                                                         @costinm @hklai @nmittler @utka
-tests/e2e/local/                                               @gargnupur @kimikowang @hklai @JimmyCYJ @m1093782566
-tests/e2e/tests/pilot/                                         @andraxylia @costinm @GregHanson @hzxuzhonghu @ijsnellf @nmittler @rshriram @vadimeisenbergibm @zackbutcher
+tests/                                                         @costinm @nmittler @utka @geeknoid @howardjohn @linsun @rshriram
+tests/e2e/tests/pilot/                                         @andraxylia @costinm @diemtvu @GregHanson @hzxuzhonghu @nmittler @rshriram @vadimeisenbergibm @zackbutcher @howardjohn
 tests/integration/                                             @nmittler @ozevren
 tests/integration/conformance/                                 @nmittler @ozevren
 tests/integration/framework/                                   @nmittler @ozevren
 tests/integration/galley/                                      @geeknoid @ozevren
-tests/integration/mixer/                                       @bianpengyuan @douglas-reid @gargnupur @geeknoid @kyessenov @mandarjog
-tests/integration/pilot/                                       @andraxylia @costinm @nmittler @rshriram
-tests/integration/qualification/                               @nmittler
-tests/integration/security/                                    @diemtvu @incfly @myidpt @quanjielin @wattli @yangminzhu @JimmyCYJ
-tests/integration/security/rbac/                               @yangminzhu @liminw
-tools/                                                         @sdake
+tests/integration/mixer/                                       @nmittler @ozevren @bianpengyuan @douglas-reid @gargnupur @geeknoid @kyessenov @mandarjog
+tests/integration/pilot/                                       @nmittler @ozevren @andraxylia @costinm @rshriram @howardjohn
+tests/integration/qualification/                               @nmittler @ozevren
+tests/integration/security/                                    @nmittler @ozevren @diemtvu @incfly @myidpt @quanjielin @wattli @yangminzhu @JimmyCYJ
+tests/integration/security/rbac/                               @nmittler @ozevren @diemtvu @incfly @myidpt @quanjielin @wattli @yangminzhu @JimmyCYJ @liminw
+tools/                                                         @sdake @costinm @geeknoid @howardjohn @linsun @rshriram
