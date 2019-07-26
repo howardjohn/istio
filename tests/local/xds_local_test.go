@@ -16,20 +16,20 @@ package local
 import (
 	"fmt"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/types"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-
 	"istio.io/istio/pilot/pkg/bootstrap"
 	"istio.io/istio/pilot/pkg/proxy/envoy"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pkg/keepalive"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func buildLocalClient(apiServerURL string) (*kubernetes.Clientset, error) {
@@ -196,10 +196,18 @@ func startLocalPilot(s *bootstrap.Server, stop chan struct{}) {
 	s.Start(stop)
 }
 
+func createApiServer(t *testing.T) string {
+	t.Helper()
+	env := envtest.Environment{}
+	if _, err := env.Start(); err != nil {
+		t.Fatal(err.Error())
+	}
+	return env.ControlPlane.APIURL().String()
+}
+
 // Test availability of local API Server
 func TestLocalAPIServer(t *testing.T) {
-
-	if err := checkLocalAPIServer("http://localhost:8080"); err != nil {
+	if err := checkLocalAPIServer(createApiServer(t)); err != nil {
 		t.Skip("Local API Server is not running")
 	} else {
 		t.Log("API Server is running")
@@ -209,7 +217,7 @@ func TestLocalAPIServer(t *testing.T) {
 // Test
 func TestLocalPilotStart(t *testing.T) {
 
-	localAPIServerURL := "http://localhost:8080"
+	localAPIServerURL := createApiServer(t)
 
 	if err := checkLocalAPIServer(localAPIServerURL); err != nil {
 		t.Skip("Local API Server is not running")

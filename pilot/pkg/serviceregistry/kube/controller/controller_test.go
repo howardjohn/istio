@@ -16,8 +16,10 @@ package controller
 
 import (
 	"fmt"
+	"k8s.io/client-go/tools/clientcmd"
 	"path/filepath"
 	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sort"
 	"sync"
 	"testing"
@@ -144,11 +146,26 @@ func (fx *FakeXdsUpdater) Clear() {
 		}
 	}
 }
+func buildLocalClient(apiServerURL string) (*kubernetes.Clientset, error) {
+	rc, err := clientcmd.BuildConfigFromFlags(apiServerURL, "")
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.NewForConfig(rc)
+}
 
-func newLocalController(t *testing.T) (*Controller, *FakeXdsUpdater) {
+func newLocalController(t *testing.T) (*Controller, *FakeXdsUpdater, envtest.Environment) {
 	fx := NewFakeXDS()
-	ki := makeClient(t)
-	ctl := NewController(ki, Options{
+	env := envtest.Environment{}
+	if _, err := env.Start(); err != nil {
+		t.Fatal(err.Error())
+	}
+	kc, err := buildLocalClient(env.ControlPlane.APIURL().String())
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	ctl := NewController(kc, Options{
 		WatchedNamespace: "",
 		ResyncPeriod:     resync,
 		DomainSuffix:     domainSuffix,
@@ -156,7 +173,7 @@ func newLocalController(t *testing.T) (*Controller, *FakeXdsUpdater) {
 		stop:             make(chan struct{}),
 	})
 	go ctl.Run(ctl.stop)
-	return ctl, fx
+	return ctl, fx, env
 }
 
 func newFakeController(t *testing.T) (*Controller, *FakeXdsUpdater) {

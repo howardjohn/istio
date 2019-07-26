@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"testing"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -104,8 +104,9 @@ func cleanup(ki kubernetes.Interface, fx *FakeXdsUpdater) {
 
 func TestPodCache(t *testing.T) {
 	t.Run("localApiserver", func(t *testing.T) {
-		c, fx := newLocalController(t)
-		defer c.Stop()
+		c, fx, e := newLocalController(t)
+		defer e.Stop()
+		//defer c.Stop()
 		defer cleanup(c.client, fx)
 		testPodCache(t, c, fx)
 	})

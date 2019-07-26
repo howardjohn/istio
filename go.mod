@@ -65,6 +65,8 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-ini/ini v1.33.0 // indirect
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
+	github.com/go-logr/logr v0.1.0 // indirect
+	github.com/go-logr/zapr v0.1.1 // indirect
 	github.com/go-redis/redis v6.10.2+incompatible
 	github.com/go-sql-driver/mysql v1.4.1 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
@@ -119,7 +121,7 @@ require (
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/lestrrat-go/jwx v0.9.0
 	github.com/lib/pq v1.1.1 // indirect
-	github.com/lukechampine/freeze v0.0.0-20160818180733-f514e08ae5a0
+	github.com/lukechampine/freeze v0.0.0-20160818180733-f514e08ae5a0 // indirect
 	github.com/mitchellh/copystructure v1.0.0
 	github.com/mitchellh/go-homedir v0.0.0-20161203194507-b8bc1bf76747
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
@@ -196,5 +198,7 @@ require (
 	k8s.io/helm v2.9.1+incompatible
 	k8s.io/klog v0.3.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20180216212618-50ae88d24ede // indirect
+	sigs.k8s.io/controller-runtime v0.1.12
+	sigs.k8s.io/testing_frameworks v0.1.1 // indirect
 	sigs.k8s.io/yaml v1.1.0
 )
