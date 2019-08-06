@@ -340,7 +340,7 @@ func (s *DiscoveryServer) ClearCache() {
 }
 
 // Start the actual push. Called from a timer.
-func (s *DiscoveryServer) doPush(req *model.UpdateRequest) {
+func (s *DiscoveryServer) doPush(req *model.UpdateRequest, done chan struct{}) {
 	// more config update events may happen while doPush is processing.
 	// we don't want to lose updates.
 	s.mutex.Lock()
@@ -351,6 +351,7 @@ func (s *DiscoveryServer) doPush(req *model.UpdateRequest) {
 	s.edsUpdates = map[string]struct{}{}
 	s.mutex.Unlock()
 	s.Push(req, edsUpdates)
+	done <- struct{}{}
 }
 
 // clearCache will clear all envoy caches. Called by service, instance and config handlers.
@@ -382,7 +383,8 @@ func (s *DiscoveryServer) handleUpdates(stopCh <-chan struct{}) {
 
 	// Keeps track of the update requests. If updates are debounce they will be merged.
 	var req *model.UpdateRequest
-
+	donech := make(chan struct{})
+	expect := false
 	for {
 		select {
 		case r := <-s.updateChannel:
@@ -397,6 +399,17 @@ func (s *DiscoveryServer) handleUpdates(stopCh <-chan struct{}) {
 			req = &merged
 
 		case now := <-timeChan:
+			if expect {
+				select {
+				case <-donech:
+					adsLog.Errorf("howardjohn debounce finished normally!")
+					expect = false
+				default:
+					timeChan = time.After(DebounceAfter)
+					adsLog.Errorf("howardjohn skipping debounce, blocked!")
+					continue
+				}
+			}
 			timeChan = nil
 
 			eventDelay := now.Sub(startDebounce)
@@ -408,7 +421,8 @@ func (s *DiscoveryServer) handleUpdates(stopCh <-chan struct{}) {
 					pushCounter, debouncedEvents,
 					quietTime, eventDelay, req)
 
-				go s.doPush(req)
+				go s.doPush(req, donech)
+				expect = true
 				req = nil
 				debouncedEvents = 0
 				continue
