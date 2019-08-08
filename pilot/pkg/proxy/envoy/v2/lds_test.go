@@ -15,6 +15,7 @@ package v2_test
 
 import (
 	"io/ioutil"
+	"istio.io/pkg/log"
 	"os"
 	"testing"
 	"time"
@@ -224,16 +225,19 @@ func TestLDSWithDefaultSidecar(t *testing.T) {
 
 	adsResponse.Watch()
 
+	log.Errorf("howardjohn: wait for LDS")
 	_, err = adsResponse.Wait("lds", 10*time.Second)
 	if err != nil {
 		t.Fatal("Failed to receive LDS response", err)
 		return
 	}
+	log.Errorf("howardjohn: wait for RDS")
 	_, err = adsResponse.Wait("rds", 10*time.Second)
 	if err != nil {
 		t.Fatal("Failed to receive RDS response", err)
 		return
 	}
+	log.Errorf("howardjohn: wait for CDS")
 	_, err = adsResponse.Wait("cds", 10*time.Second)
 	if err != nil {
 		t.Fatal("Failed to receive CDS response", err)

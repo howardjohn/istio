@@ -426,9 +426,9 @@ func (s *Server) initMesh(args *PilotArgs) error {
 		}
 	}
 
-	log.Infof("mesh configuration %s", spew.Sdump(meshConfig))
-	log.Infof("version %s", version.Info.String())
-	log.Infof("flags %s", spew.Sdump(args))
+	//log.Infof("mesh configuration %s", spew.Sdump(meshConfig))
+	//log.Infof("version %s", version.Info.String())
+	//log.Infof("flags %s", spew.Sdump(args))
 
 	s.mesh = meshConfig
 	return nil

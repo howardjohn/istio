@@ -370,6 +370,7 @@ func (a *ADSC) handleLDS(ll []*xdsapi.Listener) {
 	select {
 	case a.Updates <- "lds":
 	default:
+		fmt.Println("howardjohn: Skipping lds")
 	}
 }
 
@@ -492,6 +493,7 @@ func (a *ADSC) handleCDS(ll []*xdsapi.Cluster) {
 	select {
 	case a.Updates <- "cds":
 	default:
+		fmt.Println("howardjohn: Skipping cds")
 	}
 }
 
@@ -554,6 +556,7 @@ func (a *ADSC) handleEDS(eds []*xdsapi.ClusterLoadAssignment) {
 	select {
 	case a.Updates <- "eds":
 	default:
+		fmt.Println("howardjohn: Skipping eds")
 	}
 }
 
@@ -596,6 +599,7 @@ func (a *ADSC) handleRDS(configurations []*xdsapi.RouteConfiguration) {
 	select {
 	case a.Updates <- "rds":
 	default:
+		fmt.Println("howardjohn: Skipping rds")
 	}
 
 }
