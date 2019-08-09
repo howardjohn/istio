@@ -143,7 +143,7 @@ require (
 	github.com/pquerna/cachecontrol v0.0.0-20180306154005-525d0eb5f91d // indirect
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
 	github.com/prometheus/client_model v0.0.0-20190115171406-56726106282f
-	github.com/prometheus/common v0.2.0
+	github.com/prometheus/common v0.6.0
 	github.com/prometheus/prom2json v1.1.0
 	github.com/ryanuber/go-glob v0.0.0-20160226084822-572520ed46db // indirect
 	github.com/satori/go.uuid v1.2.0
