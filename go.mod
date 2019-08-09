@@ -82,7 +82,7 @@ require (
 	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/googleapis/gax-go v2.0.0+incompatible
-	github.com/googleapis/gax-go/v2 v2.0.4
+	github.com/googleapis/gax-go/v2 v2.0.5
 	github.com/googleapis/gnostic v0.1.0 // indirect
 	github.com/gophercloud/gophercloud v0.0.0-20180327194212-2daf3049f2a9 // indirect
 	github.com/gorilla/mux v1.7.1
