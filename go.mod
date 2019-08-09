@@ -59,7 +59,7 @@ require (
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
 	github.com/facebookgo/stackerr v0.0.0-20150612192056-c2fcf88613f4 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
-	github.com/fluent/fluent-logger-golang v1.3.0
+	github.com/fluent/fluent-logger-golang v1.4.0
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/ghodss/yaml v1.0.0
