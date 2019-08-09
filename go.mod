@@ -11,7 +11,7 @@ replace github.com/spf13/viper => github.com/istio/viper v1.3.3-0.20190515210538
 require (
 	cloud.google.com/go v0.37.4
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
-	contrib.go.opencensus.io/exporter/stackdriver v0.6.0
+	contrib.go.opencensus.io/exporter/stackdriver v0.12.5
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	fortio.org/fortio v1.3.0
 	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
