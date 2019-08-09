@@ -65,7 +65,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-ini/ini v1.33.0 // indirect
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
-	github.com/go-redis/redis v6.10.2+incompatible
+	github.com/go-redis/redis v6.15.2+incompatible
 	github.com/go-sql-driver/mysql v1.4.1 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gocql/gocql v0.0.0-20190423091413-b99afaf3b163 // indirect
