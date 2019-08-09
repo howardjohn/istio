@@ -53,7 +53,7 @@ require (
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
 	github.com/elazarl/goproxy v0.0.0-20190421051319-9d40249d3c2f // indirect
 	github.com/elazarl/goproxy/ext v0.0.0-20190421051319-9d40249d3c2f // indirect
-	github.com/emicklei/go-restful v2.6.0+incompatible
+	github.com/emicklei/go-restful v2.9.6+incompatible
 	github.com/envoyproxy/go-control-plane v0.8.4
 	github.com/evanphx/json-patch v3.0.0+incompatible
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
