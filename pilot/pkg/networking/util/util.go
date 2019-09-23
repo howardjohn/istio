@@ -16,12 +16,15 @@ package util
 
 import (
 	"fmt"
+	"github.com/golang/protobuf/jsonpb"
 	"math"
 	"net"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	xdsapi "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
@@ -222,18 +225,80 @@ func GetByAddress(listeners []*xdsapi.Listener, addr core.Address) *xdsapi.Liste
 	return nil
 }
 
+var pool = sync.Pool{
+	// New creates an object when the pool has nothing available to return.
+	// New must return an interface{} to make it flexible. You have to cast
+	// your type after getting it.
+	New: func() interface{} {
+		log.Errorf("howardjohn: creating new buffer")
+		b := proto.NewBuffer(nil)
+		b.SetDeterministic(true)
+		return mystruct{b: b}
+	},
+}
+
+type mystruct struct {
+	b        *proto.Buffer
+	uses     []string
+	previous []string
+}
+
 // MessageToAnyWithError converts from proto message to proto Any
 func MessageToAnyWithError(msg proto.Message) (*any.Any, error) {
 	b := proto.NewBuffer(nil)
 	b.SetDeterministic(true)
+	c := proto.NewBuffer(nil)
+	c.SetDeterministic(true)
+
+	//pget := pool.Get().(mystruct)
+	//b := pget.b
+	//defer func() {
+	//	b.Reset()
+	//	pool.Put(pget)
+	//}()
+	//pget.uses = append(pget.uses, proto.MessageName(msg))
 	err := b.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
-	return &any.Any{
+	err = c.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+	if !reflect.DeepEqual(b.Bytes(), c.Bytes()) {
+		log.Errorf("howardjohn: bc mismatch! %v", msg)
+	}
+	resp := &any.Any{
 		TypeUrl: "type.googleapis.com/" + proto.MessageName(msg),
 		Value:   b.Bytes(),
-	}, nil
+	}
+	a, err := ptypes.MarshalAny(msg)
+	a1, err := (&jsonpb.Marshaler{}).MarshalToString(a)
+	if err != nil {
+		log.Errorf("howardjohn: failed a1: %v, %v", err, proto.MessageName(msg))
+	}
+	a2, err := (&jsonpb.Marshaler{}).MarshalToString(resp)
+	if err != nil {
+		log.Errorf("howardjohn: failed a2: %v, %v", err, proto.MessageName(msg))
+	}
+	if !reflect.DeepEqual(a1, a2) {
+		log.Errorf("howardjohn: json mismatch: \n howardjohn: %v\nhowardjohn:%v", a1, a2)
+	}
+	//pget.previous = append(pget.previous, a1)
+	if !reflect.DeepEqual(a, resp) {
+		s1, _ := (&jsonpb.Marshaler{}).MarshalToString(a)
+		s2, _ := (&jsonpb.Marshaler{}).MarshalToString(resp)
+		log.Errorf("howardjohn: bytes mismatch! \nhowardjohn:%v\nhowardjohn:%v", s1, s2) //, a, resp)
+		//log.Errorf("howardjohn: bytes mismatch!%v\nhowardjohn:%v\nhowardjohn:%v", len(pget.uses), "", "") //, a, resp)
+		//if len(pget.previous) < 10 {
+		//	log.Errorf("howardjohn:!!! %v", pget.previous)
+		//}
+		//log.Errorf("howardjohn: %v", string(debug.Stack()))
+		//if len(pget.previous) > 100 {
+		//	runtime.GC()
+		//}
+	}
+	return resp, nil
 }
 
 // MessageToAny converts from proto message to proto Any

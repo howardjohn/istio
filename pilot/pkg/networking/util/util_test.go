@@ -15,6 +15,9 @@
 package util
 
 import (
+	mccpb "istio.io/istio/pilot/pkg/networking/plugin/mixer/client"
+
+	tcp_proxy "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/tcp_proxy/v2"
 	"reflect"
 	"testing"
 	"time"
@@ -29,7 +32,6 @@ import (
 	"github.com/golang/protobuf/ptypes/any"
 	structpb "github.com/golang/protobuf/ptypes/struct"
 	"github.com/golang/protobuf/ptypes/wrappers"
-
 	proto2 "istio.io/istio/pkg/proto"
 
 	"github.com/golang/protobuf/proto"
@@ -648,4 +650,80 @@ func TestCustomHandleCrash(t *testing.T) {
 	})
 
 	panic("test")
+}
+
+func buildSmallCluster() *v2.Cluster {
+	return &v2.Cluster{
+		Name: "outbound|8080||test.example.org",
+		LoadAssignment: &v2.ClusterLoadAssignment{
+			ClusterName: "outbound|8080||test.example.org",
+			Endpoints: []*endpoint.LocalityLbEndpoints{
+				{
+					Locality: &core.Locality{
+						Region:  "region1",
+						Zone:    "zone1",
+						SubZone: "subzone2",
+					},
+				},
+				{
+					Locality: &core.Locality{
+						Region:  "region2",
+						Zone:    "zone1",
+						SubZone: "subzone2",
+					},
+				},
+				{
+					Locality: &core.Locality{
+						Region:  "region2",
+						Zone:    "zone1",
+						SubZone: "subzone2",
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestMessageToAny(t *testing.T) {
+	la := &v2.ClusterLoadAssignment{
+		ClusterName: "outbound|8080||test.example.org",
+		Endpoints: []*endpoint.LocalityLbEndpoints{
+			{
+				Locality: &core.Locality{
+					Region:  "region1",
+					Zone:    "zone1",
+					SubZone: "subzone1",
+				},
+			},
+		},
+	}
+	la2 := *la
+	la2.Endpoints = append(la2.Endpoints, &endpoint.LocalityLbEndpoints{
+		Locality: &core.Locality{
+			Region:  "region3",
+			Zone:    "",
+			SubZone: "",
+		},
+	})
+	tcp := &mccpb.TcpClientConfig{}
+	tcpProxy := &tcp_proxy.TcpProxy{
+		StatPrefix:       PassthroughCluster,
+		ClusterSpecifier: &tcp_proxy.TcpProxy_Cluster{Cluster: PassthroughCluster},
+	}
+	base := MessageToAny(la)
+	_ = MessageToAny(buildSmallCluster())
+	_ = MessageToAny(buildFakeCluster())
+	base2 := MessageToAny(&la2)
+	for i := 0; i < 3; i++ {
+		_ = MessageToAny(tcp)
+		_ = MessageToAny(tcpProxy)
+		n := MessageToAny(la)
+		n2 := MessageToAny(&la2)
+		if !reflect.DeepEqual(base, n) {
+			t.Fatalf("failed")
+		}
+		if !reflect.DeepEqual(base2, n2) {
+			t.Fatalf("failed")
+		}
+	}
 }
