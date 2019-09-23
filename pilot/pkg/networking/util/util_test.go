@@ -707,6 +707,7 @@ func TestMessageToAny(t *testing.T) {
 	})
 	tcp := &mccpb.TcpClientConfig{
 		Transport: &mccpb.TransportConfig{},
+		MixerAttributes: &mpb.Attributes{Attributes: attrs}.
 	}
 	tcpProxy := &tcp_proxy.TcpProxy{
 		StatPrefix:       PassthroughCluster,
