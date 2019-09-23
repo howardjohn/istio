@@ -16,10 +16,8 @@ package util
 
 import (
 	"fmt"
-	"github.com/golang/protobuf/jsonpb"
 	"math"
 	"net"
-	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -34,6 +32,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/conversion"
 	xdsutil "github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
@@ -230,27 +229,20 @@ var pool = sync.Pool{
 	// New must return an interface{} to make it flexible. You have to cast
 	// your type after getting it.
 	New: func() interface{} {
-		log.Errorf("howardjohn: creating new buffer")
 		b := proto.NewBuffer(nil)
-		return mystruct{b: b}
+		b.SetDeterministic(true)
+		return b
 	},
-}
-
-type mystruct struct {
-	b        *proto.Buffer
-	uses     []string
-	previous []string
 }
 
 // MessageToAnyWithError converts from proto message to proto Any
 func MessageToAnyWithError(msg proto.Message) (*any.Any, error) {
-	pget := pool.Get().(mystruct)
-	b := pget.b
+	b := pool.Get().(*proto.Buffer)
 	defer func() {
 		b.Reset()
-		pool.Put(pget)
+		b.SetBuf(nil)
+		pool.Put(b)
 	}()
-	pget.uses = append(pget.uses, proto.MessageName(msg))
 	err := b.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -259,24 +251,13 @@ func MessageToAnyWithError(msg proto.Message) (*any.Any, error) {
 		TypeUrl: "type.googleapis.com/" + proto.MessageName(msg),
 		Value:   b.Bytes(),
 	}
-	a, err := ptypes.MarshalAny(msg)
-	if !reflect.DeepEqual(a, resp) {
-		s1, _ := (&jsonpb.Marshaler{}).MarshalToString(a)
-		s2, _ := (&jsonpb.Marshaler{}).MarshalToString(resp)
-		log.Errorf("howardjohn: bytes mismatch! \nhowardjohn:%v\nhowardjohn:%v", s1, s2) //, a, resp)
-		log.Errorf("howardjohn: %v %v", a.Value, a.Value==nil)
-		log.Errorf("howardjohn: %v %v", resp.Value, resp.Value==nil)
-		log.Errorf("howardjohn: %v", reflect.DeepEqual(a.Value, resp.Value))
-		//log.Errorf("howardjohn: bytes mismatch!%v\nhowardjohn:%v\nhowardjohn:%v", len(pget.uses), "", "") //, a, resp)
-		//if len(pget.previous) < 10 {
-		//	log.Errorf("howardjohn:!!! %v", pget.previous)
-		//}
-		//log.Errorf("howardjohn: %v", string(debug.Stack()))
-		//if len(pget.previous) > 100 {
-		//	runtime.GC()
-		//}
+
+	_, e2 := (&jsonpb.Marshaler{}).MarshalToString(resp)
+	if e2 != nil {
+		log.Errorf("howardjohn: errs %v for type %v", e2, proto.MessageName(msg))
 	}
-	return a, nil
+
+	return resp, nil
 }
 
 // MessageToAny converts from proto message to proto Any
