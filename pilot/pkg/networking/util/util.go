@@ -246,9 +246,9 @@ type mystruct struct {
 // MessageToAnyWithError converts from proto message to proto Any
 func MessageToAnyWithError(msg proto.Message) (*any.Any, error) {
 	b := proto.NewBuffer(nil)
-	b.SetDeterministic(true)
+	//b.SetDeterministic(true)
 	c := proto.NewBuffer(nil)
-	c.SetDeterministic(true)
+	//c.SetDeterministic(true)
 
 	//pget := pool.Get().(mystruct)
 	//b := pget.b
@@ -289,6 +289,9 @@ func MessageToAnyWithError(msg proto.Message) (*any.Any, error) {
 		s1, _ := (&jsonpb.Marshaler{}).MarshalToString(a)
 		s2, _ := (&jsonpb.Marshaler{}).MarshalToString(resp)
 		log.Errorf("howardjohn: bytes mismatch! \nhowardjohn:%v\nhowardjohn:%v", s1, s2) //, a, resp)
+		log.Errorf("howardjohn: %v %v", a.Value, a.Value==nil)
+		log.Errorf("howardjohn: %v %v", resp.Value, resp.Value==nil)
+		log.Errorf("howardjohn: %v", reflect.DeepEqual(a.Value, resp.Value))
 		//log.Errorf("howardjohn: bytes mismatch!%v\nhowardjohn:%v\nhowardjohn:%v", len(pget.uses), "", "") //, a, resp)
 		//if len(pget.previous) < 10 {
 		//	log.Errorf("howardjohn:!!! %v", pget.previous)

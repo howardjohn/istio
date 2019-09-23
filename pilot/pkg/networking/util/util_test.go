@@ -705,18 +705,21 @@ func TestMessageToAny(t *testing.T) {
 			SubZone: "",
 		},
 	})
-	tcp := &mccpb.TcpClientConfig{}
+	tcp := &mccpb.TcpClientConfig{
+		Transport: &mccpb.TransportConfig{},
+	}
 	tcpProxy := &tcp_proxy.TcpProxy{
 		StatPrefix:       PassthroughCluster,
 		ClusterSpecifier: &tcp_proxy.TcpProxy_Cluster{Cluster: PassthroughCluster},
 	}
+	_ = tcpProxy
 	base := MessageToAny(la)
 	_ = MessageToAny(buildSmallCluster())
 	_ = MessageToAny(buildFakeCluster())
 	base2 := MessageToAny(&la2)
-	for i := 0; i < 3; i++ {
-		_ = MessageToAny(tcp)
+	for i := 0; i < 10; i++ {
 		_ = MessageToAny(tcpProxy)
+		_ = MessageToAny(tcp)
 		n := MessageToAny(la)
 		n2 := MessageToAny(&la2)
 		if !reflect.DeepEqual(base, n) {
