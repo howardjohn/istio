@@ -32,7 +32,6 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/conversion"
 	xdsutil "github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"github.com/gogo/protobuf/types"
-	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
@@ -237,26 +236,23 @@ var pool = sync.Pool{
 
 // MessageToAnyWithError converts from proto message to proto Any
 func MessageToAnyWithError(msg proto.Message) (*any.Any, error) {
-	b := pool.Get().(*proto.Buffer)
-	defer func() {
-		b.Reset()
-		b.SetBuf(nil)
-		pool.Put(b)
-	}()
+	//b := pool.Get().(*proto.Buffer)
+	//defer func() {
+	//	b.Reset()
+	//	b.SetBuf(nil)
+	//	pool.Put(b)
+	//}()
+	b := proto.NewBuffer(nil)
 	err := b.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
+	result := make([]byte, len(b.Bytes()))
+	copy(result, b.Bytes())
 	resp := &any.Any{
 		TypeUrl: "type.googleapis.com/" + proto.MessageName(msg),
-		Value:   b.Bytes(),
+		Value:   result,
 	}
-
-	_, e2 := (&jsonpb.Marshaler{}).MarshalToString(resp)
-	if e2 != nil {
-		log.Errorf("howardjohn: errs %v for type %v", e2, proto.MessageName(msg))
-	}
-
 	return resp, nil
 }
 

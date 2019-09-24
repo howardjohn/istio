@@ -15,24 +15,20 @@
 package util
 
 import (
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/ptypes/duration"
-	mccpb "istio.io/istio/pilot/pkg/networking/plugin/mixer/client"
-
 	"reflect"
 	"testing"
 	"time"
 
-	hcm "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2"
+	"github.com/golang/protobuf/ptypes/duration"
 
-	tcp_proxy "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/tcp_proxy/v2"
-	mpb "istio.io/istio/pilot/pkg/networking/plugin/mixer/client"
+	hcm "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2"
 
 	v2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	listener "github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
 	http_conn "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2"
+	tcp_proxy "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/tcp_proxy/v2"
 	xdsutil "github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
@@ -690,43 +686,7 @@ func buildSmallCluster() *v2.Cluster {
 	}
 }
 
-func TestMessageToAny(t *testing.T) {
-	la := &v2.ClusterLoadAssignment{
-		ClusterName: "outbound|8080||test.example.org",
-		Endpoints: []*endpoint.LocalityLbEndpoints{
-			{
-				Locality: &core.Locality{
-					Region:  "region1",
-					Zone:    "zone1",
-					SubZone: "subzone1",
-				},
-			},
-		},
-	}
-	la2 := *la
-	la2.Endpoints = append(la2.Endpoints, &endpoint.LocalityLbEndpoints{
-		Locality: &core.Locality{
-			Region:  "region3",
-			Zone:    "",
-			SubZone: "",
-		},
-	})
-	tcp := &mccpb.TcpClientConfig{
-		Transport: &mccpb.TransportConfig{
-			CheckCluster:          "foobar",
-			ReportCluster:         "asdf",
-			NetworkFailPolicy:     &mccpb.NetworkFailPolicy{Policy: mccpb.NetworkFailPolicy_FAIL_CLOSE},
-			ReportBatchMaxEntries: 123,
-			ReportBatchMaxTime:    &duration.Duration{Seconds: 5},
-		},
-		MixerAttributes: &mpb.Attributes{
-			Attributes: map[string]*mpb.Attributes_AttributeValue{
-				"a":           {Value: &mpb.Attributes_AttributeValue_StringValue{StringValue: "b"}},
-				"target.user": {Value: &mpb.Attributes_AttributeValue_StringValue{StringValue: "target-user"}},
-				"target.name": {Value: &mpb.Attributes_AttributeValue_StringValue{StringValue: "target-name"}},
-			},
-		},
-	}
+func BenchmarkMessageToAny(b *testing.B) {
 	tcpFilter := &listener.Filter{
 		Name: "tcp-proxy",
 	}
@@ -735,42 +695,6 @@ func TestMessageToAny(t *testing.T) {
 		ClusterSpecifier: &tcp_proxy.TcpProxy_Cluster{Cluster: PassthroughCluster},
 	}
 	tcpFilter.ConfigType = &listener.Filter_TypedConfig{TypedConfig: MessageToAny(tcpProxy)}
-	l := &v2.Listener{
-		Name: "foobar",
-		FilterChains: []*listener.FilterChain{{
-			Filters: []*listener.Filter{tcpFilter},
-		}},
-	}
-	for i := 0; i < 1000; i++ {
-		_ = MessageToAny(tcp)
-		_ = MessageToAny(tcpProxy)
-		_ = MessageToAny(tcpFilter)
-		_ = MessageToAny(l)
-		_ = MessageToAny(la)
-		_ = MessageToAny(&la2)
-	}
-	_ = tcpProxy
-	base := MessageToAny(la)
-	_ = MessageToAny(buildSmallCluster())
-	_ = MessageToAny(buildFakeCluster())
-	base2 := MessageToAny(&la2)
-	for i := 0; i < 10; i++ {
-		_ = MessageToAny(tcpProxy)
-		_ = MessageToAny(tcp)
-		n := MessageToAny(la)
-		n2 := MessageToAny(&la2)
-		if !reflect.DeepEqual(base, n) {
-			t.Fatalf("failed")
-		}
-		if !reflect.DeepEqual(base2, n2) {
-			t.Fatalf("failed")
-		}
-	}
-
-	pre := []byte{10, 12, 48, 46, 48, 46, 48, 46, 48, 95, 56, 48, 54, 48, 18, 14, 10, 12, 18, 7, 48, 46, 48, 46, 48, 46, 48, 24, 252, 62, 26, 186, 1, 10, 53, 26, 17, 10, 11, 49, 48, 46, 53, 50, 46, 57, 46, 49, 50, 51, 18, 2, 8, 32, 26, 32, 10, 25, 102, 101, 56, 48, 58, 58, 98, 99, 51, 100, 58, 100, 101, 102, 102, 58, 102, 101, 52, 102, 58, 57, 98, 52, 100, 18, 3, 8, 128, 1, 26, 128, 1, 10, 15, 101, 110, 118, 111, 121, 46, 116, 99, 112, 95, 112, 114, 111, 120, 121, 34, 109, 10, 69, 116, 121, 112, 101, 46, 103, 111, 111, 103, 108, 101, 97, 112, 105, 115, 46, 99, 111, 109, 47, 101, 110, 118, 111, 121, 46, 99, 111, 110, 102, 105, 103, 46, 102, 105, 108, 116, 101, 114, 46, 110, 101, 116, 119, 111, 114, 107, 46, 116, 99, 112, 95, 112, 114, 111, 120, 121, 46, 118, 50, 46, 84, 99, 112, 80, 114, 111, 120, 121, 18, 36, 10, 16, 66, 108, 97, 99, 107, 72, 111, 108, 101, 67, 108, 117, 115, 116, 101, 114, 18, 16, 66, 108, 97, 99, 107, 72, 111, 108, 101, 67, 108, 117, 115, 116, 101, 114, 26, 157, 2, 26, 154, 2, 10, 29, 101, 110, 118, 111, 121, 46, 104, 116, 116, 112, 95, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 95, 109, 97, 110, 97, 103, 101, 114, 34, 248, 1, 10, 96, 116, 121, 112, 101, 46, 103, 111, 111, 103, 108, 101, 97, 112, 105, 115, 46, 99, 111, 109, 47, 101, 110, 118, 111, 121, 46, 99, 111, 110, 102, 105, 103, 46, 102, 105, 108, 116, 101, 114, 46, 110, 101, 116, 119, 111, 114, 107, 46, 104, 116, 116, 112, 95, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 95, 109, 97, 110, 97, 103, 101, 114, 46, 118, 50, 46, 72, 116, 116, 112, 67, 111, 110, 110, 101, 99, 116, 105, 111, 110, 77, 97, 110, 97, 103, 101, 114, 18, 147, 1, 10, 29, 73, 110, 98, 111, 117, 110, 100, 80, 97, 115, 115, 116, 104, 114, 111, 117, 103, 104, 67, 108, 117, 115, 116, 101, 114, 73, 112, 118, 54, 18, 29, 73, 110, 98, 111, 117, 110, 100, 80, 97, 115, 115, 116, 104, 114, 111, 117, 103, 104, 67, 108, 117, 115, 116, 101, 114, 73, 112, 118, 54, 53, 53, 51, 53, 46, 54, 53, 53, 51, 53, 10, 35, 10, 21, 99, 111, 110, 116, 101, 120, 116, 46, 114, 101, 112, 111, 114, 116, 101, 114, 46, 107, 105, 110, 100, 18, 10, 18, 8, 111, 117, 116, 98, 111, 117, 110, 100, 10, 81, 10, 20, 99, 111, 110, 116, 101, 120, 116, 46, 114, 101, 112, 111, 114, 116, 101, 114, 46, 117, 105, 100, 18, 57, 18, 55, 107, 117, 98, 101, 114, 110, 101, 116, 101, 115, 58, 2, 10, 0, 122, 5, 16, 128, 194, 215, 47, 128, 1, 2, 136, 1, 1, 105, 110, 100, 18, 10, 18, 8, 111, 117, 116, 98, 111, 117, 110, 100, 10, 81, 10, 20, 99, 111, 110, 116, 101, 120, 116, 46, 114, 101, 112, 111, 114, 116, 101, 114, 46, 117, 105, 100, 18, 57, 18, 55, 107, 117, 98, 101, 114, 110, 101, 116, 101, 115, 58, 47, 47, 115, 118, 99, 48, 52, 45, 48, 45, 51, 45, 54, 52, 99, 102, 54, 56, 54, 52, 52, 55, 45, 53, 108, 100, 110, 53, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 10, 48, 10, 24, 100, 101, 115, 116, 58, 2, 10, 0, 74, 30, 10, 28, 101, 110, 118, 111, 121, 46, 108, 105, 115, 116, 101, 110, 101, 114, 46, 116, 108, 115, 95, 105, 110, 115, 112, 101, 99, 116, 111, 114, 74, 31, 10, 29, 101, 110, 118, 111, 121, 46, 108, 105, 115, 116, 101, 110, 101, 114, 46, 104, 116, 116, 112, 95, 105, 110, 115, 112, 101, 99, 116, 111, 114, 122, 5, 16, 128, 194, 215, 47, 128, 1, 2, 136, 1, 1, 5, 16, 128, 194, 215, 47, 128, 1, 2, 136, 1, 1, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 46, 115, 118, 99, 46, 99, 108, 117, 115, 116, 101, 114, 46, 108, 111, 99, 97, 108, 18, 167, 1, 10, 17, 105, 110, 98, 111, 117, 110, 100, 124, 104, 116, 116, 112, 124, 56, 48, 56, 48, 18, 1, 42, 26, 142, 1, 10, 3, 10, 1, 47, 42, 52, 10, 50, 115, 118, 99, 48, 52, 45, 48, 45, 51, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 46, 115, 118, 99, 46, 99, 108, 117, 115, 116, 101, 114, 46, 108, 111, 99, 97, 108, 58, 56, 48, 56, 48, 47, 42, 114, 7, 100, 101, 102, 97, 117, 108, 116, 18, 72, 66, 0, 186, 1, 0, 10, 65, 105, 110, 98, 111, 117, 110, 100, 124, 56, 48, 56, 48, 124, 104, 116, 116, 112, 45, 119, 101, 98, 124, 115, 118, 99, 48, 52, 45, 48, 45, 51, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 46, 115, 118, 99, 46, 99, 108, 117, 115, 116, 101, 114, 46, 108, 111, 99, 97, 108, 58, 0, 26, 133, 6, 10, 0, 26, 128, 6, 10, 29, 101, 110, 118, 111, 121, 46, 104, 116, 116, 112, 95, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 95, 109, 97, 110, 97, 103, 101, 114, 34, 222, 5, 10, 96, 116, 121, 112, 101, 46, 103, 111, 111, 103, 108, 101, 97, 112, 105, 115, 46, 99, 111, 109, 47, 101, 110, 118, 111, 121, 46, 99, 111, 110, 102, 105, 103, 46, 102, 105, 108, 116, 101, 114, 46, 110, 101, 116, 119, 111, 114, 107, 46, 104, 116, 116, 112, 95, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 95, 109, 97, 110, 97, 103, 101, 114, 46, 118, 50, 46, 72, 116, 116, 112, 67, 111, 110, 110, 101, 99, 116, 105, 111, 110, 77, 97, 110, 97, 103, 101, 114, 18, 249, 4, 10, 29, 73, 110, 98, 111, 117, 110, 100, 80, 97, 115, 115, 116, 104, 114, 111, 117, 103, 104, 67, 108, 117, 115, 116, 101, 114, 73, 112, 118, 54, 18, 29, 73, 110, 98, 111, 117, 110, 100, 80, 97, 115, 115, 116, 104, 114, 111, 117, 103, 104, 67, 108, 117, 115, 116, 101, 114, 73, 112, 118, 54, 53, 53, 51, 53, 46, 54, 53, 53, 51, 53, 10, 35, 10, 21, 99, 111, 110, 116, 101, 120, 116, 46, 114, 101, 112, 111, 114, 116, 101, 114, 46, 107, 105, 110, 100, 18, 10, 18, 8, 111, 117, 116, 98, 111, 117, 110, 100, 10, 81, 10, 20, 99, 111, 110, 116, 101, 120, 116, 46, 114, 101, 112, 111, 114, 116, 101, 114, 46, 117, 105, 100, 18, 57, 18, 55, 107, 117, 98, 101, 114, 110, 101, 116, 101, 115, 58, 47, 47, 115, 118, 99, 48, 52, 45, 48, 45, 51, 45, 54, 52, 99, 102, 54, 56, 54, 52, 52, 55, 45, 53, 108, 100, 110, 53, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 10, 48, 10, 24, 100, 101, 115, 116, 105, 110, 97, 116, 105, 111, 110, 46, 115, 101, 114, 118, 105, 99, 101, 46, 104, 111, 115, 116, 18, 20, 18, 18, 80, 97, 115, 115, 116, 104, 114, 111, 117, 103, 104, 67, 108, 117, 115, 116, 101, 114, 10, 37, 10, 16, 115, 111, 117, 114, 99, 101, 46, 110, 97, 109, 101, 115, 112, 97, 99, 101, 18, 17, 18, 15, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 10, 71, 10, 10, 115, 111, 117, 114, 99, 101, 46, 117, 105, 100, 18, 57, 18, 55, 107, 117, 98, 101, 114, 110, 101, 116, 101, 115, 58, 47, 47, 115, 118, 99, 48, 52, 45, 48, 45, 51, 45, 54, 52, 99, 102, 54, 56, 54, 52, 52, 55, 45, 53, 108, 100, 110, 53, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 24, 1, 1, 2, 138, 1, 8, 10, 2, 8, 1, 32, 1, 40, 1, 186, 1, 11, 10, 9, 119, 101, 98, 115, 111, 99, 107, 101, 116, 194, 1, 0, 242, 1, 2, 8, 1, 34, 239, 1, 10, 65, 105, 110, 98, 111, 117, 110, 100, 124, 56, 48, 56, 48, 124, 104, 116, 116, 112, 45, 119, 101, 98, 124, 115, 118, 99, 48, 52, 45, 48, 45, 51, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 46, 115, 118, 99, 46, 99, 108, 117, 115, 116, 101, 114, 46, 108, 111, 99, 97, 108, 18, 167, 1, 10, 17, 105, 110, 98, 111, 117, 110, 100, 124, 104, 116, 116, 112, 124, 56, 48, 56, 48, 18, 1, 42, 26, 142, 1, 10, 3, 10, 1, 47, 42, 52, 10, 50, 115, 118, 99, 48, 52, 45, 48, 45, 51, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 46, 115, 118, 99, 46, 99, 108, 117, 115, 116, 101, 114, 46, 108, 111, 99, 97, 108, 58, 56, 48, 56, 48, 47, 42, 114, 7, 100, 101, 102, 97, 117, 108, 116, 18, 72, 66, 0, 186, 1, 0, 10, 65, 105, 110, 98, 111, 117, 110, 100, 124, 56, 48, 56, 48, 124, 104, 116, 116, 112, 45, 119, 101, 98, 124, 115, 118, 99, 48, 52, 45, 48, 45, 51, 46, 115, 101, 114, 118, 105, 99, 101, 45, 103, 114, 97, 112, 104, 48, 52, 46, 115, 118, 99, 46, 99, 108, 117, 115, 116, 101, 114, 46, 108, 111, 99, 97, 108, 58, 0, 58, 2, 10, 0, 74, 30, 10, 28, 101, 110, 118, 111, 121, 46, 108, 105, 115, 116, 101, 110, 101, 114, 46, 116, 108, 115, 95, 105, 110, 115, 112, 101, 99, 116, 111, 114, 122, 5, 16, 128, 194, 215, 47, 128, 1, 1, 136, 1, 1}
-	buf := proto.NewBuffer(pre)
-	buf.Reset()
-
 	hcm := &hcm.HttpConnectionManager{
 		CodecType:  hcm.HttpConnectionManager_AUTO,
 		StatPrefix: "foobar",
@@ -787,17 +711,11 @@ func TestMessageToAny(t *testing.T) {
 		Name:       "http-con-manager",
 		ConfigType: &listener.Filter_TypedConfig{TypedConfig: MessageToAny(hcm)},
 	}}}}, ListenerFiltersTimeout: &duration.Duration{Seconds: 5}, ContinueOnListenerFiltersTimeout: true, Transparent: (*wrappers.BoolValue)(nil), Freebind: (*wrappers.BoolValue)(nil), TrafficDirection: 2}
-	err := buf.Marshal(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp := &any.Any{
-		TypeUrl: "type.googleapis.com/" + proto.MessageName(msg),
-		Value:   buf.Bytes(),
-	}
-	s1, e2 := (&jsonpb.Marshaler{}).MarshalToString(resp)
-	t.Log(s1)
-	if e2 != nil {
-		t.Fatal(e2)
+
+	for n := 0; n < b.N; n++ {
+		_, err := MessageToAnyWithError(msg)
+		if err != nil {
+			b.Fatalf("got error marshaling: %v", err)
+		}
 	}
 }
