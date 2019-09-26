@@ -4,19 +4,16 @@ go 1.12
 
 replace github.com/golang/glog => github.com/istio/glog v0.0.0-20190424172949-d7cfb6fa2ccd
 
-replace k8s.io/klog => github.com/istio/klog v0.0.0-20190424230111-fb7481ea8bcf
+// replace k8s.io/klog => github.com/istio/klog v0.0.0-20190424230111-fb7481ea8bcf
 
 replace github.com/spf13/viper => github.com/istio/viper v1.3.3-0.20190515210538-2789fed3109c
 
 require (
 	cloud.google.com/go v0.38.0
-	contrib.go.opencensus.io/exporter/ocagent v0.4.12 // indirect
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.6.0
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	fortio.org/fortio v1.3.0
-	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
-	github.com/Azure/go-autorest v12.0.0+incompatible // indirect
 	github.com/DataDog/datadog-go v2.2.0+incompatible
 	github.com/Masterminds/semver v1.4.2 // indirect
 	github.com/Masterminds/sprig v2.14.1+incompatible // indirect
@@ -29,7 +26,6 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/armon/go-metrics v0.0.0-20190430140413-ec5e00d3c878 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
-	github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a // indirect
 	github.com/aws/aws-sdk-go v1.13.24
 	github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 // indirect
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
@@ -39,13 +35,12 @@ require (
 	github.com/circonus-labs/circonus-gometrics v2.3.1+incompatible
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/containerd/continuity v0.0.0-20190426062206-aaeac12a7ffc // indirect
-	github.com/coreos/go-oidc v0.0.0-20180117170138-065b426bd416
+	github.com/coreos/go-oidc v2.1.0+incompatible
 	github.com/cyphar/filepath-securejoin v0.2.2 // indirect
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1
 	github.com/dchest/siphash v1.1.0 // indirect
 	github.com/denisenkom/go-mssqldb v0.0.0-20190423183735-731ef375ac02 // indirect
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v1.13.1
 	github.com/docker/go-connections v0.4.0
@@ -56,7 +51,7 @@ require (
 	github.com/elazarl/go-bindata-assetfs v1.0.0 // indirect
 	github.com/elazarl/goproxy v0.0.0-20190630181448-f1e96bc0f4c5 // indirect
 	github.com/elazarl/goproxy/ext v0.0.0-20190630181448-f1e96bc0f4c5 // indirect
-	github.com/emicklei/go-restful v2.9.3+incompatible
+	github.com/emicklei/go-restful v2.9.5+incompatible
 	github.com/envoyproxy/go-control-plane v0.9.0
 	github.com/evanphx/json-patch v4.5.0+incompatible
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
@@ -87,7 +82,6 @@ require (
 	github.com/googleapis/gax-go v2.0.0+incompatible
 	github.com/googleapis/gax-go/v2 v2.0.5
 	github.com/googleapis/gnostic v0.3.1 // indirect
-	github.com/gophercloud/gophercloud v0.0.0-20190424031112-b9b92a825806 // indirect
 	github.com/gorilla/mux v1.7.2
 	github.com/gorilla/websocket v1.4.0
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
@@ -162,7 +156,6 @@ require (
 	go.uber.org/atomic v1.4.0
 	go.uber.org/multierr v1.1.0
 	go.uber.org/zap v1.10.0
-	golang.org/x/crypto v0.0.0-20190424203555-c05e17bb3b2d // indirect
 	golang.org/x/net v0.0.0-20190827160401-ba9fcec4b297
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
@@ -178,14 +171,13 @@ require (
 	gopkg.in/square/go-jose.v2 v2.3.1
 	gopkg.in/stack.v1 v1.7.0 // indirect
 	gopkg.in/yaml.v2 v2.2.2
-	gotest.tools v2.2.0+incompatible // indirect
 	istio.io/api v0.0.0-20190913194855-8920ca438254
 	istio.io/gogo-genproto v0.0.0-20190731221249-06e20ada0df2
 	istio.io/pkg v0.0.0-20190905225920-6d0bbfe3b229
 	k8s.io/api v0.0.0-20190925180651-d58b53da08f5
-	k8s.io/apiextensions-apiserver v0.0.0-20190221221350-bfb440be4b87
+	k8s.io/apiextensions-apiserver v0.0.0-20190918161926-8f644eb6e783
 	k8s.io/apimachinery v0.0.0-20190923155427-ec87dd743e08
-	k8s.io/client-go v11.0.0+incompatible
+	k8s.io/client-go v0.0.0-20190918160344-1fbdaa4c8d90
 	k8s.io/helm v2.13.1+incompatible
 	k8s.io/utils v0.0.0-20190923111123-69764acb6e8e // indirect
 	sigs.k8s.io/yaml v1.1.0

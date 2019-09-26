@@ -66,7 +66,7 @@ func NewAccessor(kubeConfig string, baseWorkDir string) (*Accessor, error) {
 	}
 	restConfig.APIPath = "/api"
 	restConfig.GroupVersion = &kubeApiCore.SchemeGroupVersion
-	restConfig.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: scheme.Codecs}
+	restConfig.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: scheme.Codecs}
 
 	set, err := kubeClient.NewForConfig(restConfig)
 	if err != nil {

@@ -35,6 +35,14 @@ type podImpl struct {
 	watches Watches
 }
 
+func (p *podImpl) GetEphemeralContainers(podName string, options metav1.GetOptions) (*apicorev1.EphemeralContainers, error) {
+	panic("implement me")
+}
+
+func (p *podImpl) UpdateEphemeralContainers(podName string, ephemeralContainers *apicorev1.EphemeralContainers) (*apicorev1.EphemeralContainers, error) {
+	panic("implement me")
+}
+
 func newPodInterface() corev1.PodInterface {
 	return &podImpl{
 		pods: make(map[string]*apicorev1.Pod),

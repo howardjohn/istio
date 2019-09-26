@@ -17,6 +17,7 @@ package mock
 import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
+	admissionregistrationv1 "k8s.io/client-go/kubernetes/typed/admissionregistration/v1"
 	admissionregistrationv1beta1 "k8s.io/client-go/kubernetes/typed/admissionregistration/v1beta1"
 	appsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	appsv1beta1 "k8s.io/client-go/kubernetes/typed/apps/v1beta1"
@@ -36,6 +37,7 @@ import (
 	coordinationv1 "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	coordinationv1beta1 "k8s.io/client-go/kubernetes/typed/coordination/v1beta1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	discoveryv1alpha1 "k8s.io/client-go/kubernetes/typed/discovery/v1alpha1"
 	eventsv1beta1 "k8s.io/client-go/kubernetes/typed/events/v1beta1"
 	extensionsv1beta1 "k8s.io/client-go/kubernetes/typed/extensions/v1beta1"
 	networkingv1 "k8s.io/client-go/kubernetes/typed/networking/v1"
@@ -60,6 +62,14 @@ var _ kubernetes.Interface = &kubeInterface{}
 type kubeInterface struct {
 	core       corev1.CoreV1Interface
 	extensions extensionsv1beta1.ExtensionsV1beta1Interface
+}
+
+func (c *kubeInterface) AdmissionregistrationV1() admissionregistrationv1.AdmissionregistrationV1Interface {
+	panic("implement me")
+}
+
+func (c *kubeInterface) DiscoveryV1alpha1() discoveryv1alpha1.DiscoveryV1alpha1Interface {
+	panic("implement me")
 }
 
 // newKubeInterface returns a lightweight fake that implements kubernetes.Interface. Only implements a portion of the
