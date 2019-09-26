@@ -17,7 +17,6 @@ package istioctl
 import (
 	"bytes"
 
-	"istio.io/istio/istioctl/cmd"
 
 	"istio.io/istio/pkg/test/framework/components/environment/kube"
 	"istio.io/istio/pkg/test/framework/resource"
@@ -48,13 +47,13 @@ func (c *kubeComponent) ID() resource.ID {
 
 // Invoke gets the discovery address for pilot.
 func (c *kubeComponent) Invoke(args []string) (string, error) {
-	var envArgs = []string{
-		"--kubeconfig",
-		c.env.Settings().KubeConfig,
-	}
+	//var envArgs = []string{
+	//	"--kubeconfig",
+	//	c.env.Settings().KubeConfig,
+	//}
 	var out bytes.Buffer
-	rootCmd := cmd.GetRootCmd(append(envArgs, args...))
-	rootCmd.SetOutput(&out)
-	fErr := rootCmd.Execute()
-	return out.String(), fErr
+	//rootCmd := cmd.GetRootCmd(append(envArgs, args...))
+	//rootCmd.SetOutput(&out)
+	//fErr := rootCmd.Execute()
+	return out.String(), nil
 }

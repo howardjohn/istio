@@ -36,7 +36,6 @@ import (
 
 	"istio.io/pkg/log"
 
-	"istio.io/istio/istioctl/pkg/multicluster"
 	"istio.io/istio/pkg/kube/secretcontroller"
 )
 
@@ -917,34 +916,34 @@ func CheckPodRunning(n, name string, kubeconfig string) error {
 
 // CreateMultiClusterSecret will create the secret associated with the remote cluster
 func CreateMultiClusterSecret(namespace string, remoteKubeConfig string, localKubeConfig string) error {
-	currentContext, err := ShellMuteOutput("kubectl --kubeconfig=%s config current-context", remoteKubeConfig)
-	if err != nil {
-		return err
-	}
-
-	currentContext = strings.Trim(currentContext, "\n")
-
-	config, err := multicluster.CreateRemoteSecret(remoteKubeConfig, currentContext, namespace, "istio-multi", currentContext)
-	if err != nil {
-		return err
-	}
-	secret, err := ioutil.TempFile("", "")
-	if err != nil {
-		return err
-	}
-	if _, err = secret.WriteString(config); err != nil {
-		return err
-	}
-	if err := secret.Close(); err != nil {
-		return err
-	}
-	log.Infof("Created multi-cluster secret %q for cluster %v", secret.Name(), remoteKubeConfig)
-
-	if _, err := ShellMuteOutput("kubectl --kubeconfig=%v -n %v apply -f %v", localKubeConfig, namespace, secret.Name()); err != nil {
-		return err
-	}
-
-	log.Infof("Secret for cluster %v created in cluster %v\n", remoteKubeConfig, localKubeConfig)
+	//currentContext, err := ShellMuteOutput("kubectl --kubeconfig=%s config current-context", remoteKubeConfig)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//currentContext = strings.Trim(currentContext, "\n")
+	//
+	//config, err := multicluster.CreateRemoteSecret(remoteKubeConfig, currentContext, namespace, "istio-multi", currentContext)
+	//if err != nil {
+	//	return err
+	//}
+	//secret, err := ioutil.TempFile("", "")
+	//if err != nil {
+	//	return err
+	//}
+	//if _, err = secret.WriteString(config); err != nil {
+	//	return err
+	//}
+	//if err := secret.Close(); err != nil {
+	//	return err
+	//}
+	//log.Infof("Created multi-cluster secret %q for cluster %v", secret.Name(), remoteKubeConfig)
+	//
+	//if _, err := ShellMuteOutput("kubectl --kubeconfig=%v -n %v apply -f %v", localKubeConfig, namespace, secret.Name()); err != nil {
+	//	return err
+	//}
+	//
+	//log.Infof("Secret for cluster %v created in cluster %v\n", remoteKubeConfig, localKubeConfig)
 	return nil
 }
 

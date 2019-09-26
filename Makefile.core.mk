@@ -332,8 +332,7 @@ buildcache:
 	GOBUILDFLAGS=-i $(MAKE) build
 
 # List of all binaries to build
-BINARIES:=./istioctl/cmd/istioctl \
-  ./pilot/cmd/pilot-discovery \
+BINARIES:=./pilot/cmd/pilot-discovery \
   ./pilot/cmd/pilot-agent \
   ./sidecar-injector/cmd/sidecar-injector \
   ./mixer/cmd/mixs \
@@ -347,7 +346,6 @@ BINARIES:=./istioctl/cmd/istioctl \
   ./pkg/test/echo/cmd/client \
   ./pkg/test/echo/cmd/server \
   ./mixer/test/policybackend \
-  ./tools/hyperistio \
   ./tools/istio-iptables
 
 # List of binaries included in releases
@@ -382,7 +380,6 @@ lint_modern: lint-python lint-copyright-banner lint-scripts lint-dockerfiles lin
 	@go run mixer/tools/adapterlinter/main.go ./mixer/adapter/...
 	@bin/check_pilot_codegen.sh
 	@golangci-lint run -c ./common/config/.golangci.yml ./galley/...
-	@golangci-lint run -c ./common/config/.golangci.yml ./istioctl/...
 	@golangci-lint run -c ./common/config/.golangci.yml ./mixer/...
 	@golangci-lint run -c ./common/config/.golangci.yml ./pilot/...
 	@golangci-lint run -c ./common/config/.golangci.yml ./pkg/...
@@ -392,7 +389,7 @@ lint_modern: lint-python lint-copyright-banner lint-scripts lint-dockerfiles lin
 	@golangci-lint run -c ./common/config/.golangci.yml ./tests/...
 	@golangci-lint run -c ./common/config/.golangci.yml ./tools/...
 	@testlinter
-	@envvarlinter galley istioctl mixer pilot security sidecar-injector
+	@envvarlinter galley mixer pilot security sidecar-injector
 
 gen:
 	@mkdir -p /tmp/bin
@@ -409,33 +406,9 @@ gen:
 RELEASE_LDFLAGS='-extldflags -static -s -w'
 DEBUG_LDFLAGS='-extldflags "-static"'
 
-# Non-static istioctl targets. These are typically a build artifact.
-${ISTIO_OUT}/istioctl-linux: depend
-	STATIC=0 GOOS=linux LDFLAGS=$(RELEASE_LDFLAGS) common/scripts/gobuild.sh $@ ./istioctl/cmd/istioctl
-${ISTIO_OUT}/istioctl-osx: depend
-	STATIC=0 GOOS=darwin LDFLAGS=$(RELEASE_LDFLAGS) common/scripts/gobuild.sh $@ ./istioctl/cmd/istioctl
-${ISTIO_OUT}/istioctl-win.exe: depend
-	STATIC=0 GOOS=windows LDFLAGS=$(RELEASE_LDFLAGS) common/scripts/gobuild.sh $@ ./istioctl/cmd/istioctl
-
-# generate the istioctl completion files
-${ISTIO_OUT}/istioctl.bash: istioctl
-	${ISTIO_OUT}/istioctl collateral --bash && \
-	mv istioctl.bash ${ISTIO_OUT}/istioctl.bash
-
-${ISTIO_OUT}/_istioctl: istioctl
-	${ISTIO_OUT}/istioctl collateral --zsh && \
-	mv _istioctl ${ISTIO_OUT}/_istioctl
-
 .PHONY: binaries-test
 binaries-test:
 	go test ./tests/binary/... -v --base-dir ${ISTIO_OUT} --binaries="$(RELEASE_BINARIES)"
-
-# istioctl-all makes all of the non-static istioctl executables for each supported OS
-.PHONY: istioctl-all
-istioctl-all: ${ISTIO_OUT}/istioctl-linux ${ISTIO_OUT}/istioctl-osx ${ISTIO_OUT}/istioctl-win.exe
-
-.PHONY: istioctl.completion
-istioctl.completion: ${ISTIO_OUT}/istioctl.bash ${ISTIO_OUT}/_istioctl
 
 .PHONY: istio-archive
 istio-archive: ${ISTIO_OUT}/archive
@@ -455,12 +428,6 @@ ${ISTIO_OUT}/archive: istioctl-all istioctl.completion LICENSE README.md install
 		-d "${ISTIO_OUT}/archive"
 	release/create_release_archives.sh -v "$(VERSION)" -o "${ISTIO_OUT}/archive"
 
-# istioctl-install builds then installs istioctl into $GOPATH/BIN
-# Used for debugging istioctl during dev work
-.PHONY: istioctl-install
-istioctl-install:
-	go install istio.io/istio/istioctl/cmd/istioctl
-
 #-----------------------------------------------------------------------------
 # Target: test
 #-----------------------------------------------------------------------------
@@ -476,7 +443,7 @@ ${ISTIO_BIN}/go-junit-report:
 # Run coverage tests
 JUNIT_UNIT_TEST_XML ?= $(ARTIFACTS)/junit_unit-tests.xml
 ifeq ($(WHAT),)
-       TEST_OBJ = common-test pilot-test mixer-test security-test galley-test istioctl-test
+       TEST_OBJ = common-test pilot-test mixer-test security-test galley-test
 else
        TEST_OBJ = selected-pkg-test
 endif
@@ -497,10 +464,6 @@ localTestEnvCleanup: build
 .PHONY: pilot-test
 pilot-test:
 	go test ${T} ./pilot/...
-
-.PHONY: istioctl-test
-istioctl-test:
-	go test ${T} ./istioctl/...
 
 .PHONY: mixer-test
 MIXER_TEST_T ?= ${T} ${GOTEST_PARALLEL}
