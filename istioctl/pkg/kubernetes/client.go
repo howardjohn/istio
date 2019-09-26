@@ -26,7 +26,8 @@ import (
 	"os/signal"
 	"strings"
 
-	multierror "github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-multierror"
+	v2 "istio.io/istio/pilot/pkg/proxy/envoy/v2"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -326,6 +327,25 @@ func (client *Client) GetIstioVersions(namespace string) (*version.MeshInfo, err
 		}
 		res = append(res, server)
 	}
+	statuses, err := client.AllPilotsDiscoveryDo(namespace, "GET", "/debug/syncz", nil)
+	if err != nil {
+		errs = multierror.Append(errs, fmt.Errorf("failed to get data plane versions: %v", err))
+	}
+	proxyVersions := map[string]int{}
+	for _, status := range statuses {
+		var ss []*v2.SyncStatus
+		err := json.Unmarshal(status, &ss)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range ss {
+			proxyVersions[s.IstioVersion]++
+			res = append(res, version.ServerInfo{Component: "istio-proxy", Info: version.BuildInfo{
+				Version: s.IstioVersion,
+			}})
+		}
+	}
+
 	return &res, errs
 }
 
