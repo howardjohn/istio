@@ -643,8 +643,8 @@ func (s *DiscoveryServer) loadAssignmentsForClusterIsolated(proxy *model.Proxy, 
 func (s *DiscoveryServer) pushEds(push *model.PushContext, con *XdsConnection, version string, edsUpdatedServices map[string]struct{}) error {
 	pushStart := time.Now()
 	loadAssignments := make([]*xdsapi.ClusterLoadAssignment, 0)
-	endpoints := 0
 	empty := make([]string, 0)
+	numEndpoints := 0
 
 	// All clusters that this endpoint is watching. For 1.0 - it's typically all clusters in the mesh.
 	// For 1.1+Sidecar - it's the small set of explicitly imported clusters, using the isolated DestinationRules
@@ -690,7 +690,9 @@ func (s *DiscoveryServer) pushEds(push *model.PushContext, con *XdsConnection, v
 			loadbalancer.ApplyLocalityLBSetting(con.modelNode.Locality, l, s.Env.Mesh.LocalityLbSetting, enableFailover)
 		}
 
-		endpoints += len(l.Endpoints)
+		for _, e := range l.Endpoints {
+			numEndpoints += len(e.LbEndpoints)
+		}
 		if len(l.Endpoints) == 0 {
 			empty = append(empty, clusterName)
 		}
@@ -709,10 +711,10 @@ func (s *DiscoveryServer) pushEds(push *model.PushContext, con *XdsConnection, v
 
 	if edsUpdatedServices == nil {
 		adsLog.Infof("EDS: PUSH for node:%s clusters:%d endpoints:%d empty:%v",
-			con.modelNode.ID, len(con.Clusters), endpoints, empty)
+			con.modelNode.ID, len(con.Clusters), numEndpoints, empty)
 	} else {
 		adsLog.Infof("EDS: PUSH INC for node:%s clusters:%d endpoints:%d empty:%v",
-			con.modelNode.ID, len(con.Clusters), endpoints, empty)
+			con.modelNode.ID, len(con.Clusters), numEndpoints, empty)
 	}
 	return nil
 }
