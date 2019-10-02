@@ -15,6 +15,8 @@
 package v2
 
 import (
+	"hash/fnv"
+	"math/rand"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -244,7 +246,7 @@ func (s *DiscoveryServer) updateClusterInc(push *model.PushContext, clusterName 
 		return s.updateCluster(push, clusterName, edsCluster)
 	}
 
-	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, subsetLabels, clusterName, push)
+	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, subsetLabels, clusterName, push, "global")
 	// There is a chance multiple goroutines will update the cluster at the same time.
 	// This could be prevented by a lock - but because the update may be slow, it may be
 	// better to accept the extra computations.
@@ -630,7 +632,7 @@ func (s *DiscoveryServer) loadAssignmentsForClusterIsolated(proxy *model.Proxy, 
 		return s.loadAssignmentsForClusterLegacy(push, clusterName)
 	}
 
-	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, subsetLabels, clusterName, push)
+	locEps := buildLocalityLbEndpointsFromShards(se, svcPort, subsetLabels, clusterName, push, proxy.ID)
 
 	return &xdsapi.ClusterLoadAssignment{
 		ClusterName: clusterName,
@@ -833,13 +835,42 @@ func endpointDiscoveryResponse(loadAssignments []*xdsapi.ClusterLoadAssignment, 
 	return out
 }
 
+var MaxEndpointsPerSubset = 5
+
+var rands = map[string]*rand.Rand{}
+
+func getSeed(s string) *rand.Rand {
+	if h, f := rands[s]; f {
+		return h
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(s))
+	got := rand.New(rand.NewSource(int64(h.Sum32())))
+	rands[s] = got
+	return got
+}
+
+func subset(id string, endpoints *endpoint.LocalityLbEndpoints) *endpoint.LocalityLbEndpoints {
+	backends := endpoints.LbEndpoints
+	if len(backends) < MaxEndpointsPerSubset {
+		return endpoints
+	}
+	r := getSeed(id)
+	r.Shuffle(len(backends), func(i, j int) {
+		backends[i], backends[j] = backends[j], backends[i]
+	})
+	endpoints.LbEndpoints = backends[:MaxEndpointsPerSubset]
+	return endpoints
+}
+
 // build LocalityLbEndpoints for a cluster from existing EndpointShards.
 func buildLocalityLbEndpointsFromShards(
 	shards *EndpointShards,
 	svcPort *model.Port,
 	epLabels labels.Collection,
 	clusterName string,
-	push *model.PushContext) []*endpoint.LocalityLbEndpoints {
+	push *model.PushContext,
+	id string) []*endpoint.LocalityLbEndpoints {
 	localityEpMap := make(map[string]*endpoint.LocalityLbEndpoints)
 
 	shards.mutex.Lock()
@@ -859,6 +890,7 @@ func buildLocalityLbEndpointsFromShards(
 			if !found {
 				locLbEps = &endpoint.LocalityLbEndpoints{
 					Locality: util.ConvertLocality(ep.Locality),
+					LbEndpoints: make([]*endpoint.LbEndpoint, 0, len(endpoints)),
 				}
 				localityEpMap[ep.Locality] = locLbEps
 			}
@@ -866,21 +898,23 @@ func buildLocalityLbEndpointsFromShards(
 				ep.EnvoyEndpoint = buildEnvoyLbEndpoint(ep.UID, ep.Family, ep.Address, ep.EndpointPort, ep.Network, ep.LbWeight)
 			}
 			locLbEps.LbEndpoints = append(locLbEps.LbEndpoints, ep.EnvoyEndpoint)
-
 		}
 	}
 	shards.mutex.Unlock()
 
 	locEps := make([]*endpoint.LocalityLbEndpoints, 0, len(localityEpMap))
 	for _, locLbEps := range localityEpMap {
+
+		subset := subset(id, locLbEps)
+
 		var weight uint32
-		for _, ep := range locLbEps.LbEndpoints {
+		for _, ep := range subset.LbEndpoints {
 			weight += ep.LoadBalancingWeight.GetValue()
 		}
-		locLbEps.LoadBalancingWeight = &wrappers.UInt32Value{
+		subset.LoadBalancingWeight = &wrappers.UInt32Value{
 			Value: weight,
 		}
-		locEps = append(locEps, locLbEps)
+		locEps = append(locEps, subset)
 	}
 	// Normalize LoadBalancingWeight in range [1, 128]
 	locEps = LoadBalancingWeightNormalize(locEps)
