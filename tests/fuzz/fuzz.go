@@ -68,14 +68,14 @@ func FuzzComplex(data []byte) int {
 		IPAddresses: []string{"1.1.1.1"},
 		ID:          "v0.default",
 		DNSDomain:   "default.example.org",
-		Metadata: map[string]string{
-			model.NodeMetadataConfigNamespace: "not-default",
-			"ISTIO_PROXY_VERSION":             "1.3.0",
+		Metadata: &model.NodeMetadata{
+			ConfigNamespace: "not-default",
+			IstioVersion:    "1.3.0",
 		},
 		ConfigNamespace: "not-default",
 	}
 	env := buildListenerEnv(configs)
-	if err := env.PushContext.InitContext(&env); err != nil {
+	if err := env.PushContext.InitContext(&env, nil, nil); err != nil {
 		panic(err)
 	}
 	proxy.SetSidecarScope(env.PushContext)
