@@ -9,6 +9,14 @@ schemas:
     collection: "istio/networking/v1alpha3/virtualservices"
     description: "describes v1alpha3 route rules"
 
+  - type: "kubernetes-gateway"
+    plural: "kubernetes-gateways"
+    group: "networking"
+    version: "v1alpha3"
+    messageName: "istio.networking.v1alpha3.KubernetesGateway"
+    collection: "istio/networking/v1alpha3/kubernetesgateways"
+    description: "alpha api"
+
   - type: "gateway"
     plural: "gateways"
     group: "networking"

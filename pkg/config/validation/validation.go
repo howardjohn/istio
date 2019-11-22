@@ -1529,6 +1529,11 @@ func ValidateRequestAuthentication(_, _ string, msg proto.Message) error {
 	return errs
 }
 
+// ValidateKubernetesGateway checks that k8s gateway is well formed
+func ValidateKubernetesGateway(_, _ string, msg proto.Message) error {
+	return nil
+}
+
 // ValidateServiceRole checks that ServiceRole is well-formed.
 func ValidateServiceRole(_, _ string, msg proto.Message) error {
 	in, ok := msg.(*rbac.ServiceRole)

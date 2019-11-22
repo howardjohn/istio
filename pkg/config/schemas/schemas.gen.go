@@ -22,6 +22,19 @@ var (
 		VariableName:  "VirtualService",
 	}
 
+	// KubernetesGateway alpha api
+	KubernetesGateway = schema.Instance{
+		Type:          "kubernetes-gateway",
+		Plural:        "kubernetes-gateways",
+		Group:         "networking",
+		Version:       "v1alpha3",
+		MessageName:   "istio.networking.v1alpha3.KubernetesGateway",
+		Validate:      validation.ValidateKubernetesGateway,
+		Collection:    "istio/networking/v1alpha3/kubernetesgateways",
+		ClusterScoped: false,
+		VariableName:  "KubernetesGateway",
+	}
+
 	// Gateway describes a gateway (how a proxy is exposed on the network)
 	Gateway = schema.Instance{
 		Type:          "gateway",
@@ -262,6 +275,7 @@ var (
 	// Istio lists all Istio schemas.
 	Istio = schema.Set{
 		VirtualService,
+		KubernetesGateway,
 		Gateway,
 		ServiceEntry,
 		SyntheticServiceEntry,

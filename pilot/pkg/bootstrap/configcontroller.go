@@ -17,6 +17,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"istio.io/istio/pilot/pkg/config/kube/gateway"
 	"net/url"
 	"os"
 	"path"
@@ -76,6 +77,19 @@ func (s *Server) initConfigController(args *PilotArgs) error {
 			return err
 		}
 
+		s.configController = configController
+	}
+
+	if hasKubeRegistry(args.Service.Registries) {
+		configController, err := configaggregate.MakeCache([]model.ConfigStoreCache{
+			s.configController,
+			gateway.NewController(s.kubeClient, s.configController),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Update the config controller
 		s.configController = configController
 	}
 

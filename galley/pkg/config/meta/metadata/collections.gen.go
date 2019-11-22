@@ -138,6 +138,9 @@ var (
 	// IstioNetworkingV1Alpha3Gateways is the name of collection istio/networking/v1alpha3/gateways
 	IstioNetworkingV1Alpha3Gateways = collection.NewName("istio/networking/v1alpha3/gateways")
 
+	// IstioNetworkingV1Alpha3Kubernetesgateways is the name of collection istio/networking/v1alpha3/kubernetesgateways
+	IstioNetworkingV1Alpha3Kubernetesgateways = collection.NewName("istio/networking/v1alpha3/kubernetesgateways")
+
 	// IstioNetworkingV1Alpha3Serviceentries is the name of collection istio/networking/v1alpha3/serviceentries
 	IstioNetworkingV1Alpha3Serviceentries = collection.NewName("istio/networking/v1alpha3/serviceentries")
 
@@ -339,6 +342,9 @@ var (
 	// K8SNetworkingIstioIoV1Alpha3Gateways is the name of collection k8s/networking.istio.io/v1alpha3/gateways
 	K8SNetworkingIstioIoV1Alpha3Gateways = collection.NewName("k8s/networking.istio.io/v1alpha3/gateways")
 
+	// K8SNetworkingIstioIoV1Alpha3Kubernetesgateways is the name of collection k8s/networking.istio.io/v1alpha3/kubernetesgateways
+	K8SNetworkingIstioIoV1Alpha3Kubernetesgateways = collection.NewName("k8s/networking.istio.io/v1alpha3/kubernetesgateways")
+
 	// K8SNetworkingIstioIoV1Alpha3Serviceentries is the name of collection k8s/networking.istio.io/v1alpha3/serviceentries
 	K8SNetworkingIstioIoV1Alpha3Serviceentries = collection.NewName("k8s/networking.istio.io/v1alpha3/serviceentries")
 
@@ -413,6 +419,7 @@ func CollectionNames() []collection.Name {
 		IstioNetworkingV1Alpha3Destinationrules,
 		IstioNetworkingV1Alpha3Envoyfilters,
 		IstioNetworkingV1Alpha3Gateways,
+		IstioNetworkingV1Alpha3Kubernetesgateways,
 		IstioNetworkingV1Alpha3Serviceentries,
 		IstioNetworkingV1Alpha3Sidecars,
 		IstioNetworkingV1Alpha3SyntheticServiceentries,
@@ -480,6 +487,7 @@ func CollectionNames() []collection.Name {
 		K8SNetworkingIstioIoV1Alpha3Destinationrules,
 		K8SNetworkingIstioIoV1Alpha3Envoyfilters,
 		K8SNetworkingIstioIoV1Alpha3Gateways,
+		K8SNetworkingIstioIoV1Alpha3Kubernetesgateways,
 		K8SNetworkingIstioIoV1Alpha3Serviceentries,
 		K8SNetworkingIstioIoV1Alpha3Sidecars,
 		K8SNetworkingIstioIoV1Alpha3Virtualservices,

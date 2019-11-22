@@ -79,6 +79,10 @@ collections:
     proto: "istio.authentication.v1alpha1.Policy"
     protoPackage: "istio.io/api/authentication/v1alpha1"
 
+  - name: "istio/networking/v1alpha3/kubernetesgateways"
+    proto: "istio.networking.v1alpha3.KubernetesGateway"
+    protoPackage: "istio.io/api/networking/v1alpha3"
+
   - name: "istio/authentication/v1alpha1/policies"
     proto: "istio.authentication.v1alpha1.Policy"
     protoPackage: "istio.io/api/authentication/v1alpha1"
@@ -267,6 +271,10 @@ collections:
 
   - name: "k8s/networking.istio.io/v1alpha3/serviceentries"
     proto: "istio.networking.v1alpha3.ServiceEntry"
+    protoPackage: "istio.io/api/networking/v1alpha3"
+
+  - name: "k8s/networking.istio.io/v1alpha3/kubernetesgateways"
+    proto: "istio.networking.v1alpha3.KubernetesGateway"
     protoPackage: "istio.io/api/networking/v1alpha3"
 
   - name: "k8s/networking.istio.io/v1alpha3/sidecars"
@@ -571,6 +579,7 @@ snapshots:
       - "istio/mixer/v1/config/client/quotaspecbindings"
       - "istio/mixer/v1/config/client/quotaspecs"
       - "istio/networking/v1alpha3/destinationrules"
+      - "istio/networking/v1alpha3/kubernetesgateways"
       - "istio/networking/v1alpha3/envoyfilters"
       - "istio/networking/v1alpha3/gateways"
       - "istio/networking/v1alpha3/serviceentries"
@@ -708,6 +717,12 @@ sources:
     - collection: "k8s/networking.istio.io/v1alpha3/serviceentries"
       kind: "ServiceEntry"
       plural: "serviceentries"
+      group: "networking.istio.io"
+      version: "v1alpha3"
+
+    - collection: "k8s/networking.istio.io/v1alpha3/kubernetesgateways"
+      kind: "KubernetesGateway"
+      plural: "kubernetesgateways"
       group: "networking.istio.io"
       version: "v1alpha3"
 
@@ -1045,6 +1060,7 @@ transforms:
       "k8s/networking.istio.io/v1alpha3/gateways": "istio/networking/v1alpha3/gateways"
       "k8s/networking.istio.io/v1alpha3/serviceentries": "istio/networking/v1alpha3/serviceentries"
       "k8s/networking.istio.io/v1alpha3/sidecars": "istio/networking/v1alpha3/sidecars"
+      "k8s/networking.istio.io/v1alpha3/kubernetesgateways": "istio/networking/v1alpha3/kubernetesgateways"
       "k8s/networking.istio.io/v1alpha3/virtualservices": "istio/networking/v1alpha3/virtualservices"
       "k8s/rbac.istio.io/v1alpha1/policy": "istio/rbac/v1alpha1/servicerolebindings"
       "k8s/rbac.istio.io/v1alpha1/rbacconfigs": "istio/rbac/v1alpha1/rbacconfigs"
