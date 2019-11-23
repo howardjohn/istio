@@ -249,7 +249,9 @@ docker.base: docker/Dockerfile.base
 # DOCKER_BUILD_VARIANTS ?=default distroless
 DOCKER_BUILD_VARIANTS ?=default
 DEFAULT_DISTRIBUTION=default
-DOCKER_RULE=$(foreach VARIANT,$(DOCKER_BUILD_VARIANTS), time (mkdir -p $(DOCKER_BUILD_TOP)/$@ && cp -r $^ $(DOCKER_BUILD_TOP)/$@ && cd $(DOCKER_BUILD_TOP)/$@ && $(BUILD_PRE) docker build $(BUILD_ARGS) --build-arg BASE_DISTRIBUTION=$(VARIANT) -t $(HUB)/$(subst docker.,,$@):$(subst -$(DEFAULT_DISTRIBUTION),,$(TAG)-$(VARIANT)) -f Dockerfile$(suffix $@) . ); )
+# Command to build images with. Replace with `docker buildx build` for faster builds.
+DOCKER_BUILD ?= docker build
+DOCKER_RULE=$(foreach VARIANT,$(DOCKER_BUILD_VARIANTS), time (mkdir -p $(DOCKER_BUILD_TOP)/$@ && cp -r $^ $(DOCKER_BUILD_TOP)/$@ && cd $(DOCKER_BUILD_TOP)/$@ && $(BUILD_PRE) $(DOCKER_BUILD) $(BUILD_ARGS) --build-arg BASE_DISTRIBUTION=$(VARIANT) -t $(HUB)/$(subst docker.,,$@):$(subst -$(DEFAULT_DISTRIBUTION),,$(TAG)-$(VARIANT)) -f Dockerfile$(suffix $@) . ); )
 
 # This target will package all docker images used in test and release, without re-building
 # go binaries. It is intended for CI/CD systems where the build is done in separate job.
@@ -303,24 +305,3 @@ docker.push: $(DOCKER_PUSH_TARGETS)
 # Scan images for security vulnerabilities using the ImageScanner tool
 docker.scan_images: $(DOCKER_PUSH_TARGETS)
 	$(foreach TGT,$(DOCKER_TARGETS),$(call run_vulnerability_scanning,$(subst docker.,,$(TGT)),$(HUB)/$(subst docker.,,$(TGT)):$(TAG)))
-
-# Base image for 'debug' containers.
-# You can run it first to use local changes (or guarantee it is built from scratch)
-docker.basedebug:
-	docker build -t istionightly/base_debug -f docker/Dockerfile.xenial_debug docker/
-
-# Run this target to generate images based on Bionic Ubuntu
-# This must be run as a first step, before the 'docker' step.
-docker.basedebug_bionic:
-	docker build -t istionightly/base_debug_bionic -f docker/Dockerfile.bionic_debug docker/
-	docker tag istionightly/base_debug_bionic istionightly/base_debug
-
-# Run this target to generate images based on Debian Slim
-# This must be run as a first step, before the 'docker' step.
-docker.basedebug_deb:
-	docker build -t istionightly/base_debug_deb -f docker/Dockerfile.deb_debug docker/
-	docker tag istionightly/base_debug_deb istionightly/base_debug
-
-# Job run from the nightly cron to publish an up-to-date xenial with the debug tools.
-docker.push.basedebug: docker.basedebug
-	docker push istionightly/base_debug:latest
