@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+
 	"istio.io/api/networking/v1alpha3"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config/constants"
@@ -19,7 +20,7 @@ type controller struct {
 }
 
 func (c controller) ConfigDescriptor() schema.Set {
-	return schema.Set{schemas.KubernetesGateway}
+	return schema.Set{schemas.VirtualService, schemas.Gateway}
 }
 
 func (c controller) Get(typ, name, namespace string) *model.Config {
@@ -27,18 +28,18 @@ func (c controller) Get(typ, name, namespace string) *model.Config {
 }
 
 func (c controller) List(typ, namespace string) ([]model.Config, error) {
-	log.Errorf("howardjohn: calling List of type %v", typ)
 	if typ != schemas.Gateway.Type && typ != schemas.VirtualService.Type {
 		return nil, errUnsupportedOp
 	}
+	log.Errorf("howardjohn: calling List of type %v", typ)
 
-	out := []model.Config{}
+	gw := []model.Config{}
+	vs := []model.Config{}
 	cfgs, err := c.cache.List(schemas.KubernetesGateway.Type, namespace)
 	if err != nil {
 		return nil, err
 	}
 	for _, obj := range cfgs {
-		//gw := obj.Spec.(*v1alpha3.KubernetesGateway)
 		gatewayConfig := model.Config{
 			ConfigMeta: model.ConfigMeta{
 				Type:      schemas.Gateway.Type,
@@ -60,9 +61,15 @@ func (c controller) List(typ, namespace string) ([]model.Config, error) {
 				Selector: labels.Instance{constants.IstioLabel: constants.IstioIngressLabelValue},
 			},
 		}
-		out = append(out, gatewayConfig)
+		gw = append(gw, gatewayConfig)
 	}
-	return out, nil
+	switch typ {
+	case schemas.Gateway.Type:
+		return gw, nil
+	case schemas.VirtualService.Type:
+		return vs, nil
+	}
+	return nil, errUnsupportedOp
 }
 
 var (
@@ -90,7 +97,11 @@ func (c controller) GetResourceAtVersion(version string, key string) (resourceVe
 }
 
 func (c controller) RegisterEventHandler(typ string, handler func(model.Config, model.Event)) {
-	log.Errorf("howardjohn: RegisterEventHandler")
+	log.Errorf("howardjohn: RegisterEventHandler for type=%v", typ)
+	c.cache.RegisterEventHandler(typ, func(config model.Config, event model.Event) {
+		log.Errorf("howardjohn: EventHandler called for %v", config.Name)
+		handler(config, event)
+	})
 }
 
 func (c controller) Run(stop <-chan struct{}) {
@@ -102,5 +113,6 @@ func (c controller) HasSynced() bool {
 }
 
 func NewController(client kubernetes.Interface, c model.ConfigStoreCache) model.ConfigStoreCache {
+
 	return &controller{client, c}
 }
