@@ -3,6 +3,8 @@ package gateway
 import (
 	"fmt"
 
+	"k8s.io/client-go/kubernetes"
+
 	"istio.io/api/networking/v1alpha3"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config/constants"
@@ -11,7 +13,6 @@ import (
 	"istio.io/istio/pkg/config/schema"
 	"istio.io/istio/pkg/config/schemas"
 	"istio.io/pkg/log"
-	"k8s.io/client-go/kubernetes"
 )
 
 type controller struct {

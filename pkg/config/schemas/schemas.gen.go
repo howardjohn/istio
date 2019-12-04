@@ -35,6 +35,19 @@ var (
 		VariableName:  "KubernetesGateway",
 	}
 
+	// KubernetesHttpRoute alpha api
+	KubernetesHttpRoute = schema.Instance{
+		Type:          "kubernetes-http-route",
+		Plural:        "kubernetes-http-routes",
+		Group:         "networking",
+		Version:       "v1alpha3",
+		MessageName:   "istio.networking.v1alpha3.KubernetesHTTPRoute",
+		Validate:      validation.ValidateKubernetesHttpRoute,
+		Collection:    "istio/networking/v1alpha3/kuberneteshttproute",
+		ClusterScoped: false,
+		VariableName:  "KubernetesHttpRoute",
+	}
+
 	// Gateway describes a gateway (how a proxy is exposed on the network)
 	Gateway = schema.Instance{
 		Type:          "gateway",
@@ -276,6 +289,7 @@ var (
 	Istio = schema.Set{
 		VirtualService,
 		KubernetesGateway,
+		KubernetesHttpRoute,
 		Gateway,
 		ServiceEntry,
 		SyntheticServiceEntry,

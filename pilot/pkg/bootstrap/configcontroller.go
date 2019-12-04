@@ -17,13 +17,14 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"istio.io/istio/pilot/pkg/config/kube/gateway"
 	"net/url"
 	"os"
 	"path"
 	"strings"
 	"sync"
 	"time"
+
+	"istio.io/istio/pilot/pkg/config/kube/gateway"
 
 	"github.com/hashicorp/go-multierror"
 	"google.golang.org/grpc"

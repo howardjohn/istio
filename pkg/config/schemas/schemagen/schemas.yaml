@@ -17,6 +17,14 @@ schemas:
     collection: "istio/networking/v1alpha3/kubernetesgateways"
     description: "alpha api"
 
+  - type: "kubernetes-http-route"
+    plural: "kubernetes-http-routes"
+    group: "networking"
+    version: "v1alpha3"
+    messageName: "istio.networking.v1alpha3.KubernetesHTTPRoute"
+    collection: "istio/networking/v1alpha3/kuberneteshttproute"
+    description: "alpha api"
+
   - type: "gateway"
     plural: "gateways"
     group: "networking"
