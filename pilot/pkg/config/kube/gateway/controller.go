@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"strings"
 
 	"k8s.io/client-go/kubernetes"
 
@@ -9,7 +10,6 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/labels"
-	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/config/schema"
 	"istio.io/istio/pkg/config/schemas"
 	"istio.io/pkg/log"
@@ -36,33 +36,89 @@ func (c controller) List(typ, namespace string) ([]model.Config, error) {
 
 	gw := []model.Config{}
 	vs := []model.Config{}
-	cfgs, err := c.cache.List(schemas.KubernetesGateway.Type, namespace)
+	gws, err := c.cache.List(schemas.KubernetesGateway.Type, namespace)
+	routes, err := c.cache.List(schemas.KubernetesHttpRoute.Type, namespace)
 	if err != nil {
 		return nil, err
 	}
-	for _, obj := range cfgs {
+	routeToGateway := map[string]string{}
+	for _, obj := range gws {
+		kgw := obj.Spec.(*v1alpha3.KubernetesGateway)
+		name := obj.Name + "-" + constants.KubernetesGatewayName
+		var servers []*v1alpha3.Server
+		for _, listener := range kgw.Listeners {
+			for _, p := range listener.Protocols {
+				servers = append(servers, &v1alpha3.Server{
+					Port: &v1alpha3.Port{
+						Number:   uint32(listener.Port),
+						Protocol: p,
+						Name:     fmt.Sprintf("%v-%v-gateway-%s-%s", strings.ToLower(p), listener.Port, obj.Name, obj.Namespace),
+					},
+					Hosts: []string{listener.Address},
+				})
+			}
+
+			for _, route := range listener.Routes {
+				routeToGateway[route] = name
+			}
+		}
 		gatewayConfig := model.Config{
 			ConfigMeta: model.ConfigMeta{
 				Type:      schemas.Gateway.Type,
 				Group:     schemas.Gateway.Group,
 				Version:   schemas.Gateway.Version,
-				Name:      obj.Name + "-" + constants.KubernetesGatewayName,
+				Name:      name,
 				Namespace: obj.Namespace,
 				Domain:    "cluster.local",
 			},
 			Spec: &v1alpha3.Gateway{
-				Servers: []*v1alpha3.Server{
-					{
-						Port: &v1alpha3.Port{
-							Number:   80,
-							Protocol: string(protocol.HTTP),
-							Name:     fmt.Sprintf("http-80-gateway-%s-%s", obj.Name, obj.Namespace),
-						}},
-				},
-				Selector: labels.Instance{constants.IstioLabel: constants.IstioIngressLabelValue},
+				Servers:  servers,
+				Selector: labels.Instance{constants.IstioLabel: "ingressgateway"},
 			},
 		}
 		gw = append(gw, gatewayConfig)
+	}
+
+	for _, obj := range routes {
+		kr := obj.Spec.(*v1alpha3.KubernetesHttpRoute)
+		var http []*v1alpha3.HTTPRoute
+		for _, rule := range kr.Rules {
+			http = append(http, &v1alpha3.HTTPRoute{
+				Match: []*v1alpha3.HTTPMatchRequest{
+					{
+						Uri: &v1alpha3.StringMatch{
+							MatchType: &v1alpha3.StringMatch_Prefix{Prefix: rule.Path},
+						},
+					},
+				},
+				Route: []*v1alpha3.HTTPRouteDestination{
+					{
+						Destination: &v1alpha3.Destination{
+							Host: rule.Backend.Service,
+							Port: &v1alpha3.PortSelector{
+								Number: uint32(rule.Backend.Port),
+							},
+						},
+					},
+				},
+			})
+		}
+		virtualConfig := model.Config{
+			ConfigMeta: model.ConfigMeta{
+				Type:      schemas.VirtualService.Type,
+				Group:     schemas.VirtualService.Group,
+				Version:   schemas.VirtualService.Version,
+				Name:      obj.Name + "-" + constants.KubernetesGatewayName,
+				Namespace: obj.Namespace,
+				Domain:    "cluster.local",
+			},
+			Spec: &v1alpha3.VirtualService{
+				Hosts:    []string{kr.Host},
+				Gateways: []string{routeToGateway[obj.Name]},
+				Http:     http,
+			},
+		}
+		vs = append(vs, virtualConfig)
 	}
 	switch typ {
 	case schemas.Gateway.Type:

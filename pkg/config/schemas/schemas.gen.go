@@ -41,7 +41,7 @@ var (
 		Plural:        "kubernetes-http-routes",
 		Group:         "networking",
 		Version:       "v1alpha3",
-		MessageName:   "istio.networking.v1alpha3.KubernetesHTTPRoute",
+		MessageName:   "istio.networking.v1alpha3.KubernetesHttpRoute",
 		Validate:      validation.ValidateKubernetesHttpRoute,
 		Collection:    "istio/networking/v1alpha3/kuberneteshttproute",
 		ClusterScoped: false,

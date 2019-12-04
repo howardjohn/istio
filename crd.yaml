@@ -22,7 +22,7 @@ spec:
   names:
      plural: "kuberneteshttproutes"
      singular: "kuberneteshttproute"
-     kind: "KubernetesHTTPRoute"
+     kind: "KubernetesHttpRoute"
 ---
 apiVersion: networking.istio.io/v1alpha3
 kind: KubernetesGateway
@@ -37,7 +37,7 @@ spec:
     routes: [test]
 ---
 apiVersion: networking.istio.io/v1alpha3
-kind: KubernetesHTTPRoute
+kind: KubernetesHttpRoute
 metadata:
   name: test
 spec:

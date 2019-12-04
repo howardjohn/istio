@@ -21,7 +21,7 @@ schemas:
     plural: "kubernetes-http-routes"
     group: "networking"
     version: "v1alpha3"
-    messageName: "istio.networking.v1alpha3.KubernetesHTTPRoute"
+    messageName: "istio.networking.v1alpha3.KubernetesHttpRoute"
     collection: "istio/networking/v1alpha3/kuberneteshttproute"
     description: "alpha api"
 
