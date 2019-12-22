@@ -17,13 +17,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/gogo/protobuf/types"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 
@@ -122,8 +121,8 @@ func startEnvoy() error {
 			BinaryPath:       env.IstioBin + "/envoy",
 			ServiceCluster:   "test",
 			CustomConfigFile: env.IstioSrc + "/tools/packaging/common/envoy_bootstrap_v2.json",
-			ConnectTimeout:   types.DurationProto(5 * time.Second),  // crash if not set
-			DrainDuration:    types.DurationProto(30 * time.Second), // crash if 0
+			ConnectTimeout:   ptypes.DurationProto(5 * time.Second),  // crash if not set
+			DrainDuration:    ptypes.DurationProto(30 * time.Second), // crash if 0
 			StatNameLength:   189,
 		},
 	}

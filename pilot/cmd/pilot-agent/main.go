@@ -18,6 +18,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/duration"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"io/ioutil"
 	"net"
 	"os"
@@ -27,7 +30,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
@@ -213,10 +215,10 @@ var (
 			proxyConfig.ConfigPath = configPath
 			proxyConfig.BinaryPath = binaryPath
 			proxyConfig.ServiceCluster = serviceCluster
-			proxyConfig.DrainDuration = types.DurationProto(drainDuration)
-			proxyConfig.ParentShutdownDuration = types.DurationProto(parentShutdownDuration)
+			proxyConfig.DrainDuration = ptypes.DurationProto(drainDuration)
+			proxyConfig.ParentShutdownDuration = ptypes.DurationProto(parentShutdownDuration)
 			proxyConfig.DiscoveryAddress = discoveryAddress
-			proxyConfig.ConnectTimeout = types.DurationProto(connectTimeout)
+			proxyConfig.ConnectTimeout = ptypes.DurationProto(connectTimeout)
 			proxyConfig.StatsdUdpAddress = statsdUDPAddress
 			if envoyMetricsService != "" {
 				if ms := fromJSON(envoyMetricsService); ms != nil {
@@ -320,13 +322,13 @@ var (
 					Tracer: &meshconfig.Tracing_Stackdriver_{
 						Stackdriver: &meshconfig.Tracing_Stackdriver{
 							Debug: stackdriverTracingDebug.Get(),
-							MaxNumberOfAnnotations: &types.Int64Value{
+							MaxNumberOfAnnotations: &wrappers.Int64Value{
 								Value: int64(stackdriverTracingMaxNumberOfAnnotations.Get()),
 							},
-							MaxNumberOfAttributes: &types.Int64Value{
+							MaxNumberOfAttributes: &wrappers.Int64Value{
 								Value: int64(stackdriverTracingMaxNumberOfAttributes.Get()),
 							},
-							MaxNumberOfMessageEvents: &types.Int64Value{
+							MaxNumberOfMessageEvents: &wrappers.Int64Value{
 								Value: int64(stackdriverTracingMaxNumberOfMessageEvents.Get()),
 							},
 						},
@@ -630,8 +632,8 @@ func detectSds(controlPlaneBootstrap bool, sdsAddress, trustworthyJWTPath string
 	return true, trustworthyJWTPath
 }
 
-func timeDuration(dur *types.Duration) time.Duration {
-	out, err := types.DurationFromProto(dur)
+func timeDuration(dur *duration.Duration) time.Duration {
+	out, err := ptypes.Duration(dur)
 	if err != nil {
 		log.Warna(err)
 	}

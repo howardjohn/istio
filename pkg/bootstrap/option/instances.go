@@ -15,9 +15,8 @@
 package option
 
 import (
+	"github.com/golang/protobuf/ptypes/duration"
 	"net"
-
-	"github.com/gogo/protobuf/types"
 
 	meshAPI "istio.io/api/mesh/v1alpha1"
 	networkingAPI "istio.io/api/networking/v1alpha3"
@@ -54,7 +53,7 @@ func MixerSubjectAltName(value []string) Instance {
 	return newOptionOrSkipIfZero("MixerSubjectAltName", san)
 }
 
-func ConnectTimeout(value *types.Duration) Instance {
+func ConnectTimeout(value *duration.Duration) Instance {
 	return newDurationOption("connect_timeout", value)
 }
 

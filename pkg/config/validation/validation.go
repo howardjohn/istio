@@ -17,6 +17,8 @@ package validation
 import (
 	"errors"
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/duration"
 	"net"
 	"net/http"
 	"path"
@@ -970,16 +972,15 @@ func ValidateDurationGogo(pd *types.Duration) error {
 	return nil
 }
 
-// ValidateDuration checks that a proto duration is well-formed
-func ValidateDuration(pd *types.Duration) error {
-	dur, err := types.DurationFromProto(pd)
-	if err != nil {
-		return err
+// ValidateDuration checks that a duration is well-formed
+func ValidateDuration(dur *time.Duration) error {
+	if dur == nil {
+		return nil
 	}
-	if dur < time.Millisecond {
+	if *dur < time.Millisecond {
 		return errors.New("duration must be greater than 1ms")
 	}
-	if dur%time.Millisecond != 0 {
+	if *dur%time.Millisecond != 0 {
 		return errors.New("only durations to ms precision are supported")
 	}
 	return nil
@@ -987,10 +988,20 @@ func ValidateDuration(pd *types.Duration) error {
 
 // ValidateGogoDuration validates the variant of duration.
 func ValidateGogoDuration(in *types.Duration) error {
-	return ValidateDuration(&types.Duration{
-		Seconds: in.Seconds,
-		Nanos:   in.Nanos,
-	})
+	d, err := types.DurationFromProto(in)
+	if err != nil {
+		return err
+	}
+	return ValidateDuration(&d)
+}
+
+// ValidateProtoDuration validates the variant of duration.
+func ValidateProtoDuration(in *duration.Duration) error {
+	d, err := ptypes.Duration(in)
+	if err != nil {
+		return err
+	}
+	return ValidateDuration(&d)
 }
 
 // ValidateDurationRange verifies range is in specified duration
@@ -1003,19 +1014,19 @@ func ValidateDurationRange(dur, min, max time.Duration) error {
 }
 
 // ValidateParentAndDrain checks that parent and drain durations are valid
-func ValidateParentAndDrain(drainTime, parentShutdown *types.Duration) (errs error) {
-	if err := ValidateDuration(drainTime); err != nil {
+func ValidateParentAndDrain(drainTime, parentShutdown *duration.Duration) (errs error) {
+	if err := ValidateProtoDuration(drainTime); err != nil {
 		errs = multierror.Append(errs, multierror.Prefix(err, "invalid drain duration:"))
 	}
-	if err := ValidateDuration(parentShutdown); err != nil {
+	if err := ValidateProtoDuration(parentShutdown); err != nil {
 		errs = multierror.Append(errs, multierror.Prefix(err, "invalid parent shutdown duration:"))
 	}
 	if errs != nil {
 		return
 	}
 
-	drainDuration, _ := types.DurationFromProto(drainTime)
-	parentShutdownDuration, _ := types.DurationFromProto(parentShutdown)
+	drainDuration, _ := ptypes.Duration(drainTime)
+	parentShutdownDuration, _ := ptypes.Duration(parentShutdown)
 
 	if drainDuration%time.Second != 0 {
 		errs = multierror.Append(errs,
@@ -1075,14 +1086,16 @@ func ValidateDatadogCollector(d *meshconfig.Tracing_Datadog) error {
 }
 
 // ValidateConnectTimeout validates the envoy conncection timeout
-func ValidateConnectTimeout(timeout *types.Duration) error {
-	if err := ValidateDuration(timeout); err != nil {
+func ValidateConnectTimeout(timeoutProto *duration.Duration) error {
+	if err := ValidateProtoDuration(timeoutProto); err != nil {
 		return err
 	}
 
-	timeoutDuration, _ := types.DurationFromProto(timeout)
-	err := ValidateDurationRange(timeoutDuration, connectTimeoutMin, connectTimeoutMax)
-	return err
+	timeout, err := ptypes.Duration(timeoutProto)
+	if err != nil {
+		return err
+	}
+	return ValidateDurationRange(timeout, connectTimeoutMin, connectTimeoutMax)
 }
 
 // ValidateMeshConfig checks that the mesh config is well-formed
@@ -1581,7 +1594,7 @@ func ValidateRequestAuthentication(name, namespace string, msg proto.Message) er
 	return errs
 }
 
-func validateJwtRule(rule *security_beta.JWT) (errs error) {
+func validateJwtRule(rule *security_beta.JWTRule) (errs error) {
 	if rule == nil {
 		return nil
 	}

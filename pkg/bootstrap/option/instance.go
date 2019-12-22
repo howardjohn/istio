@@ -15,9 +15,8 @@
 package option
 
 import (
+	"github.com/golang/protobuf/ptypes/duration"
 	"reflect"
-
-	"github.com/gogo/protobuf/types"
 
 	networkingAPI "istio.io/api/networking/v1alpha3"
 )
@@ -121,7 +120,7 @@ func newOptionOrSkipIfZero(name Name, value interface{}) *instance {
 	return newOption(name, value)
 }
 
-func newDurationOption(name Name, value *types.Duration) *instance {
+func newDurationOption(name Name, value *duration.Duration) *instance {
 	return newOptionOrSkipIfZero(name, value).withConvert(durationConverter(value))
 }
 

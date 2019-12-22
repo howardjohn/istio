@@ -21,6 +21,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/duration"
 	"io"
 	"net"
 	"os"
@@ -33,7 +35,6 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	"github.com/hashicorp/go-multierror"
 
 	"istio.io/api/annotation"
@@ -496,8 +497,8 @@ func injectRequired(ignored []string, config *Config, podSpec *corev1.PodSpec, m
 	return required
 }
 
-func formatDuration(in *types.Duration) string {
-	dur, err := types.DurationFromProto(in)
+func formatDuration(in *duration.Duration) string {
+	dur, err := ptypes.Duration(in)
 	if err != nil {
 		return "1s"
 	}

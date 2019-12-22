@@ -16,6 +16,8 @@ package envoy
 
 import (
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/duration"
 	"io/ioutil"
 	"net"
 	"os"
@@ -24,8 +26,6 @@ import (
 	"time"
 
 	envoyAdmin "github.com/envoyproxy/go-control-plane/envoy/admin/v2alpha"
-	"github.com/gogo/protobuf/types"
-
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	"istio.io/pkg/env"
 	"istio.io/pkg/log"
@@ -210,11 +210,11 @@ func (e *envoy) Cleanup(epoch int) {
 }
 
 // convertDuration converts to golang duration and logs errors
-func convertDuration(d *types.Duration) time.Duration {
+func convertDuration(d *duration.Duration) time.Duration {
 	if d == nil {
 		return 0
 	}
-	dur, err := types.DurationFromProto(d)
+	dur, err := ptypes.Duration(d)
 	if err != nil {
 		log.Warnf("error converting duration %#v, using 0: %v", d, err)
 	}

@@ -15,11 +15,13 @@
 package mesh
 
 import (
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"io/ioutil"
+	"istio.io/istio/pkg/util/protomarshal"
 	"net"
 	"time"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/hashicorp/go-multierror"
 
 	"istio.io/pkg/filewatcher"
@@ -38,10 +40,10 @@ func DefaultProxyConfig() meshconfig.ProxyConfig {
 		ConfigPath:             constants.ConfigPathDir,
 		BinaryPath:             constants.BinaryPathFilename,
 		ServiceCluster:         constants.ServiceClusterName,
-		DrainDuration:          types.DurationProto(45 * time.Second),
-		ParentShutdownDuration: types.DurationProto(60 * time.Second),
+		DrainDuration:          ptypes.DurationProto(45 * time.Second),
+		ParentShutdownDuration: ptypes.DurationProto(60 * time.Second),
 		DiscoveryAddress:       constants.DiscoveryPlainAddress,
-		ConnectTimeout:         types.DurationProto(1 * time.Second),
+		ConnectTimeout:         ptypes.DurationProto(1 * time.Second),
 		StatsdUdpAddress:       "",
 		EnvoyMetricsService:    &meshconfig.RemoteService{Address: ""},
 		EnvoyAccessLogService:  &meshconfig.RemoteService{Address: ""},
@@ -65,7 +67,7 @@ func DefaultMeshConfig() meshconfig.MeshConfig {
 		SidecarToTelemetrySessionAffinity: false,
 		RootNamespace:                     constants.IstioSystemNamespace,
 		ProxyListenPort:                   15001,
-		ConnectTimeout:                    types.DurationProto(1 * time.Second),
+		ConnectTimeout:                    ptypes.DurationProto(1 * time.Second),
 		IngressService:                    "istio-ingressgateway",
 		EnableTracing:                     true,
 		AccessLogFile:                     "/dev/stdout",
@@ -79,16 +81,16 @@ func DefaultMeshConfig() meshconfig.MeshConfig {
 		DefaultVirtualServiceExportTo:     []string{"*"},
 		DefaultDestinationRuleExportTo:    []string{"*"},
 		OutboundTrafficPolicy:             &meshconfig.MeshConfig_OutboundTrafficPolicy{Mode: meshconfig.MeshConfig_OutboundTrafficPolicy_ALLOW_ANY},
-		DnsRefreshRate:                    types.DurationProto(5 * time.Second), // 5 seconds is the default refresh rate used in Envoy
-		ProtocolDetectionTimeout:          types.DurationProto(100 * time.Millisecond),
-		EnableAutoMtls:                    &types.BoolValue{Value: false},
+		DnsRefreshRate:                    ptypes.DurationProto(5 * time.Second), // 5 seconds is the default refresh rate used in Envoy
+		ProtocolDetectionTimeout:          ptypes.DurationProto(100 * time.Millisecond),
+		EnableAutoMtls:                    &wrappers.BoolValue{Value: false},
 	}
 }
 
 // ApplyMeshConfig returns a new MeshConfig decoded from the
 // input YAML with the provided defaults applied to omitted configuration values.
 func ApplyMeshConfig(yaml string, defaultConfig meshconfig.MeshConfig) (*meshconfig.MeshConfig, error) {
-	if err := gogoprotomarshal.ApplyYAML(yaml, &defaultConfig); err != nil {
+	if err := protomarshal.ApplyYAML(yaml, &defaultConfig); err != nil {
 		return nil, multierror.Prefix(err, "failed to convert to proto.")
 	}
 

@@ -16,6 +16,7 @@ package option_test
 
 import (
 	"encoding/base64"
+	"github.com/golang/protobuf/ptypes"
 	"net"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func TestOptions(t *testing.T) {
 		{
 			testName: "connect timeout",
 			key:      "connect_timeout",
-			option:   option.ConnectTimeout(types.DurationProto(time.Second)),
+			option:   option.ConnectTimeout(ptypes.DurationProto(time.Second)),
 			expected: "1s",
 		},
 		{

@@ -30,8 +30,8 @@ import (
 	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher"
 	"github.com/envoyproxy/go-control-plane/pkg/conversion"
 	"github.com/ghodss/yaml"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/protobuf/jsonpb"
+	"github.com/golang/protobuf/proto"
 	diff "gopkg.in/d4l3k/messagediff.v1"
 
 	"istio.io/api/annotation"

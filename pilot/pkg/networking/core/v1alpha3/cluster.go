@@ -1243,7 +1243,7 @@ func buildBlackHoleCluster(push *model.PushContext) *apiv2.Cluster {
 	cluster := &apiv2.Cluster{
 		Name:                 util.BlackHoleCluster,
 		ClusterDiscoveryType: &apiv2.Cluster_Type{Type: apiv2.Cluster_STATIC},
-		ConnectTimeout:       gogo.DurationToProtoDuration(push.Mesh.ConnectTimeout),
+		ConnectTimeout:       push.Mesh.ConnectTimeout,
 		LbPolicy:             apiv2.Cluster_ROUND_ROBIN,
 	}
 	return cluster
@@ -1255,7 +1255,7 @@ func buildDefaultPassthroughCluster(push *model.PushContext, proxy *model.Proxy)
 	cluster := &apiv2.Cluster{
 		Name:                 util.PassthroughCluster,
 		ClusterDiscoveryType: &apiv2.Cluster_Type{Type: apiv2.Cluster_ORIGINAL_DST},
-		ConnectTimeout:       gogo.DurationToProtoDuration(push.Mesh.ConnectTimeout),
+		ConnectTimeout:       push.Mesh.ConnectTimeout,
 		LbPolicy:             lbPolicyClusterProvided(proxy),
 	}
 	passthroughSettings := &networking.ConnectionPoolSettings{}
@@ -1273,8 +1273,7 @@ func buildDefaultCluster(push *model.PushContext, name string, discoveryType api
 
 	if discoveryType == apiv2.Cluster_STRICT_DNS {
 		cluster.DnsLookupFamily = apiv2.Cluster_V4_ONLY
-		dnsRate := gogo.DurationToProtoDuration(push.Mesh.DnsRefreshRate)
-		cluster.DnsRefreshRate = dnsRate
+		cluster.DnsRefreshRate = push.Mesh.DnsRefreshRate
 		if util.IsIstioVersionGE13(proxy) && features.RespectDNSTTL.Get() {
 			cluster.RespectDnsTtl = true
 		}

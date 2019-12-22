@@ -52,7 +52,6 @@ import (
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/proto"
-	"istio.io/istio/pkg/util/gogo"
 	alpn_filter "istio.io/istio/security/proto/envoy/config/filter/http/alpn/v2alpha1"
 	"istio.io/pkg/monitoring"
 )
@@ -2018,7 +2017,7 @@ func buildListener(opts buildListenerOpts) *xdsapi.Listener {
 	}
 
 	if util.IsIstioVersionGE13(opts.proxy) && opts.proxy.Type != model.Router {
-		listener.ListenerFiltersTimeout = gogo.DurationToProtoDuration(opts.push.Mesh.ProtocolDetectionTimeout)
+		listener.ListenerFiltersTimeout = opts.push.Mesh.ProtocolDetectionTimeout
 
 		if listener.ListenerFiltersTimeout != nil {
 			listener.ContinueOnListenerFiltersTimeout = true

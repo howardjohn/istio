@@ -17,13 +17,12 @@ package inject
 import (
 	"bytes"
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gogo/protobuf/types"
 
 	meshapi "istio.io/api/mesh/v1alpha1"
 
@@ -548,9 +547,9 @@ func TestIntoResourceFile(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			m := mesh.DefaultMeshConfig()
 			if c.duration != 0 {
-				m.DefaultConfig.DrainDuration = types.DurationProto(c.duration)
-				m.DefaultConfig.ParentShutdownDuration = types.DurationProto(c.duration)
-				m.DefaultConfig.ConnectTimeout = types.DurationProto(c.duration)
+				m.DefaultConfig.DrainDuration = ptypes.DurationProto(c.duration)
+				m.DefaultConfig.ParentShutdownDuration = ptypes.DurationProto(c.duration)
+				m.DefaultConfig.ConnectTimeout = ptypes.DurationProto(c.duration)
 			}
 			if c.tproxy {
 				m.DefaultConfig.InterceptionMode = meshapi.ProxyConfig_TPROXY

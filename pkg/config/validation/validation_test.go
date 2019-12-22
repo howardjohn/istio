@@ -16,6 +16,8 @@ package validation
 
 import (
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/duration"
 	"os"
 	"strings"
 	"testing"
@@ -166,35 +168,35 @@ func TestValidateProxyAddress(t *testing.T) {
 
 func TestValidateDuration(t *testing.T) {
 	type durationCheck struct {
-		duration *types.Duration
+		duration *duration.Duration
 		isValid  bool
 	}
 
 	checks := []durationCheck{
 		{
-			duration: &types.Duration{Seconds: 1},
+			duration: &duration.Duration{Seconds: 1},
 			isValid:  true,
 		},
 		{
-			duration: &types.Duration{Seconds: 1, Nanos: -1},
+			duration: &duration.Duration{Seconds: 1, Nanos: -1},
 			isValid:  false,
 		},
 		{
-			duration: &types.Duration{Seconds: -11, Nanos: -1},
+			duration: &duration.Duration{Seconds: -11, Nanos: -1},
 			isValid:  false,
 		},
 		{
-			duration: &types.Duration{Nanos: 1},
+			duration: &duration.Duration{Nanos: 1},
 			isValid:  false,
 		},
 		{
-			duration: &types.Duration{Seconds: 1, Nanos: 1},
+			duration: &duration.Duration{Seconds: 1, Nanos: 1},
 			isValid:  false,
 		},
 	}
 
 	for _, check := range checks {
-		if got := ValidateDuration(check.duration); (got == nil) != check.isValid {
+		if got := ValidateProtoDuration(check.duration); (got == nil) != check.isValid {
 			t.Errorf("Failed: got valid=%t but wanted valid=%t: %v for %v", got == nil, check.isValid, got, check.duration)
 		}
 	}
@@ -202,55 +204,55 @@ func TestValidateDuration(t *testing.T) {
 
 func TestValidateParentAndDrain(t *testing.T) {
 	type ParentDrainTime struct {
-		Parent types.Duration
-		Drain  types.Duration
+		Parent duration.Duration
+		Drain  duration.Duration
 		Valid  bool
 	}
 
 	combinations := []ParentDrainTime{
 		{
-			Parent: types.Duration{Seconds: 2},
-			Drain:  types.Duration{Seconds: 1},
+			Parent: duration.Duration{Seconds: 2},
+			Drain:  duration.Duration{Seconds: 1},
 			Valid:  true,
 		},
 		{
-			Parent: types.Duration{Seconds: 1},
-			Drain:  types.Duration{Seconds: 1},
+			Parent: duration.Duration{Seconds: 1},
+			Drain:  duration.Duration{Seconds: 1},
 			Valid:  false,
 		},
 		{
-			Parent: types.Duration{Seconds: 1},
-			Drain:  types.Duration{Seconds: 2},
+			Parent: duration.Duration{Seconds: 1},
+			Drain:  duration.Duration{Seconds: 2},
 			Valid:  false,
 		},
 		{
-			Parent: types.Duration{Seconds: 2},
-			Drain:  types.Duration{Seconds: 1, Nanos: 1000000},
+			Parent: duration.Duration{Seconds: 2},
+			Drain:  duration.Duration{Seconds: 1, Nanos: 1000000},
 			Valid:  false,
 		},
 		{
-			Parent: types.Duration{Seconds: 2, Nanos: 1000000},
-			Drain:  types.Duration{Seconds: 1},
+			Parent: duration.Duration{Seconds: 2, Nanos: 1000000},
+			Drain:  duration.Duration{Seconds: 1},
 			Valid:  false,
 		},
 		{
-			Parent: types.Duration{Seconds: -2},
-			Drain:  types.Duration{Seconds: 1},
+			Parent: duration.Duration{Seconds: -2},
+			Drain:  duration.Duration{Seconds: 1},
 			Valid:  false,
 		},
 		{
-			Parent: types.Duration{Seconds: 2},
-			Drain:  types.Duration{Seconds: -1},
+			Parent: duration.Duration{Seconds: 2},
+			Drain:  duration.Duration{Seconds: -1},
 			Valid:  false,
 		},
 		{
-			Parent: types.Duration{Seconds: 1 + int64(time.Hour/time.Second)},
-			Drain:  types.Duration{Seconds: 10},
+			Parent: duration.Duration{Seconds: 1 + int64(time.Hour/time.Second)},
+			Drain:  duration.Duration{Seconds: 10},
 			Valid:  false,
 		},
 		{
-			Parent: types.Duration{Seconds: 10},
-			Drain:  types.Duration{Seconds: 1 + int64(time.Hour/time.Second)},
+			Parent: duration.Duration{Seconds: 10},
+			Drain:  duration.Duration{Seconds: 1 + int64(time.Hour/time.Second)},
 			Valid:  false,
 		},
 	}
@@ -264,21 +266,21 @@ func TestValidateParentAndDrain(t *testing.T) {
 
 func TestValidateConnectTimeout(t *testing.T) {
 	type durationCheck struct {
-		duration *types.Duration
+		duration *duration.Duration
 		isValid  bool
 	}
 
 	checks := []durationCheck{
 		{
-			duration: &types.Duration{Seconds: 1},
+			duration: &duration.Duration{Seconds: 1},
 			isValid:  true,
 		},
 		{
-			duration: &types.Duration{Seconds: 31},
+			duration: &duration.Duration{Seconds: 31},
 			isValid:  false,
 		},
 		{
-			duration: &types.Duration{Nanos: 99999},
+			duration: &duration.Duration{Nanos: 99999},
 			isValid:  false,
 		},
 	}
@@ -299,7 +301,7 @@ func TestValidateMeshConfig(t *testing.T) {
 		MixerCheckServer:  "10.0.0.100",
 		MixerReportServer: "10.0.0.100",
 		ProxyListenPort:   0,
-		ConnectTimeout:    types.DurationProto(-1 * time.Second),
+		ConnectTimeout:    ptypes.DurationProto(-1 * time.Second),
 		DefaultConfig:     &meshconfig.ProxyConfig{},
 	}
 
@@ -325,9 +327,9 @@ func TestValidateProxyConfig(t *testing.T) {
 		BinaryPath:             "/usr/local/bin/envoy",
 		DiscoveryAddress:       "istio-pilot.istio-system:15010",
 		ProxyAdminPort:         15000,
-		DrainDuration:          types.DurationProto(45 * time.Second),
-		ParentShutdownDuration: types.DurationProto(60 * time.Second),
-		ConnectTimeout:         types.DurationProto(10 * time.Second),
+		DrainDuration:          ptypes.DurationProto(45 * time.Second),
+		ParentShutdownDuration: ptypes.DurationProto(60 * time.Second),
+		ConnectTimeout:         ptypes.DurationProto(10 * time.Second),
 		ServiceCluster:         "istio-proxy",
 		StatsdUdpAddress:       "istio-statsd-prom-bridge.istio-system:9125",
 		EnvoyMetricsService:    &meshconfig.RemoteService{Address: "metrics-service.istio-system:15000"},
@@ -384,17 +386,17 @@ func TestValidateProxyConfig(t *testing.T) {
 		},
 		{
 			name:    "drain duration invalid",
-			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.DrainDuration = types.DurationProto(-1 * time.Second) }),
+			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.DrainDuration = ptypes.DurationProto(-1 * time.Second) }),
 			isValid: false,
 		},
 		{
 			name:    "parent shutdown duration invalid",
-			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.ParentShutdownDuration = types.DurationProto(-1 * time.Second) }),
+			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.ParentShutdownDuration = ptypes.DurationProto(-1 * time.Second) }),
 			isValid: false,
 		},
 		{
 			name:    "connect timeout invalid",
-			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.ConnectTimeout = types.DurationProto(-1 * time.Second) }),
+			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.ConnectTimeout = ptypes.DurationProto(-1 * time.Second) }),
 			isValid: false,
 		},
 		{
@@ -643,9 +645,9 @@ func TestValidateProxyConfig(t *testing.T) {
 		BinaryPath:             "",
 		DiscoveryAddress:       "10.0.0.100",
 		ProxyAdminPort:         0,
-		DrainDuration:          types.DurationProto(-1 * time.Second),
-		ParentShutdownDuration: types.DurationProto(-1 * time.Second),
-		ConnectTimeout:         types.DurationProto(-1 * time.Second),
+		DrainDuration:          ptypes.DurationProto(-1 * time.Second),
+		ParentShutdownDuration: ptypes.DurationProto(-1 * time.Second),
+		ConnectTimeout:         ptypes.DurationProto(-1 * time.Second),
 		ServiceCluster:         "",
 		StatsdUdpAddress:       "10.0.0.100",
 		EnvoyMetricsService:    &meshconfig.RemoteService{Address: "metrics-service"},
@@ -5172,7 +5174,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 			name:       "empty jwt rule",
 			configName: constants.DefaultAuthenticationPolicyName,
 			in: &security_beta.RequestAuthentication{
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{},
 				},
 			},
@@ -5182,7 +5184,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 			name:       "empty issuer",
 			configName: constants.DefaultAuthenticationPolicyName,
 			in: &security_beta.RequestAuthentication{
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer: "",
 					},
@@ -5194,7 +5196,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 			name:       "bad JwksUri - no protocol",
 			configName: constants.DefaultAuthenticationPolicyName,
 			in: &security_beta.RequestAuthentication{
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer:  "foo.com",
 						JwksUri: "foo.com",
@@ -5207,7 +5209,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 			name:       "bad JwksUri - invalid port",
 			configName: constants.DefaultAuthenticationPolicyName,
 			in: &security_beta.RequestAuthentication{
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer:  "foo.com",
 						JwksUri: "https://foo.com:not-a-number",
@@ -5226,7 +5228,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 						"version": "",
 					},
 				},
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer:  "foo.com",
 						JwksUri: "https://foo.com/cert",
@@ -5245,7 +5247,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 						"":    "v1",
 					},
 				},
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer:  "foo.com",
 						JwksUri: "https://foo.com/cert",
@@ -5258,7 +5260,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 			name:       "bad header location",
 			configName: constants.DefaultAuthenticationPolicyName,
 			in: &security_beta.RequestAuthentication{
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer:  "foo.com",
 						JwksUri: "https://foo.com",
@@ -5277,7 +5279,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 			name:       "bad param location",
 			configName: constants.DefaultAuthenticationPolicyName,
 			in: &security_beta.RequestAuthentication{
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer:     "foo.com",
 						JwksUri:    "https://foo.com",
@@ -5291,7 +5293,7 @@ func TestValidateRequestAuthentication(t *testing.T) {
 			name:       "good",
 			configName: constants.DefaultAuthenticationPolicyName,
 			in: &security_beta.RequestAuthentication{
-				JwtRules: []*security_beta.JWT{
+				JwtRules: []*security_beta.JWTRule{
 					{
 						Issuer:  "foo.com",
 						JwksUri: "https://foo.com",

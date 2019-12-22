@@ -18,13 +18,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/duration"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"net"
 	"os"
 	"path"
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/types"
 	"golang.org/x/oauth2/google"
 
 	meshAPI "istio.io/api/mesh/v1alpha1"
@@ -212,11 +214,11 @@ func lightstepAccessTokenFile(config string) string {
 }
 
 // convertDuration converts to golang duration and logs errors
-func convertDuration(d *types.Duration) time.Duration {
+func convertDuration(d *duration.Duration) time.Duration {
 	if d == nil {
 		return 0
 	}
-	dur, _ := types.DurationFromProto(d)
+	dur, _ := ptypes.Duration(d)
 	return dur
 }
 
@@ -312,7 +314,7 @@ func getProxyConfigOptions(config *meshAPI.ProxyConfig, metadata *model.NodeMeta
 	return opts, nil
 }
 
-func getInt64ValueOrDefault(src *types.Int64Value, defaultVal int64) int64 {
+func getInt64ValueOrDefault(src *wrappers.Int64Value, defaultVal int64) int64 {
 	val := defaultVal
 	if src != nil {
 		val = src.Value

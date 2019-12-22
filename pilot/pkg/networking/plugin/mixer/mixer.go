@@ -418,7 +418,7 @@ func buildTransport(mesh *meshconfig.MeshConfig, node *model.Proxy) *mccpb.Trans
 		ReportCluster:         buildUpstreamName(mesh.MixerReportServer),
 		NetworkFailPolicy:     networkFailPolicy,
 		ReportBatchMaxEntries: mesh.ReportBatchMaxEntries,
-		ReportBatchMaxTime:    util.GogoDurationToDuration(mesh.ReportBatchMaxTime),
+		ReportBatchMaxTime:    mesh.ReportBatchMaxTime,
 	}
 
 	return res

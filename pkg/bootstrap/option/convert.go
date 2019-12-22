@@ -18,11 +18,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/duration"
 	"net"
 
 	envoyAPI "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	envoyAPICore "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
-	"github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/ptypes/wrappers"
 
 	networkingAPI "istio.io/api/networking/v1alpha3"
@@ -153,9 +154,10 @@ func addressConverter(addr string) convertFunc {
 	}
 }
 
-func durationConverter(value *types.Duration) convertFunc {
+func durationConverter(value *duration.Duration) convertFunc {
 	return func(*instance) (interface{}, error) {
-		return value.String(), nil
+		d, _ := ptypes.Duration(value)
+		return d.String(), nil
 	}
 }
 
