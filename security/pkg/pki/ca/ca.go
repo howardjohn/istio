@@ -95,6 +95,7 @@ func NewSelfSignedIstioCAOptions(ctx context.Context,
 	maxCertTTL time.Duration, org string, dualUse bool, namespace string,
 	readCertRetryInterval time.Duration, client corev1.CoreV1Interface,
 	rootCertFile string, enableJitter bool) (caOpts *IstioCAOptions, err error) {
+	log.Errorf("howardjohn: create CA file with root cert file: %v", rootCertFile)
 	// For the first time the CA is up, if readSigningCertOnly is unset,
 	// it generates a self-signed key/cert pair and write it to CASecret.
 	// For subsequent restart, CA will reads key/cert from CASecret.
@@ -114,6 +115,7 @@ func NewSelfSignedIstioCAOptions(ctx context.Context,
 			}
 		}
 	}
+	log.Errorf("howardjohn: caSecret: %v", caSecret)
 
 	caOpts = &IstioCAOptions{
 		CAType:     selfSignedCA,
@@ -143,12 +145,14 @@ func NewSelfSignedIstioCAOptions(ctx context.Context,
 			RSAKeySize:   caKeySize,
 			IsDualUse:    dualUse,
 		}
+		log.Errorf("howardjohn: create cert: %+v", options)
 		pemCert, pemKey, ckErr := util.GenCertKeyFromOptions(options)
 		if ckErr != nil {
 			return nil, fmt.Errorf("unable to generate CA cert and key for self-signed CA (%v)", ckErr)
 		}
 
 		rootCerts, err := util.AppendRootCerts(pemCert, rootCertFile)
+		log.Errorf("howardjohn: added root certs: %v -> %v", rootCertFile, string(rootCerts))
 		if err != nil {
 			return nil, fmt.Errorf("failed to append root certificates (%v)", err)
 		}

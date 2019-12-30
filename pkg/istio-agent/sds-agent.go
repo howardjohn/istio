@@ -221,6 +221,7 @@ func NewSDSAgent(discAddr string, tlsRequired bool) *SDSAgent {
 func (conf *SDSAgent) Start(isSidecar bool, podNamespace string) (*sds.Server, error) {
 	applyEnvVars()
 
+	log.Errorf("howardjohn: Start SDSAgent with: %v %v", conf.SAN, conf.SDSAddress)
 	gatewaySdsCacheOptions = workloadSdsCacheOptions
 
 	// Next to the envoy config, writeable dir (mounted as mem)
@@ -357,18 +358,19 @@ func newSecretCache(serverOptions sds.Options) (workloadSecretCache *cache.Secre
 					serverOptions.CAEndpoint = "istiod.istio-system.svc:15010"
 				} else {
 					log.Info("Using default istiod CA, with K8S certificates for SDS")
-					serverOptions.CAEndpoint = "istiod.istio-system.svc:15012"
+					serverOptions.CAEndpoint = "istio-pilot.istio-system.svc:15012"
 				}
 			}
 		} else {
 			// Explicitly configured CA
-			log.Infoa("Using user-configured CA", serverOptions.CAEndpoint)
+			log.Infoa("Using user-configured CA ", serverOptions.CAEndpoint)
 			if strings.HasSuffix(serverOptions.CAEndpoint, ":15010") {
 				log.Warna("Debug mode or IP-secure network")
 				tls = false
 			}
 			if strings.HasSuffix(serverOptions.CAEndpoint, ":15012") {
 				rootCert, err = ioutil.ReadFile(k8sCAPath)
+				log.Errorf("howardjohn: root cert: %v", string(rootCert))
 				if err != nil {
 					log.Fatala("Invalid config - port 15012 expects a K8S-signed certificate but certs missing", err)
 				}

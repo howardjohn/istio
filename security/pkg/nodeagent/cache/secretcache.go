@@ -229,10 +229,12 @@ func (sc *SecretCache) GenerateSecret(ctx context.Context, connectionID, resourc
 		ns, err = sc.generateRootCertFromExistingFile(existingRootCertFile, token, connKey)
 	} else if connKey.ResourceName == WorkloadKeyCertResourceName &&
 		sc.keyCertificateExist(existingCertChainFile, existingKeyFile) {
+		log.Errorf("howardjohn: generate default with existing")
 		sdsFromFile = true
 		ns, err = sc.generateKeyCertFromExistingFiles(existingCertChainFile, existingKeyFile, token, connKey)
 	}
 	if sdsFromFile {
+		log.Errorf("howardjohn: sds from file: %v", resourceName)
 		if err != nil {
 			cacheLog.Errorf("%s failed to generate secret for proxy: %v, by loading from files",
 				conIDresourceNamePrefix, err)
@@ -246,6 +248,7 @@ func (sc *SecretCache) GenerateSecret(ctx context.Context, connectionID, resourc
 		// If working as Citadel agent, send request for normal key/cert pair.
 		// If working as ingress gateway agent, fetch key/cert or root cert from SecretFetcher. Resource name for
 		// root cert ends with "-cacert".
+		log.Errorf("howardjohn: generate a secret for real: %v", resourceName)
 		ns, err := sc.generateSecret(ctx, token, connKey, time.Now())
 		if err != nil {
 			cacheLog.Errorf("%s failed to generate secret for proxy: %v",

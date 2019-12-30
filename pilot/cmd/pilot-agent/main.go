@@ -353,8 +353,9 @@ var (
 
 				// Istiod and new SDS-only mode doesn't use sdsUdsPathVar - sdsEnabled will be false.
 				sa := istio_agent.NewSDSAgent(discoveryAddress, controlPlaneAuthEnabled)
-
+				log.Errorf("howardjohn: sa: %+v", sa)
 				if sa.JWTPath != "" {
+					log.Errorf("howardjohn: jwt: %v", sa.JWTPath)
 					// If user injected a JWT token for SDS - use SDS.
 					nodeAgentSDSEnabled = true
 					sdsTokenPath = sa.JWTPath
@@ -372,6 +373,7 @@ var (
 					if err != nil {
 						log.Fatala("Failed to start in-process SDS", err)
 					}
+					log.Errorf("howardjohn: started SA")
 
 					if sa.RequireCerts {
 						proxyConfig.ControlPlaneAuthPolicy = meshconfig.AuthenticationPolicy_MUTUAL_TLS

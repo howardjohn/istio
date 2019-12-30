@@ -464,6 +464,7 @@ func createCA(client corev1.CoreV1Interface) *ca.IstioCA {
 		} else {
 			checkInterval = -1
 		}
+		log.Errorf("howardjohn: check interval: %v", checkInterval)
 		caOpts, err = ca.NewSelfSignedIstioCAOptions(ctx,
 			opts.selfSignedRootCertGracePeriodPercentile, opts.selfSignedCACertTTL,
 			opts.selfSignedRootCertCheckInterval, opts.workloadCertTTL,

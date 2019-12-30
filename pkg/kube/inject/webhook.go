@@ -250,6 +250,7 @@ func (wh *Webhook) Run(stop <-chan struct{}) {
 	for {
 		select {
 		case <-timerC:
+			log.Infof("Injection config watch update")
 			timerC = nil
 			sidecarConfig, meshConfig, valuesConfig, err := loadConfig(wh.configFile, wh.meshFile, wh.valuesFile, wh.env)
 			if err != nil {
@@ -272,7 +273,6 @@ func (wh *Webhook) Run(stop <-chan struct{}) {
 			wh.mu.Unlock()
 		case event := <-wh.watcher.Event:
 			// use a timer to debounce configuration updates
-			log.Infoa("Injector watch", event.Name)
 			if (event.IsModify() || event.IsCreate()) && timerC == nil {
 				timerC = time.After(watchDebounceDelay)
 			}

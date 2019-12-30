@@ -123,11 +123,14 @@ type CAOptions struct {
 	Namespace   string
 }
 
+func (s *Server) CreateCA(opts *CAOptions) *ca.IstioCA {
+	return s.createCA(s.kubeClient.CoreV1(), opts)
+}
 // RunCA will start the cert signing GRPC service on an existing server.
 // Protected by installer options: the CA will be started only if the JWT token in /var/run/secrets
 // is mounted. If it is missing - for example old versions of K8S that don't support such tokens -
 // we will not start the cert-signing server, since pods will have no way to authenticate.
-func (s *Server) RunCA(grpc *grpc.Server, opts *CAOptions) {
+func (s *Server) RunCA(ca *ca.IstioCA, grpc *grpc.Server, opts *CAOptions) {
 	if s.kubeClient == nil {
 		// No k8s - no self-signed certs.
 		// TODO: implement it using a local directory, for non-k8s env.
@@ -140,7 +143,8 @@ func (s *Server) RunCA(grpc *grpc.Server, opts *CAOptions) {
 	if token, err := ioutil.ReadFile(JWTPath); err != nil {
 		// for debug we may want to override this by setting trustedIssuer explicitly
 		if iss == "" {
-			log.Warna("istiod running without access to K8S tokens. Disable the CA functionality", JWTPath)
+			log.Warnf("istiod running without access to K8S tokens at %v. Disable the CA functionality", JWTPath)
+			log.Warnf("istiod token: %v %v %v", token, iss, err)
 			return
 		}
 	} else {
@@ -157,12 +161,10 @@ func (s *Server) RunCA(grpc *grpc.Server, opts *CAOptions) {
 		}
 	}
 
-	ca := s.createCA(s.kubeClient.CoreV1(), opts)
-
 	// The CA API uses cert with the max workload cert TTL.
 	// 'hostlist' must be non-empty - but is not used since a grpc server is passed.
 	caServer, startErr := caserver.NewWithGRPC(grpc, ca, maxWorkloadCertTTL.Get(),
-		false, []string{"istiod.istio-system"}, 0, spiffe.GetTrustDomain(),
+		false, []string{"istio-pilot.istio-system"}, 0, spiffe.GetTrustDomain(),
 		true)
 	if startErr != nil {
 		log.Fatalf("failed to create istio ca server: %v", startErr)

@@ -242,6 +242,7 @@ func (s *sdsservice) StreamSecrets(stream sds.SecretDiscoveryService_StreamSecre
 				return err
 			}
 
+			log.Errorf("howardjohn: sds request for %v", resourceName)
 			if resourceName == "" {
 				sdsServiceLog.Infof("Received empty resource name from %q", discReq.Node.Id)
 				continue
@@ -301,6 +302,7 @@ func (s *sdsservice) StreamSecrets(stream sds.SecretDiscoveryService_StreamSecre
 				sdsServiceLog.Debugf("%s received SDS ACK from proxy %q, version info %q, "+
 					"error details %s\n", conIDresourceNamePrefix, discReq.Node.Id, discReq.VersionInfo,
 					discReq.ErrorDetail)
+				log.Errorf("howardjohn: SDS ack for %v", resourceName)
 				continue
 			}
 
@@ -322,6 +324,7 @@ func (s *sdsservice) StreamSecrets(stream sds.SecretDiscoveryService_StreamSecre
 				continue
 			}
 
+			log.Errorf("howardjohn: generate secret %v", resourceName)
 			secret, err := s.st.GenerateSecret(ctx, conID, resourceName, token)
 			if err != nil {
 				sdsServiceLog.Errorf("%s Close connection. Failed to get secret for proxy %q from "+

@@ -49,6 +49,7 @@ type citadelClient struct {
 
 // NewCitadelClient create a CA client for Citadel.
 func NewCitadelClient(endpoint string, tls bool, rootCert []byte) (caClientInterface.Client, error) {
+	log.Errorf("howardjohn: create citadel client: %v tls=%v", endpoint, tls)
 	c := &citadelClient{
 		caEndpoint:    endpoint,
 		enableTLS:     tls,
@@ -81,6 +82,7 @@ func NewCitadelClient(endpoint string, tls bool, rootCert []byte) (caClientInter
 // CSR Sign calls Citadel to sign a CSR.
 func (c *citadelClient) CSRSign(ctx context.Context, csrPEM []byte, token string,
 	certValidTTLInSec int64) ([]string /*PEM-encoded certificate chain*/, error) {
+	log.Errorf("howardjohn: call CSR: %v", token)
 	req := &pb.IstioCertificateRequest{
 		Csr:              string(csrPEM),
 		ValidityDuration: certValidTTLInSec,

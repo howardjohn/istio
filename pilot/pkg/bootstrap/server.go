@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"istio.io/istio/security/pkg/pki/ca"
 	"net"
 	"net/http"
 	"path"
@@ -193,17 +194,31 @@ func NewServer(args *PilotArgs) (*Server, error) {
 		return nil, fmt.Errorf("cluster registries: %v", err)
 	}
 
-	if err := s.initDNSListener(args); err != nil {
+	ca := s.CreateCA(&CAOptions{
+		TrustDomain: s.environment.Mesh().TrustDomain,
+		Namespace:   args.Namespace,
+	})
+	if err := s.initDNSListener(args, ca); err != nil {
 		return nil, fmt.Errorf("grpcDNS: %v", err)
 	}
+	s.addStartFunc(func(stop <-chan struct{}) error {
+		log.Errorf("howardjohn: start CA: %+v", s.secureGRPCServerDNS.GetServiceInfo())
+		s.RunCA(ca, s.secureGRPCServerDNS, &CAOptions{
+			TrustDomain: s.environment.Mesh().TrustDomain,
+			Namespace:   args.Namespace,
+		})
+		return nil
+	})
+	s.addStartFunc(func(stop <-chan struct{}) error {
+		log.Errorf("howardjohn: done: %+v", s.secureGRPCServerDNS.GetServiceInfo())
+		return nil
+	})
 
 	// Will run the sidecar injector in pilot.
 	// Only operates if /var/lib/istio/inject exists
 	if err := s.initSidecarInjector(args); err != nil {
 		return nil, fmt.Errorf("sidecar injector: %v", err)
 	}
-
-	s.initSDSCA(args)
 
 	// TODO: don't run this if galley is started, one ctlz is enough
 	if args.CtrlZOptions != nil {
@@ -426,6 +441,7 @@ func (s *Server) initSecureGrpcServer(options *istiokeepalive.Options) error {
 	if err != nil {
 		return err
 	}
+	log.Errorf("howardjohn: starting secure grpc with ca=%v", string(caCert))
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 
@@ -433,6 +449,7 @@ func (s *Server) initSecureGrpcServer(options *istiokeepalive.Options) error {
 	opts = append(opts, grpc.Creds(tlsCreds))
 	s.secureGRPCServer = grpc.NewServer(opts...)
 	s.EnvoyXdsServer.Register(s.secureGRPCServer)
+	log.Errorf("howardjohn: register XDS on 15012")
 	s.secureHTTPServer = &http.Server{
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{certificate},
@@ -446,6 +463,7 @@ func (s *Server) initSecureGrpcServer(options *istiokeepalive.Options) error {
 			ClientCAs:  caCertPool,
 		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Errorf("howardjohn: got request on: %+v", r.URL)
 			if r.ProtoMajor == 2 && strings.HasPrefix(
 				r.Header.Get("Content-Type"), "application/grpc") {
 				s.secureGRPCServer.ServeHTTP(w, r)
@@ -459,8 +477,9 @@ func (s *Server) initSecureGrpcServer(options *istiokeepalive.Options) error {
 }
 
 // initialize secureGRPCServer - using K8S DNS certs
-func (s *Server) initSecureGrpcServerDNS(port string, keepalive *istiokeepalive.Options) error {
+func (s *Server) initSecureGrpcServerDNS(port string, keepalive *istiokeepalive.Options, istioCA *ca.IstioCA) error {
 	certDir := dnsCertDir
+	log.Errorf("howardjohn: init secure GRPC for DNS")
 
 	key := path.Join(certDir, constants.KeyFilename)
 	cert := path.Join(certDir, constants.CertChainFilename)
@@ -481,6 +500,17 @@ func (s *Server) initSecureGrpcServerDNS(port string, keepalive *istiokeepalive.
 	opts = append(opts, grpc.Creds(tlsCreds))
 	s.secureGRPCServerDNS = grpc.NewServer(opts...)
 	s.EnvoyXdsServer.Register(s.secureGRPCServerDNS)
+	log.Errorf("howardjohn: register DNS XDS")
+
+	_, _, signingCert, root := istioCA.GetCAKeyCertBundle().GetAll()
+	log.Errorf("howardjohn: signing cert: %v", signingCert)
+	//wcert := tls.Certificate{
+	//	Certificate: [][]byte{signingCert, root},
+	//	PrivateKey:  privKey,
+	//}
+
+	log.Errorf("howardjohn: wcert %v", string(signingCert))
+	log.Errorf("howardjohn: root %v", string(root))
 
 	s.secureHTTPServerDNS = &http.Server{
 		TLSConfig: &tls.Config{
@@ -494,6 +524,7 @@ func (s *Server) initSecureGrpcServerDNS(port string, keepalive *istiokeepalive.
 			ClientAuth: tls.NoClientCert, // auth will be based on JWT token signed by K8S
 		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Errorf("howardjohn: DNS request: %v", r.URL)
 			if r.ProtoMajor == 2 && strings.HasPrefix(
 				r.Header.Get("Content-Type"), "application/grpc") {
 				s.secureGRPCServerDNS.ServeHTTP(w, r)
@@ -505,6 +536,7 @@ func (s *Server) initSecureGrpcServerDNS(port string, keepalive *istiokeepalive.
 
 	// Default is 15012 - istio-agent relies on this as a default to distinguish what cert auth to expect
 	dnsGrpc := fmt.Sprintf(":%s", port)
+	log.Errorf("howardjohn: dns grpc port: %v", dnsGrpc)
 
 	// create secure grpc listener
 	secureGrpcListener, err := net.Listen("tcp", dnsGrpc)
@@ -648,12 +680,14 @@ func (s *Server) initEventHandlers() error {
 }
 
 // add a GRPC listener using DNS-based certificates. Will be used for Galley, injection and CA signing.
-func (s *Server) initDNSListener(args *PilotArgs) error {
+func (s *Server) initDNSListener(args *PilotArgs, istioCA *ca.IstioCA) error {
 	istiodAddr := features.IstiodService.Get()
 	if istiodAddr == "" || s.kubeClient == nil {
 		// Feature disabled
 		return nil
 	}
+
+	log.Errorf("howardjohn: init dns listener")
 
 	// validate
 	host, port, err := net.SplitHostPort(istiodAddr)
@@ -664,6 +698,7 @@ func (s *Server) initDNSListener(args *PilotArgs) error {
 		return fmt.Errorf("invalid ISTIOD_ADDR(%s): %v", istiodAddr, err)
 	}
 
+	log.Errorf("howardjohn: dns listener on %v %v", host, port)
 	// Create k8s-signed certificates. This allows injector, validation to work without Citadel, and
 	// allows secure SDS connections to Istiod.
 	err = s.initDNSCerts(host)
@@ -671,23 +706,10 @@ func (s *Server) initDNSListener(args *PilotArgs) error {
 		return err
 	}
 	// run secure grpc server for Istiod - using DNS-based certs from K8S
-	err = s.initSecureGrpcServerDNS(port, args.KeepaliveOptions)
+	err = s.initSecureGrpcServerDNS(port, args.KeepaliveOptions, istioCA)
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-// init the SDS signing server
-func (s *Server) initSDSCA(args *PilotArgs) {
-	// Options based on the current 'defaults' in istio.
-	// If adjustments are needed - env or mesh.config ( if of general interest ).
-	s.addStartFunc(func(stop <-chan struct{}) error {
-		s.RunCA(s.secureGRPCServerDNS, &CAOptions{
-			TrustDomain: s.environment.Mesh().TrustDomain,
-			Namespace:   args.Namespace,
-		})
-		return nil
-	})
 }
