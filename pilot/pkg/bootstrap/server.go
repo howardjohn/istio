@@ -193,9 +193,9 @@ func NewServer(args *PilotArgs) (*Server, error) {
 	if err := s.initMonitor(args.DiscoveryOptions.MonitoringAddr); err != nil {
 		return nil, fmt.Errorf("monitor: %v", err)
 	}
-	if err := s.initClusterRegistries(args); err != nil {
-		return nil, fmt.Errorf("cluster registries: %v", err)
-	}
+	//if err := s.initClusterRegistries(args); err != nil {
+	//	return nil, fmt.Errorf("cluster registries: %v", err)
+	//}
 
 	// Options based on the current 'defaults' in istio.
 	// If adjustments are needed - env or mesh.config ( if of general interest ).

@@ -76,11 +76,18 @@ func (s *Server) initConfigController(args *PilotArgs) error {
 		}
 		s.ConfigStores = append(s.ConfigStores, configController)
 	} else {
-		configController, err := s.makeKubeConfigController(args)
-		if err != nil {
-			return err
-		}
+		store := memory.Make(collections.Pilot)
+		configController := memory.NewController(store)
+		//err := s.makeFileMonitor(args.Config.FileDir, configController)
+		//if err != nil {
+		//	return err
+		//}
 		s.ConfigStores = append(s.ConfigStores, configController)
+		//configController, err := s.makeKubeConfigController(args)
+		//if err != nil {
+		//	return err
+		//}
+		//s.ConfigStores = append(s.ConfigStores, configController)
 	}
 
 	// If running in ingress mode (requires k8s), wrap the config controller.

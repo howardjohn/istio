@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istio
+  template:
+    metadata:
+      labels:
+        app: istio
+    spec:
+      serviceAccountName: istio
+      containers:
+      - name: istio
+        image: registry:5000/pilot:blog
+        imagePullPolicy: Always
+        args:
+        - discovery
+        - --secureGrpcAddr=
+      - name: proxy
+        image: registry:5000/proxyv2:blog
+        args:
+        - proxy
+        - router
+        - --discoveryAddress=localhost:15010
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: istio
+  namespace: istio-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: istio
+  namespace: istio-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "services", "nodes", "pods", "endpoints"]
+    verbs: ["get", "list", "watch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: istio
+  namespace: istio-system
+subjects:
+- kind: ServiceAccount
+  name: istio
+  namespace: istio-system
+roleRef:
+  kind: ClusterRole
+  name: istio
+  apiGroup: rbac.authorization.k8s.io
