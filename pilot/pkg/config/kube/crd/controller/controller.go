@@ -367,7 +367,9 @@ func (c *controller) List(typ resource.GroupVersionKind, namespace string) ([]mo
 			// the rest should still be processed.
 			handleValidationFailure(item, err)
 		} else {
-			out = append(out, *config)
+			if c.client.objectInEnvironment(config) {
+				out = append(out, *config)
+			}
 		}
 	}
 	return out, nil

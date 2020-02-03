@@ -12373,6 +12373,9 @@ metadata:
     {{ $key }}: "{{ $val }}"
 {{- end }}
     istio: pilot
+    {{- if .Values.global.revision }}
+    istio.io/rev: {{.Values.global.revision}}
+    {{- end }}
 spec:
 {{- if not .Values.pilot.autoscaleEnabled }}
 {{- if .Values.pilot.replicaCount }}
@@ -12385,7 +12388,9 @@ spec:
       maxUnavailable: {{ .Values.pilot.rollingMaxUnavailable }}
   selector:
     matchLabels:
-      {{- if ne .Values.version ""}}
+      {{- if .Values.global.revision }}
+      istio.io/rev: {{.Values.global.revision}}
+      {{- else if ne .Values.version ""}}
       app: pilot
       version: {{ .Values.version }}
       {{- else }}
@@ -12395,7 +12400,9 @@ spec:
     metadata:
       labels:
         app: pilot
-        {{- if ne .Values.version ""}}
+        {{- if .Values.global.revision }}
+        istio.io/rev: {{.Values.global.revision}}
+        {{- else if ne .Values.version ""}}
         version: {{ .Values.version }}
         {{- else }}
         # Label used by the 'default' service. For versioned deployments we match with app and version.
@@ -12500,6 +12507,12 @@ spec:
 {{- if .Values.pilot.traceSampling }}
           - name: PILOT_TRACE_SAMPLING
             value: "{{ .Values.pilot.traceSampling }}"
+{{- end }}
+{{- if .Values.global.revision }}
+          - name: REVISION
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['istio.io/rev']
 {{- end }}
           - name: CONFIG_NAMESPACE
             value: {{ .Values.pilot.configNamespace }}
@@ -12872,6 +12885,11 @@ webhooks:
         - disabled
       - key: istio-env
         operator: DoesNotExist
+      - key: istio.io/rev
+        operator: DoesNotExist
+{{- else if .Values.global.revision }}
+      matchLabels:
+        istio.io/rev: {{ .Values.global.revision }}
 {{- else if eq .Values.sidecarInjectorWebhook.injectLabel "istio-injection" }}
       matchLabels:
         istio-injection: enabled
@@ -12976,10 +12994,15 @@ spec:
     targetPort: 15017
 {{- end }}
   selector:
-    {{- if ne .Values.version ""}}
+    {{- if .Values.global.revision }}
+    app: pilot
+    istio.io/rev: {{.Values.global.revision}}
+    {{- else if ne .Values.version ""}}
     app: pilot
     version: {{ .Values.version }}
-    {{ else }}
+    {{- else }}
+    # Label used by the 'default' service. For versioned deployments we match with app and version.
+    # This avoids default deployment picking the canary
     istio: pilot
     {{- end }}
 ---
@@ -13000,8 +13023,17 @@ spec:
       name: https-webhook # validation and injection
       targetPort: 15017
   selector:
+    {{- if .Values.global.revision }}
     app: pilot
+    istio.io/rev: {{.Values.global.revision}}
+    {{- else if ne .Values.version ""}}
+    app: pilot
+    version: {{ .Values.version }}
+    {{- else }}
+    # Label used by the 'default' service. For versioned deployments we match with app and version.
+    # This avoids default deployment picking the canary
     istio: pilot
+    {{- end }}
 ---
 {{- end }}`)
 

@@ -67,6 +67,7 @@ func (s *Server) initSidecarInjector(args *PilotArgs) error {
 		ValuesFile: filepath.Join(injectPath, "values"),
 		MeshFile:   args.Mesh.ConfigFile,
 		Env:        s.environment,
+		Revision:   args.Revision,
 		CertFile:   filepath.Join(dnsCertDir, "cert-chain.pem"),
 		KeyFile:    filepath.Join(dnsCertDir, "key.pem"),
 		// Disable monitoring. The injection metrics will be picked up by Pilots metrics exporter already

@@ -25,10 +25,15 @@ spec:
     targetPort: 15017
 {{- end }}
   selector:
-    {{- if ne .Values.version ""}}
+    {{- if .Values.global.revision }}
+    app: pilot
+    istio.io/rev: {{.Values.global.revision}}
+    {{- else if ne .Values.version ""}}
     app: pilot
     version: {{ .Values.version }}
-    {{ else }}
+    {{- else }}
+    # Label used by the 'default' service. For versioned deployments we match with app and version.
+    # This avoids default deployment picking the canary
     istio: pilot
     {{- end }}
 ---
@@ -49,7 +54,16 @@ spec:
       name: https-webhook # validation and injection
       targetPort: 15017
   selector:
+    {{- if .Values.global.revision }}
     app: pilot
+    istio.io/rev: {{.Values.global.revision}}
+    {{- else if ne .Values.version ""}}
+    app: pilot
+    version: {{ .Values.version }}
+    {{- else }}
+    # Label used by the 'default' service. For versioned deployments we match with app and version.
+    # This avoids default deployment picking the canary
     istio: pilot
+    {{- end }}
 ---
 {{- end }}

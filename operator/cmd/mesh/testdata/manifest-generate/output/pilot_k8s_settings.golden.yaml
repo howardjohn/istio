@@ -1524,6 +1524,8 @@ spec:
     name: https-webhook # validation and injection
     targetPort: 15017
   selector:
+    # Label used by the 'default' service. For versioned deployments we match with app and version.
+    # This avoids default deployment picking the canary
     istio: pilot
 ---
 
@@ -1544,7 +1546,8 @@ spec:
       name: https-webhook # validation and injection
       targetPort: 15017
   selector:
-    app: pilot
+    # Label used by the 'default' service. For versioned deployments we match with app and version.
+    # This avoids default deployment picking the canary
     istio: pilot
 ---
 

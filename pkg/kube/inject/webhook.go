@@ -67,6 +67,7 @@ type Webhook struct {
 	sidecarTemplateVersion string
 	meshConfig             *meshconfig.MeshConfig
 	valuesConfig           string
+	revision               string
 
 	healthCheckInterval time.Duration
 	healthCheckFile     string
@@ -137,6 +138,9 @@ type WebhookParameters struct {
 
 	// KeyFile is the path to the x509 private key matching `CertFile`.
 	KeyFile string
+
+	// Revision is the istio.io/rev label to inject into pods
+	Revision string
 
 	// Port is the webhook port, e.g. typically 443 for https.
 	Port int
@@ -548,7 +552,7 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 }
 
 func createPatch(pod *corev1.Pod, prevStatus *SidecarInjectionStatus, annotations map[string]string, sic *SidecarInjectionSpec,
-	workloadName string) ([]byte, error) {
+	workloadName string, revision string) ([]byte, error) {
 
 	var patch []rfc6902PatchOperation
 
@@ -595,6 +599,10 @@ func createPatch(pod *corev1.Pod, prevStatus *SidecarInjectionStatus, annotation
 	patch = append(patch, addLabels(pod.Labels, map[string]string{
 		model.TLSModeLabelName:               model.IstioMutualTLSModeLabel,
 		model.IstioCanonicalServiceLabelName: canonicalSvc})...)
+
+	if environment != "" {
+		patch = append(patch, addLabels(pod.Labels, map[string]string{model.RevisionLabel: environment})...)
+	}
 
 	if rewrite {
 		patch = append(patch, createProbeRewritePatch(pod.Annotations, &pod.Spec, sic)...)
@@ -759,7 +767,7 @@ func (wh *Webhook) inject(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionRespons
 		annotations[k] = v
 	}
 
-	patchBytes, err := createPatch(&pod, injectionStatus(&pod), annotations, spec, deployMeta.Name)
+	patchBytes, err := createPatch(&pod, injectionStatus(&pod), annotations, spec, deployMeta.Name, wh.revision)
 	if err != nil {
 		handleError(fmt.Sprintf("AdmissionResponse: err=%v spec=%v\n", err, spec))
 		return toAdmissionResponse(err)
