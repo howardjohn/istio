@@ -377,10 +377,8 @@ func (cl *Client) List(kind resource.GroupVersionKind, namespace string) ([]mode
 		obj, err := crd.ConvertObject(s, item, cl.domainSuffix)
 		if err != nil {
 			errs = multierror.Append(errs, err)
-		} else {
-			if cl.objectInEnvironment(obj) {
-				out = append(out, *obj)
-			}
+		} else if cl.objectInEnvironment(obj) {
+			out = append(out, *obj)
 		}
 	}
 	return out, errs
