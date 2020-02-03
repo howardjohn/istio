@@ -551,9 +551,9 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 	return patch
 }
 
-func createPatch(pod *corev1.Pod, prevStatus *SidecarInjectionStatus, annotations map[string]string, sic *SidecarInjectionSpec,
+func createPatch(pod *corev1.Pod, prevStatus *SidecarInjectionStatus,
+	annotations map[string]string, sic *SidecarInjectionSpec,
 	workloadName string, revision string) ([]byte, error) {
-
 	var patch []rfc6902PatchOperation
 
 	// Remove any containers previously injected by kube-inject using
