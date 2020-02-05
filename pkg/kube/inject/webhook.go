@@ -600,8 +600,8 @@ func createPatch(pod *corev1.Pod, prevStatus *SidecarInjectionStatus,
 		model.TLSModeLabelName:               model.IstioMutualTLSModeLabel,
 		model.IstioCanonicalServiceLabelName: canonicalSvc})...)
 
-	if environment != "" {
-		patch = append(patch, addLabels(pod.Labels, map[string]string{model.RevisionLabel: environment})...)
+	if revision != "" {
+		patch = append(patch, addLabels(pod.Labels, map[string]string{model.RevisionLabel: revision})...)
 	}
 
 	if rewrite {

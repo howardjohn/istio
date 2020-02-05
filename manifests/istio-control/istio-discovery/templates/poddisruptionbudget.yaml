@@ -2,7 +2,11 @@
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
-  name: istio-pilot{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istio-pilot
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     app: pilot
@@ -13,10 +17,11 @@ spec:
   selector:
     matchLabels:
       app: pilot
-      {{- if ne .Values.version ""}}
-      version: {{ .Values.version }}
-      {{- end }}
+{{- if .Values.global.revision }}
+      istio.io/rev: {{.Values.global.revision}}
+{{- else }}
       release: {{ .Release.Name }}
       istio: pilot
+{{- end }}
 ---
 {{- end }}

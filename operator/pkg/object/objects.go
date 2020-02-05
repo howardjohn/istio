@@ -208,6 +208,23 @@ func (o *K8sObject) AddLabels(labels map[string]string) {
 	o.yaml = nil
 }
 
+// AddLabels adds labels to the K8sObject if they are not present
+func (o *K8sObject) ConditionalAddLabels(labels map[string]string) {
+	merged := make(map[string]string)
+	for k, v := range o.object.GetLabels() {
+		merged[k] = v
+	}
+
+	for k, v := range labels {
+		merged[k] = v
+	}
+
+	o.object.SetLabels(merged)
+	// Invalidate cached json
+	o.json = nil
+	o.yaml = nil
+}
+
 // K8sObjects holds a collection of k8s objects, so that we can filter / sequence them
 type K8sObjects []*K8sObject
 

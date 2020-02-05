@@ -243,7 +243,7 @@ func parseKubectlVersion(kubectlStdout string) (*goversion.Version, *goversion.V
 }
 
 // ApplyAll applies all given manifests using kubectl client.
-func ApplyAll(manifests name.ManifestMap, version pkgversion.Version, opts *kubectlcmd.Options) (CompositeOutput, error) {
+func ApplyAll(manifests name.ManifestMap, revision string, version pkgversion.Version,opts *kubectlcmd.Options) (CompositeOutput, error) {
 	scope.Infof("Preparing manifests for these components:")
 	for c := range manifests {
 		scope.Infof("- %s", c)
@@ -252,10 +252,10 @@ func ApplyAll(manifests name.ManifestMap, version pkgversion.Version, opts *kube
 	if _, err := InitK8SRestClient(opts.Kubeconfig, opts.Context); err != nil {
 		return nil, err
 	}
-	return applyRecursive(manifests, version, opts)
+	return applyRecursive(manifests, revision, version, opts)
 }
 
-func applyRecursive(manifests name.ManifestMap, version pkgversion.Version, opts *kubectlcmd.Options) (CompositeOutput, error) {
+func applyRecursive(manifests name.ManifestMap, revision string, version pkgversion.Version,  opts *kubectlcmd.Options) (CompositeOutput, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	out := CompositeOutput{}
@@ -270,7 +270,7 @@ func applyRecursive(manifests name.ManifestMap, version pkgversion.Version, opts
 				<-s
 				scope.Infof("Prerequisite for %s has completed, proceeding with install.", c)
 			}
-			applyOut, appliedObjects := ApplyManifest(c, strings.Join(m, helm.YAMLSeparator), version.String(), *opts)
+			applyOut, appliedObjects := ApplyManifest(c, strings.Join(m, helm.YAMLSeparator), revision, version.String(), *opts)
 			mu.Lock()
 			out[c] = applyOut
 			allAppliedObjects = append(allAppliedObjects, appliedObjects...)
@@ -298,7 +298,7 @@ func applyRecursive(manifests name.ManifestMap, version pkgversion.Version, opts
 	return out, nil
 }
 
-func ApplyManifest(componentName name.ComponentName, manifestStr, version string,
+func ApplyManifest(componentName name.ComponentName, manifestStr, revision, version string,
 	opts kubectlcmd.Options) (*ComponentApplyOutput, object.K8sObjects) {
 	stdout, stderr := "", ""
 	appliedObjects := object.K8sObjects{}
@@ -306,8 +306,13 @@ func ApplyManifest(componentName name.ComponentName, manifestStr, version string
 	if err != nil {
 		return buildComponentApplyOutput(stdout, stderr, appliedObjects, err), appliedObjects
 	}
-	componentLabel := fmt.Sprintf("%s=%s", istioComponentLabelStr, componentName)
 
+	componentLabel := fmt.Sprintf("%s=%s", istioComponentLabelStr, componentName)
+	if revision != "" {
+		componentLabel += ",istio.io/rev=" + revision
+	} else {
+		componentLabel += ",!istio.io/rev"
+	}
 	// TODO: remove this when `kubectl --prune` supports empty objects
 	//  (https://github.com/kubernetes/kubernetes/issues/40635)
 	// Delete all resources for a disabled component
@@ -353,6 +358,7 @@ func ApplyManifest(componentName name.ComponentName, manifestStr, version string
 		o.AddLabels(map[string]string{istioComponentLabelStr: string(componentName)})
 		o.AddLabels(map[string]string{operatorLabelStr: operatorReconcileStr})
 		o.AddLabels(map[string]string{istioVersionLabelStr: version})
+		o.AddLabels(map[string]string{"istio.io/rev": revision})
 	}
 
 	opts.ExtraArgs = []string{"--force", "--selector", componentLabel}

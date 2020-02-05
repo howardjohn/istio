@@ -3,19 +3,25 @@
 apiVersion: admissionregistration.k8s.io/v1beta1
 kind: MutatingWebhookConfiguration
 metadata:
-{{- if eq .Release.Namespace "istio-system"}}
-  name: istio-sidecar-injector
-{{ else }}
-  name: istio-sidecar-injector-{{ .Release.Namespace }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istiod
 {{- end }}
   labels:
-    app: sidecar-injector
-    release: {{ .Release.Name }}
+    app: istiod
+{{- if .Values.global.revision }}
+    istio.io/rev: {{.Values.global.revision}}
+{{- end }}
 webhooks:
   - name: sidecar-injector.istio.io
     clientConfig:
       service:
-        name: istio-pilot
+      {{- if .Values.global.revision }}
+        name: istiod-{{ .Values.global.revision }}
+      {{- else }}
+        name: istiod
+      {{- end }}
         namespace: {{ .Release.Namespace }}
         path: "/inject"
       caBundle: ""
@@ -41,8 +47,13 @@ webhooks:
       - key: istio.io/rev
         operator: DoesNotExist
 {{- else if .Values.global.revision }}
-      matchLabels:
-        istio.io/rev: {{ .Values.global.revision }}
+      matchExpressions:
+      - key: istio-injection
+        operator: DoesNotExist
+      - key: istio.io/rev
+        operator: In
+        values:
+        - {{ .Values.global.revision }}
 {{- else if eq .Values.sidecarInjectorWebhook.injectLabel "istio-injection" }}
       matchLabels:
         istio-injection: enabled

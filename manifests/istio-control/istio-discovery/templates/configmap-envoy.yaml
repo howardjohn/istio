@@ -2,9 +2,12 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: pilot-envoy-config{{ .Values.version }}
+  name: pilot-envoy-config
   labels:
     release: {{ .Release.Name }}
+{{- if .Values.global.revision }}
+    istio.io/rev: {{.Values.global.revision}}
+{{- end }}
 data:
   envoy.yaml.tmpl: |-
     admin:

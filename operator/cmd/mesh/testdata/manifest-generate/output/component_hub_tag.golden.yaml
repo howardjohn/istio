@@ -7327,8 +7327,8 @@ metadata:
   namespace: istio-system
   labels:
     app: pilot
-    release: istio
     istio: pilot
+    release: istio
 spec:
   strategy:
     rollingUpdate:
@@ -7341,8 +7341,6 @@ spec:
     metadata:
       labels:
         app: pilot
-        # Label used by the 'default' service. For versioned deployments we match with app and version.
-        # This avoids default deployment picking the canary
         istio: pilot
       annotations:
         sidecar.istio.io/inject: "false"
@@ -8279,8 +8277,6 @@ spec:
     name: https-webhook # validation and injection
     targetPort: 15017
   selector:
-    # Label used by the 'default' service. For versioned deployments we match with app and version.
-    # This avoids default deployment picking the canary
     istio: pilot
 ---
 
@@ -8295,14 +8291,14 @@ metadata:
     release: istio
 spec:
   ports:
-    - port: 15012
-      name: https-dns # mTLS with k8s-signed cert
-    - port: 443
-      name: https-webhook # validation and injection
-      targetPort: 15017
+  - port: 15010
+    name: grpc-xds # plain text grpc
+  - port: 15012
+    name: https-dns # mTLS with k8s-signed cert
+  - port: 443
+    name: https-webhook # validation and injection
+    targetPort: 15017
   selector:
-    # Label used by the 'default' service. For versioned deployments we match with app and version.
-    # This avoids default deployment picking the canary
     istio: pilot
 ---
 

@@ -2,7 +2,11 @@
 apiVersion: autoscaling/v2beta1
 kind: HorizontalPodAutoscaler
 metadata:
-  name: istio-pilot{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istio-pilot
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     app: pilot
@@ -13,7 +17,11 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: istio-pilot{{ .Values.version }}
+  {{- if .Values.global.revision }}
+    name: istiod-{{ .Values.global.revision }}
+  {{- else }}
+    name: istiod
+  {{- end }}
   metrics:
   - type: Resource
     resource:

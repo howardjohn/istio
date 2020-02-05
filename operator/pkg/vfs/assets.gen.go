@@ -11432,7 +11432,11 @@ var _chartsIstioControlIstioDiscoveryTemplatesAutoscaleYaml = []byte(`{{- if and
 apiVersion: autoscaling/v2beta1
 kind: HorizontalPodAutoscaler
 metadata:
-  name: istio-pilot{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istio-pilot
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     app: pilot
@@ -11443,7 +11447,11 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: istio-pilot{{ .Values.version }}
+  {{- if .Values.global.revision }}
+    name: istiod-{{ .Values.global.revision }}
+  {{- else }}
+    name: istiod
+  {{- end }}
   metrics:
   - type: Resource
     resource:
@@ -11754,9 +11762,12 @@ var _chartsIstioControlIstioDiscoveryTemplatesConfigmapEnvoyYaml = []byte(`apiVe
 kind: ConfigMap
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: pilot-envoy-config{{ .Values.version }}
+  name: pilot-envoy-config
   labels:
     release: {{ .Release.Name }}
+{{- if .Values.global.revision }}
+    istio.io/rev: {{.Values.global.revision}}
+{{- end }}
 data:
   envoy.yaml.tmpl: |-
     admin:
@@ -11943,10 +11954,17 @@ var _chartsIstioControlIstioDiscoveryTemplatesConfigmapJwksYaml = []byte(`{{- if
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: pilot-jwks-extra-cacerts{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-jwks-extra-cacerts-{{ .Values.global.revision }}
+{{- else }}
+  name: pilot-jwks-extra-cacerts
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     release: {{ .Release.Name }}
+{{- if .Values.global.revision }}
+    istio.io/rev: {{.Values.global.revision}}
+{{- end }}
 data:
   extra.pem: {{ .Values.pilot.jwksResolverExtraRootCA | quote }}
 {{- end }}
@@ -12003,10 +12021,17 @@ var _chartsIstioControlIstioDiscoveryTemplatesConfigmapYaml = []byte(`{{- if .Va
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: istio{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-mesh-{{ .Values.global.revision }}
+{{- else }}
+  name: istio
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     release: {{ .Release.Name }}
+{{- if .Values.global.revision }}
+    istio.io/rev: {{.Values.global.revision}}
+{{- end }}
 data:
 
   # Configuration file for the mesh networks to be used by the Split Horizon EDS.
@@ -12361,21 +12386,22 @@ func chartsIstioControlIstioDiscoveryTemplatesConfigmapYaml() (*asset, error) {
 var _chartsIstioControlIstioDiscoveryTemplatesDeploymentYaml = []byte(`apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: istiod{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istiod
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     app: pilot
-    {{- if ne .Values.version ""}}
-    version: {{ .Values.version }}
-    {{- end }}
+    istio: pilot
     release: {{ .Release.Name }}
 {{- range $key, $val := .Values.pilot.deploymentLabels }}
     {{ $key }}: "{{ $val }}"
 {{- end }}
-    istio: pilot
-    {{- if .Values.global.revision }}
+{{- if .Values.global.revision }}
     istio.io/rev: {{.Values.global.revision}}
-    {{- end }}
+{{- end }}
 spec:
 {{- if not .Values.pilot.autoscaleEnabled }}
 {{- if .Values.pilot.replicaCount }}
@@ -12388,26 +12414,17 @@ spec:
       maxUnavailable: {{ .Values.pilot.rollingMaxUnavailable }}
   selector:
     matchLabels:
+      istio: pilot
       {{- if .Values.global.revision }}
       istio.io/rev: {{.Values.global.revision}}
-      {{- else if ne .Values.version ""}}
-      app: pilot
-      version: {{ .Values.version }}
-      {{- else }}
-      istio: pilot
       {{- end }}
   template:
     metadata:
       labels:
         app: pilot
+        istio: pilot
         {{- if .Values.global.revision }}
         istio.io/rev: {{.Values.global.revision}}
-        {{- else if ne .Values.version ""}}
-        version: {{ .Values.version }}
-        {{- else }}
-        # Label used by the 'default' service. For versioned deployments we match with app and version.
-        # This avoids default deployment picking the canary
-        istio: pilot
         {{- end }}
       annotations:
         sidecar.istio.io/inject: "false"
@@ -12672,10 +12689,14 @@ spec:
 
       - name: config-volume
         configMap:
-          name: istio{{ .Values.version }}
+          {{- if .Values.global.revision }}
+          name: istiod-mesh-{{ .Values.global.revision }}
+          {{- else }}
+          name: istio
+          {{- end }}
       - name: pilot-envoy-config
         configMap:
-          name: pilot-envoy-config{{ .Values.version }}
+          name: pilot-envoy-config
   {{- if .Values.global.controlPlaneSecurityEnabled}}
       - name: istio-certs
         secret:
@@ -12685,7 +12706,11 @@ spec:
   {{- if .Values.pilot.jwksResolverExtraRootCA }}
       - name: extracacerts
         configMap:
-          name: pilot-jwks-extra-cacerts{{ .Values.version }}
+        {{- if .Values.global.revision }}
+          name: istiod-jwks-extra-cacerts-{{ .Values.global.revision }}
+        {{- else }}
+          name: pilot-jwks-extra-cacerts
+        {{- end }}
   {{- end }}
       affinity:
       {{- include "nodeaffinity" . | indent 6 }}
@@ -12850,19 +12875,25 @@ var _chartsIstioControlIstioDiscoveryTemplatesMutatingwebhookYaml = []byte(`{{- 
 apiVersion: admissionregistration.k8s.io/v1beta1
 kind: MutatingWebhookConfiguration
 metadata:
-{{- if eq .Release.Namespace "istio-system"}}
-  name: istio-sidecar-injector
-{{ else }}
-  name: istio-sidecar-injector-{{ .Release.Namespace }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istiod
 {{- end }}
   labels:
-    app: sidecar-injector
-    release: {{ .Release.Name }}
+    app: istiod
+{{- if .Values.global.revision }}
+    istio.io/rev: {{.Values.global.revision}}
+{{- end }}
 webhooks:
   - name: sidecar-injector.istio.io
     clientConfig:
       service:
-        name: istio-pilot
+      {{- if .Values.global.revision }}
+        name: istiod-{{ .Values.global.revision }}
+      {{- else }}
+        name: istiod
+      {{- end }}
         namespace: {{ .Release.Namespace }}
         path: "/inject"
       caBundle: ""
@@ -12888,8 +12919,13 @@ webhooks:
       - key: istio.io/rev
         operator: DoesNotExist
 {{- else if .Values.global.revision }}
-      matchLabels:
-        istio.io/rev: {{ .Values.global.revision }}
+      matchExpressions:
+      - key: istio-injection
+        operator: DoesNotExist
+      - key: istio.io/rev
+        operator: In
+        values:
+        - {{ .Values.global.revision }}
 {{- else if eq .Values.sidecarInjectorWebhook.injectLabel "istio-injection" }}
       matchLabels:
         istio-injection: enabled
@@ -12932,7 +12968,11 @@ var _chartsIstioControlIstioDiscoveryTemplatesPoddisruptionbudgetYaml = []byte(`
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
-  name: istio-pilot{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istio-pilot
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     app: pilot
@@ -12943,11 +12983,12 @@ spec:
   selector:
     matchLabels:
       app: pilot
-      {{- if ne .Values.version ""}}
-      version: {{ .Values.version }}
-      {{- end }}
+{{- if .Values.global.revision }}
+      istio.io/rev: {{.Values.global.revision}}
+{{- else }}
       release: {{ .Release.Name }}
       istio: pilot
+{{- end }}
 ---
 {{- end }}
 `)
@@ -12970,7 +13011,7 @@ func chartsIstioControlIstioDiscoveryTemplatesPoddisruptionbudgetYaml() (*asset,
 var _chartsIstioControlIstioDiscoveryTemplatesServiceYaml = []byte(`apiVersion: v1
 kind: Service
 metadata:
-  name: istio-pilot{{ .Values.version }}
+  name: istio-pilot
   namespace: {{ .Release.Namespace }}
   labels:
     app: pilot
@@ -12994,17 +13035,7 @@ spec:
     targetPort: 15017
 {{- end }}
   selector:
-    {{- if .Values.global.revision }}
-    app: pilot
-    istio.io/rev: {{.Values.global.revision}}
-    {{- else if ne .Values.version ""}}
-    app: pilot
-    version: {{ .Values.version }}
-    {{- else }}
-    # Label used by the 'default' service. For versioned deployments we match with app and version.
-    # This avoids default deployment picking the canary
     istio: pilot
-    {{- end }}
 ---
 {{- if .Values.global.istiod.enabled }}
 apiVersion: v1
@@ -13017,23 +13048,39 @@ metadata:
     release: {{ .Release.Name }}
 spec:
   ports:
-    - port: 15012
-      name: https-dns # mTLS with k8s-signed cert
-    - port: 443
-      name: https-webhook # validation and injection
-      targetPort: 15017
+  - port: 15010
+    name: grpc-xds # plain text grpc
+  - port: 15012
+    name: https-dns # mTLS with k8s-signed cert
+  - port: 443
+    name: https-webhook # validation and injection
+    targetPort: 15017
   selector:
-    {{- if .Values.global.revision }}
-    app: pilot
-    istio.io/rev: {{.Values.global.revision}}
-    {{- else if ne .Values.version ""}}
-    app: pilot
-    version: {{ .Values.version }}
-    {{- else }}
-    # Label used by the 'default' service. For versioned deployments we match with app and version.
-    # This avoids default deployment picking the canary
     istio: pilot
-    {{- end }}
+---
+{{- end }}
+{{- if .Values.global.revision }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: istiod-{{ .Values.global.revision }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: istiod
+    release: {{ .Release.Name }}
+    istio.io/rev: {{.Values.global.revision}}
+spec:
+  ports:
+  - port: 15010
+    name: grpc-xds # plain text grpc
+  - port: 15012
+    name: https-dns # mTLS with k8s-signed cert
+  - port: 443
+    name: https-webhook # validation and injection
+    targetPort: 15017
+  selector:
+    istio: pilot
+    istio.io/rev: {{.Values.global.revision}}
 ---
 {{- end }}`)
 
@@ -38528,18 +38575,6 @@ spec:
               fieldRef:
                 apiVersion: v1
                 fieldPath: metadata.namespace
-        hpaSpec:
-          maxReplicas: 5
-          minReplicas: 1
-          scaleTargetRef:
-            apiVersion: apps/v1
-            kind: Deployment
-            name: istio-pilot
-          metrics:
-            - type: Resource
-              resource:
-                name: cpu
-                targetAverageUtilization: 80
         readinessProbe:
           httpGet:
             path: /ready
@@ -40194,6 +40229,8 @@ var _translateconfigTranslateconfig15Yaml = []byte(`apiMapping:
     outPath: "global.resources"
   DefaultNamespace:
     outPath: "global.istioNamespace"
+  Revision:
+    outPath: "global.revision"
 kubernetesMapping:
   "Components.{{.ComponentName}}.K8S.Affinity":
     outPath: "[{{.ResourceType}}:{{.ResourceName}}].spec.template.spec.affinity"
@@ -40365,6 +40402,8 @@ var _translateconfigTranslateconfig16Yaml = []byte(`apiMapping:
     outPath: "global.resources"
   DefaultNamespace:
     outPath: "global.istioNamespace"
+  Revision:
+    outPath: "global.revision"
 kubernetesMapping:
   "Components.{{.ComponentName}}.K8S.Affinity":
     outPath: "[{{.ResourceType}}:{{.ResourceName}}].spec.template.spec.affinity"

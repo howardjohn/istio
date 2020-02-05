@@ -1,21 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: istiod{{ .Values.version }}
+{{- if .Values.global.revision }}
+  name: istiod-{{ .Values.global.revision }}
+{{- else }}
+  name: istiod
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     app: pilot
-    {{- if ne .Values.version ""}}
-    version: {{ .Values.version }}
-    {{- end }}
+    istio: pilot
     release: {{ .Release.Name }}
 {{- range $key, $val := .Values.pilot.deploymentLabels }}
     {{ $key }}: "{{ $val }}"
 {{- end }}
-    istio: pilot
-    {{- if .Values.global.revision }}
+{{- if .Values.global.revision }}
     istio.io/rev: {{.Values.global.revision}}
-    {{- end }}
+{{- end }}
 spec:
 {{- if not .Values.pilot.autoscaleEnabled }}
 {{- if .Values.pilot.replicaCount }}
@@ -28,26 +29,17 @@ spec:
       maxUnavailable: {{ .Values.pilot.rollingMaxUnavailable }}
   selector:
     matchLabels:
+      istio: pilot
       {{- if .Values.global.revision }}
       istio.io/rev: {{.Values.global.revision}}
-      {{- else if ne .Values.version ""}}
-      app: pilot
-      version: {{ .Values.version }}
-      {{- else }}
-      istio: pilot
       {{- end }}
   template:
     metadata:
       labels:
         app: pilot
+        istio: pilot
         {{- if .Values.global.revision }}
         istio.io/rev: {{.Values.global.revision}}
-        {{- else if ne .Values.version ""}}
-        version: {{ .Values.version }}
-        {{- else }}
-        # Label used by the 'default' service. For versioned deployments we match with app and version.
-        # This avoids default deployment picking the canary
-        istio: pilot
         {{- end }}
       annotations:
         sidecar.istio.io/inject: "false"
@@ -312,10 +304,14 @@ spec:
 
       - name: config-volume
         configMap:
-          name: istio{{ .Values.version }}
+          {{- if .Values.global.revision }}
+          name: istiod-mesh-{{ .Values.global.revision }}
+          {{- else }}
+          name: istio
+          {{- end }}
       - name: pilot-envoy-config
         configMap:
-          name: pilot-envoy-config{{ .Values.version }}
+          name: pilot-envoy-config
   {{- if .Values.global.controlPlaneSecurityEnabled}}
       - name: istio-certs
         secret:
@@ -325,7 +321,11 @@ spec:
   {{- if .Values.pilot.jwksResolverExtraRootCA }}
       - name: extracacerts
         configMap:
-          name: pilot-jwks-extra-cacerts{{ .Values.version }}
+        {{- if .Values.global.revision }}
+          name: istiod-jwks-extra-cacerts-{{ .Values.global.revision }}
+        {{- else }}
+          name: pilot-jwks-extra-cacerts
+        {{- end }}
   {{- end }}
       affinity:
       {{- include "nodeaffinity" . | indent 6 }}
