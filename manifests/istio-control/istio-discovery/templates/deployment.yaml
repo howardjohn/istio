@@ -167,7 +167,11 @@ spec:
             value: "false"
 {{- if .Values.global.revision }}
           - name: INJECTION_WEBHOOK_CONFIG_NAME
+    {{- if .Values.global.globalRevision }}
+            value: istiod-{{ .Values.global.revision }},istiod-global
+    {{- else }}
             value: istiod-{{ .Values.global.revision }}
+    {{- end }}
 {{- end }}
 {{- end }}
           resources:
@@ -302,7 +306,11 @@ spec:
       # Optional - image should have
       - name: inject
         configMap:
+        {{- if .Values.global.revision }}
+          name: istio-sidecar-injector-{{ .Values.global.revision }}
+        {{- else }}
           name: istio-sidecar-injector
+        {{- end }}
           optional: true
       - name: validation
         configMap:

@@ -208,6 +208,7 @@ func NewWebhook(p WebhookParameters) (*Webhook, error) {
 		keyFile:                p.KeyFile,
 		cert:                   &pair,
 		env:                    p.Env,
+		revision:               p.Revision,
 	}
 
 	var mux *http.ServeMux
@@ -600,6 +601,7 @@ func createPatch(pod *corev1.Pod, prevStatus *SidecarInjectionStatus,
 		model.TLSModeLabelName:               model.IstioMutualTLSModeLabel,
 		model.IstioCanonicalServiceLabelName: canonicalSvc})...)
 
+	log.Errorf("howardjohn: patching revision: %v", revision)
 	if revision != "" {
 		patch = append(patch, addLabels(pod.Labels, map[string]string{model.RevisionLabel: revision})...)
 	}

@@ -14,6 +14,7 @@
 
 global:
   revision: ""
+  globalRevision: true
   # Used to locate istio-pilot.
   # Default is to install pilot in a dedicated namespace, istio-pilot11. You can use multiple namespaces, but
   # for each 'profile' you need to match the control plane namespace and the value of istioNamespace

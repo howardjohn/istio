@@ -27,7 +27,7 @@ spec:
   selector:
     istio: pilot
 ---
-{{- if .Values.global.istiod.enabled }}
+{{- if and .Values.global.istiod.enabled .Values.global.globalRevision }}
 apiVersion: v1
 kind: Service
 metadata:

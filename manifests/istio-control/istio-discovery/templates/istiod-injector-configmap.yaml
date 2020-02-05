@@ -2,7 +2,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+{{- if .Values.global.revision }}
+  name: istio-sidecar-injector-{{ .Values.global.revision }}
+{{- else }}
   name: istio-sidecar-injector
+{{- end }}
   namespace: {{ .Release.Namespace }}
   labels:
     release: {{ .Release.Name }}

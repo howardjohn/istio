@@ -288,7 +288,11 @@ data:
       # If port is 15012, will use SDS.
       # controlPlaneAuthPolicy is for mounted secrets, will wait for the files.
       controlPlaneAuthPolicy: NONE
-      discoveryAddress: {{ $defPilotHostname }}.svc:15012
+    {{- if .Values.global.revision }}
+      discoveryAddress: istiod-{{ .Values.global.revision }}.{{ .Release.Namespace }}.svc:15012
+    {{- else }}
+      discoveryAddress: istiod.{{ .Release.Namespace }}.svc:15012
+    {{- end }}
 
     {{- else if .Values.global.controlPlaneSecurityEnabled }}
       #

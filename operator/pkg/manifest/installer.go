@@ -308,10 +308,12 @@ func ApplyManifest(componentName name.ComponentName, manifestStr, revision, vers
 	}
 
 	componentLabel := fmt.Sprintf("%s=%s", istioComponentLabelStr, componentName)
-	if revision != "" {
-		componentLabel += ",istio.io/rev=" + revision
-	} else {
-		componentLabel += ",!istio.io/rev"
+	if componentName != name.IstioBaseComponentName {
+		if revision != "" {
+			componentLabel += ",istio.io/rev=" + revision
+		} else {
+			componentLabel += ",!istio.io/rev"
+		}
 	}
 	// TODO: remove this when `kubectl --prune` supports empty objects
 	//  (https://github.com/kubernetes/kubernetes/issues/40635)
@@ -358,7 +360,6 @@ func ApplyManifest(componentName name.ComponentName, manifestStr, revision, vers
 		o.AddLabels(map[string]string{istioComponentLabelStr: string(componentName)})
 		o.AddLabels(map[string]string{operatorLabelStr: operatorReconcileStr})
 		o.AddLabels(map[string]string{istioVersionLabelStr: version})
-		o.AddLabels(map[string]string{"istio.io/rev": revision})
 	}
 
 	opts.ExtraArgs = []string{"--force", "--selector", componentLabel}
