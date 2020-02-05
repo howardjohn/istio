@@ -12543,7 +12543,11 @@ spec:
             value: "{{ .Values.pilot.enableProtocolSniffingForInbound }}"
 {{- if .Values.global.istiod.enabled }}
           - name: ISTIOD_ADDR
-            value: istio-pilot.{{ .Release.Namespace }}.svc:15012
+          {{- if .Values.global.revision }}
+            value: istiod-{{ .Values.global.revision }}.{{ .Release.Namespace }}.svc:15012
+          {{- else }}
+            value: istiod.{{ .Release.Namespace }}.svc:15012
+          {{- end }}
           - name: PILOT_EXTERNAL_GALLEY
             value: "false"
 {{- end }}

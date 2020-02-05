@@ -6,7 +6,7 @@ metadata:
 {{- if .Values.global.revision }}
   name: istiod-{{ .Values.global.revision }}
 {{- else }}
-  name: istiod
+  name: istio-sidecar-injector
 {{- end }}
   labels:
     app: istiod

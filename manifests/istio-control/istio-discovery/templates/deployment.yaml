@@ -158,9 +158,17 @@ spec:
             value: "{{ .Values.pilot.enableProtocolSniffingForInbound }}"
 {{- if .Values.global.istiod.enabled }}
           - name: ISTIOD_ADDR
-            value: istio-pilot.{{ .Release.Namespace }}.svc:15012
+          {{- if .Values.global.revision }}
+            value: istiod-{{ .Values.global.revision }}.{{ .Release.Namespace }}.svc:15012
+          {{- else }}
+            value: istiod.{{ .Release.Namespace }}.svc:15012
+          {{- end }}
           - name: PILOT_EXTERNAL_GALLEY
             value: "false"
+{{- if .Values.global.revision }}
+          - name: INJECTION_WEBHOOK_CONFIG_NAME
+            value: istiod-{{ .Values.global.revision }}
+{{- end }}
 {{- end }}
           resources:
 {{- if .Values.pilot.resources }}
