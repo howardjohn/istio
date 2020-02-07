@@ -88,4 +88,7 @@ const (
 
 	// The data name in the ConfigMap of each namespace storing the root cert of non-Kube CA.
 	CACertNamespaceConfigMapDataName = "ca-cert-ns.pem"
+
+	// CitadelCACertPath is the directory for Citadel CA certificate.
+	CitadelCACertPath = "./etc/istio/citadel-ca-cert"
 )

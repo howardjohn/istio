@@ -31,6 +31,7 @@ import (
 
 	"istio.io/istio/pkg/jwt"
 	"istio.io/istio/pkg/spiffe"
+	"istio.io/istio/pkg/util/gogoprotomarshal"
 	"istio.io/istio/security/pkg/pki/util"
 
 	middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -369,11 +370,22 @@ func (s *Server) httpServerReadyHandler(w http.ResponseWriter, _ *http.Request) 
 	w.WriteHeader(http.StatusOK)
 }
 
+func (s *Server) meshConfigHandler(w http.ResponseWriter, _ *http.Request) {
+	mesh, err := gogoprotomarshal.ToJSON(s.environment.Mesh())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprintf(w, "unable to marshal mesh config: %v", err)
+	}
+	_, _ = w.Write([]byte(mesh))
+}
+
 func (s *Server) initDiscoveryService(args *PilotArgs) error {
 	s.mux = http.NewServeMux()
 	s.mux.HandleFunc("/ready", s.httpServerReadyHandler)
 
 	s.EnvoyXdsServer.InitDebug(s.mux, s.ServiceController(), args.DiscoveryOptions.EnableProfiling, s.injectionWebhook)
+
+	s.mux.HandleFunc("/runtime/meshconfig", s.meshConfigHandler)
 
 	// When the mesh config or networks change, do a full push.
 	s.environment.AddMeshHandler(func() {

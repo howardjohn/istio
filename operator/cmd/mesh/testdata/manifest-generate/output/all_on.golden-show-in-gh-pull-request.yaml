@@ -6801,8 +6801,8 @@ spec:
           - name: ISTIO_META_CLUSTER_ID
             value: "Kubernetes"
           volumeMounts:
-          - mountPath: /etc/istio/citadel-ca-cert
-            name: citadel-ca-cert
+          - mountPath: /etc/istio/config
+            name: istio-config
           - name: istio-token
             mountPath: /var/run/secrets/tokens
             readOnly: true
@@ -6816,9 +6816,9 @@ spec:
             mountPath: "/etc/istio/egressgateway-ca-certs"
             readOnly: true
       volumes:
-      - name: citadel-ca-cert
+      - name: istio-config
         configMap:
-          name: istio-ca-root-cert
+          name: istio-config
       - name: istio-token
         projected:
           sources:
@@ -7659,8 +7659,8 @@ spec:
           - name: ISTIO_META_CLUSTER_ID
             value: "Kubernetes"
           volumeMounts:
-          - mountPath: /etc/istio/citadel-ca-cert
-            name: citadel-ca-cert
+          - mountPath: /etc/istio/config
+            name: istio-config
           - name: istio-token
             mountPath: /var/run/secrets/tokens
             readOnly: true
@@ -7676,9 +7676,9 @@ spec:
             mountPath: "/etc/istio/ingressgateway-ca-certs"
             readOnly: true
       volumes:
-      - name: citadel-ca-cert
+      - name: istio-config
         configMap:
-          name: istio-ca-root-cert
+          name: istio-config
       - name: ingressgatewaysdsudspath
         emptyDir: {}
       - name: istio-token
@@ -9014,10 +9014,8 @@ data:
       {{- end }}
         {{  end -}}
         volumeMounts:
-        {{- if eq .Values.global.pilotCertProvider "citadel" }}
-        - mountPath: /etc/istio/citadel-ca-cert
-          name: citadel-ca-cert
-        {{- end }}
+        - mountPath: /etc/istio/config
+          name: istio-config
         {{ if (isset .ObjectMeta.Annotations `sidecar.istio.io/bootstrapOverride`) }}
         - mountPath: /etc/istio/custom-bootstrap
           name: custom-bootstrap-volume
@@ -9060,11 +9058,9 @@ data:
               expirationSeconds: 43200
               audience: {{ .Values.global.sds.token.aud }}
       {{- end }}
-      {{- if eq .Values.global.pilotCertProvider "citadel" }}
-      - name: citadel-ca-cert
+      - name: istio-config
         configMap:
-          name: istio-ca-root-cert
-      {{- end }}
+          name: istio-config
       - name: istio-certs
         secret:
           optional: true

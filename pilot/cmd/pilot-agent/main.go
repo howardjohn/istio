@@ -17,10 +17,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"text/template"
@@ -28,6 +32,7 @@ import (
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/types"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
@@ -221,7 +226,10 @@ var (
 				tlsClientCertChain, tlsClientKey, tlsClientRootCert,
 			}
 
-			proxyConfig := mesh.DefaultProxyConfig()
+			proxyConfig, err := requestMeshConfig(fmt.Sprintf("https://%s/runtime/meshconfig", discoveryAddress))
+			if err != nil {
+				return fmt.Errorf("failed to fetch mesh config: %v", err)
+			}
 
 			// set all flags
 			proxyConfig.CustomConfigFile = customConfigFile
@@ -350,11 +358,11 @@ var (
 				}
 			}
 
-			if err := validation.ValidateProxyConfig(&proxyConfig); err != nil {
+			if err := validation.ValidateProxyConfig(proxyConfig); err != nil {
 				return err
 			}
 
-			if out, err := gogoprotomarshal.ToYAML(&proxyConfig); err != nil {
+			if out, err := gogoprotomarshal.ToYAML(proxyConfig); err != nil {
 				log.Infof("Failed to serialize to YAML: %v", err)
 			} else {
 				log.Infof("Effective config: %s", out)
@@ -530,7 +538,7 @@ var (
 			log.Infof("PilotSAN %#v", pilotSAN)
 
 			envoyProxy := envoy.NewProxy(envoy.ProxyConfig{
-				Config:              proxyConfig,
+				Config:              *proxyConfig,
 				Node:                role.ServiceNode(),
 				LogLevel:            proxyLogLevel,
 				ComponentLogLevel:   proxyComponentLogLevel,
@@ -567,6 +575,48 @@ var (
 		},
 	}
 )
+
+type httplog struct{}
+
+func (h httplog) Printf(f string, p ...interface{}) {
+	log.Infof(f, p...)
+}
+
+func requestMeshConfig(url string) (*meshconfig.ProxyConfig, error) {
+	rootCert, err := ioutil.ReadFile(path.Join(constants.CitadelCACertPath, constants.CACertNamespaceConfigMapDataName))
+	if err != nil {
+		return nil, fmt.Errorf("cannot read ca cert: %v", err)
+	}
+	c := retryablehttp.NewClient()
+	c.Logger = httplog{}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(rootCert)
+	c.HTTPClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs: caCertPool,
+		},
+	}
+	response, err := c.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d", response.StatusCode)
+	}
+
+	by, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read body: %v", err)
+	}
+	mesh, err := mesh.ApplyMeshJsonConfig(string(by), mesh.DefaultMeshConfig())
+	if err != nil {
+		return nil, fmt.Errorf("invalid mesh config [%v]: %v", string(by), err)
+	}
+	return mesh.GetDefaultConfig(), nil
+}
 
 // dedupes the string array and also ignores the empty string.
 func dedupeStrings(in []string) []string {

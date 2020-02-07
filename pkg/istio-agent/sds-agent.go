@@ -76,8 +76,6 @@ var (
 	// Location of K8S CA root.
 	k8sCAPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
-	// CitadelCACertPath is the directory for Citadel CA certificate.
-	CitadelCACertPath = "./etc/istio/citadel-ca-cert"
 )
 
 const (
@@ -363,7 +361,7 @@ func newSecretCache(serverOptions sds.Options) (workloadSecretCache *cache.Secre
 
 			if serverOptions.PilotCertProvider == "citadel" {
 				log.Info("istiod uses self-issued certificate")
-				if rootCert, err = ioutil.ReadFile(path.Join(CitadelCACertPath, constants.CACertNamespaceConfigMapDataName)); err != nil {
+				if rootCert, err = ioutil.ReadFile(path.Join(constants.CitadelCACertPath, constants.CACertNamespaceConfigMapDataName)); err != nil {
 					certReadErr = true
 				} else {
 					log.Infof("the CA cert of istiod is: %v", string(rootCert))
@@ -397,7 +395,7 @@ func newSecretCache(serverOptions sds.Options) (workloadSecretCache *cache.Secre
 			} else if strings.HasSuffix(serverOptions.CAEndpoint, ":15012") {
 				if serverOptions.PilotCertProvider == "citadel" {
 					log.Info("istiod uses self-issued certificate")
-					if rootCert, err = ioutil.ReadFile(path.Join(CitadelCACertPath, constants.CACertNamespaceConfigMapDataName)); err != nil {
+					if rootCert, err = ioutil.ReadFile(path.Join(constants.CitadelCACertPath, constants.CACertNamespaceConfigMapDataName)); err != nil {
 						certReadErr = true
 					} else {
 						log.Infof("the CA cert of istiod is: %v", string(rootCert))
