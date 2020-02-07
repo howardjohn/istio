@@ -16,7 +16,7 @@ spec:
       annotations:
         sidecar.istio.io/interceptionMode: REDIRECT
         sidecar.istio.io/rewriteAppHTTPProbers: "true"
-        sidecar.istio.io/status: '{"version":"341418dbb29c335401a1b88f9f4f3fec23a7258273f9b6885f3c68ba3df227e0","initContainers":["istio-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-token","citadel-ca-cert","istio-certs"],"imagePullSecrets":null}'
+        sidecar.istio.io/status: '{"version":"29597b3fb69e8f1c21acb972e08be188366eb2e174e7721f5b93d32305f367bf","initContainers":["istio-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-token","citadel-ca-cert","istio-certs"],"imagePullSecrets":null}'
         traffic.sidecar.istio.io/excludeInboundPorts: "15020"
         traffic.sidecar.istio.io/includeInboundPorts: 80,90
         traffic.sidecar.istio.io/includeOutboundIPRanges: '*'
@@ -119,6 +119,9 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        - name: PROXY_CONFIG
+          value: |
+            {"configPath":"/etc/istio/proxy","binaryPath":"/usr/local/bin/envoy","serviceCluster":"istio-proxy","drainDuration":"45s","parentShutdownDuration":"60s","discoveryAddress":"istio-pilot:15010","connectTimeout":"1s","proxyAdminPort":15000,"statNameLength":189,"envoyAccessLogService":{},"envoyMetricsService":{}}
         - name: ISTIO_META_POD_PORTS
           value: |-
             [

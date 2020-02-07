@@ -135,6 +135,7 @@ var (
 		"the provider of Pilot DNS certificate.").Get()
 	jwtPolicy = env.RegisterStringVar("JWT_POLICY", jwt.JWTPolicyThirdPartyJWT,
 		"The JWT validation policy.")
+	proxyConfigEnv = env.RegisterStringVar("PROXY_CONFIG", "", "The default configuration for this proxy").Get()
 
 	sdsUdsWaitTimeout = time.Minute
 
@@ -221,7 +222,10 @@ var (
 				tlsClientCertChain, tlsClientKey, tlsClientRootCert,
 			}
 
-			proxyConfig := mesh.DefaultProxyConfig()
+			proxyConfig, err := getProxyConfig()
+			if err != nil {
+				return err
+			}
 
 			// set all flags
 			proxyConfig.CustomConfigFile = customConfigFile
@@ -567,6 +571,16 @@ var (
 		},
 	}
 )
+
+func getProxyConfig() (meshconfig.ProxyConfig, error) {
+	defaultConfig := mesh.DefaultProxyConfig()
+	if proxyConfigEnv != "" {
+		if err := gogoprotomarshal.ApplyJSON(proxyConfigEnv, &defaultConfig); err != nil {
+			return defaultConfig, fmt.Errorf("failed to unmarshal proxy config: %v", err)
+		}
+	}
+	return defaultConfig, nil
+}
 
 // dedupes the string array and also ignores the empty string.
 func dedupeStrings(in []string) []string {

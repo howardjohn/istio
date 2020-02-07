@@ -112,6 +112,9 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        - name: PROXY_CONFIG
+          value: |
+            {"configPath":"/etc/istio/proxy","binaryPath":"/usr/local/bin/envoy","serviceCluster":"istio-proxy","drainDuration":"45s","parentShutdownDuration":"60s","discoveryAddress":"istio-pilot:15010","connectTimeout":"1s","proxyAdminPort":15000,"statNameLength":189,"envoyAccessLogService":{},"envoyMetricsService":{}}
         - name: ISTIO_META_POD_PORTS
           value: |-
             [
