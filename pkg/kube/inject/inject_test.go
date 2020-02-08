@@ -207,7 +207,7 @@ values:
 			in:   "format-duration.yaml",
 			want: "format-duration.yaml.injected",
 			mesh: func(m *meshapi.MeshConfig) {
-				m.DefaultConfig.DrainDuration = types.DurationProto(time.Second * 42)
+				m.DefaultConfig.DrainDuration = types.DurationProto(time.Second * 23)
 				m.DefaultConfig.ParentShutdownDuration = types.DurationProto(time.Second * 42)
 				m.DefaultConfig.ConnectTimeout = types.DurationProto(time.Second * 42)
 			},
@@ -311,6 +311,9 @@ values:
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			m := mesh.DefaultMeshConfig()
+			if c.mesh != nil {
+				c.mesh(&m)
+			}
 			sidecarTemplate, valuesConfig := loadInjectionConfigMap(t, c.values)
 			inputFilePath := "testdata/inject/" + c.in
 			wantFilePath := "testdata/inject/" + c.want

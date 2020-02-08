@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"istio.io/istio/pkg/config/mesh"
 	"net"
 	"os"
 	"path"
@@ -824,6 +825,7 @@ func structToJSON(v interface{}) string {
 }
 
 func protoToJSON(v proto.Message) string {
+	v = cleanProxyConfig(v)
 	if v == nil {
 		return "{}"
 	}
@@ -836,6 +838,53 @@ func protoToJSON(v proto.Message) string {
 	}
 
 	return ba
+}
+
+// Rather than dump the entire proxy config, we remove fields that are default
+// This makes the pod spec much smaller
+// This is not comprehensive code, but nothing will break if this misses some fields
+func cleanProxyConfig(v proto.Message) proto.Message {
+	pc, ok := v.(*meshconfig.ProxyConfig)
+	if !ok || pc == nil {
+		return v
+	}
+
+	cpy := *pc
+	defaults := mesh.DefaultProxyConfig()
+	if cpy.ConfigPath == defaults.ConfigPath {
+		cpy.ConfigPath = ""
+	}
+	if cpy.BinaryPath == defaults.BinaryPath {
+		cpy.BinaryPath = ""
+	}
+	if cpy.ServiceCluster == defaults.ServiceCluster {
+		cpy.ServiceCluster = ""
+	}
+	if reflect.DeepEqual(cpy.DrainDuration, defaults.DrainDuration) {
+		cpy.DrainDuration = nil
+	}
+	if reflect.DeepEqual(cpy.ParentShutdownDuration, defaults.ParentShutdownDuration) {
+		cpy.ParentShutdownDuration = nil
+	}
+	if cpy.DiscoveryAddress == defaults.DiscoveryAddress {
+		cpy.DiscoveryAddress = ""
+	}
+	if reflect.DeepEqual(cpy.ConnectTimeout, defaults.ConnectTimeout) {
+		cpy.ConnectTimeout = nil
+	}
+	if reflect.DeepEqual(cpy.EnvoyMetricsService, defaults.EnvoyMetricsService) {
+		cpy.EnvoyMetricsService = nil
+	}
+	if reflect.DeepEqual(cpy.EnvoyAccessLogService, defaults.EnvoyAccessLogService) {
+		cpy.EnvoyAccessLogService = nil
+	}
+	if cpy.ProxyAdminPort == defaults.ProxyAdminPort {
+		cpy.ProxyAdminPort = 0
+	}
+	if cpy.StatNameLength == defaults.StatNameLength {
+		cpy.StatNameLength = 0
+	}
+	return &cpy
 }
 
 func toJSON(m map[string]string) string {
