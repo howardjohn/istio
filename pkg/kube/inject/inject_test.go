@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/types"
+	"github.com/google/go-cmp/cmp"
 
 	meshapi "istio.io/api/mesh/v1alpha1"
 
@@ -560,5 +561,50 @@ func TestSkipUDPPorts(t *testing.T) {
 				t.Fatalf("unexpect ports result for case %d: expect %v, got %v", i, expectPorts, ports)
 			}
 		}
+	}
+}
+
+func TestCleanMeshConfig(t *testing.T) {
+	explicit := mesh.DefaultMeshConfig()
+	explicit.TrustDomain = "cluster.local"
+	explicit.ConnectTimeout = types.DurationProto(10 * time.Second)
+	explicit.DefaultConfig.DrainDuration = types.DurationProto(45 * time.Second)
+	overrides := mesh.DefaultMeshConfig()
+	overrides.TrustDomain = "foo.bar"
+	cases := []struct {
+		name   string
+		mesh   meshapi.MeshConfig
+		expect string
+	}{
+		{
+			"default",
+			mesh.DefaultMeshConfig(),
+			`{}`,
+		},
+		{
+			"explicit default",
+			explicit,
+			`{}`,
+		},
+		{
+			"overrides",
+			overrides,
+			`{"trustDomain":"foo.bar"}`,
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := protoToJSON(&tt.mesh)
+			if got != tt.expect {
+				t.Fatalf("incorrect output: got %v, expected %v", got, tt.expect)
+			}
+			roundTrip, err := mesh.ApplyMeshConfigJson(got, mesh.DefaultMeshConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !cmp.Equal(*roundTrip, tt.mesh) {
+				t.Fatalf("round trip is not identical: got \n%+v, expected \n%+v", *roundTrip, tt.mesh)
+			}
+		})
 	}
 }

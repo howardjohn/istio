@@ -135,7 +135,7 @@ var (
 		"the provider of Pilot DNS certificate.").Get()
 	jwtPolicy = env.RegisterStringVar("JWT_POLICY", jwt.JWTPolicyThirdPartyJWT,
 		"The JWT validation policy.")
-	proxyConfigEnv = env.RegisterStringVar("PROXY_CONFIG", "", "The default configuration for this proxy").Get()
+	meshConfig = env.RegisterStringVar("MESH_CONFIG", "", "The mesh configuration").Get()
 
 	sdsUdsWaitTimeout = time.Minute
 
@@ -222,9 +222,13 @@ var (
 				tlsClientCertChain, tlsClientKey, tlsClientRootCert,
 			}
 
-			proxyConfig, err := getProxyConfig()
+			meshConfig, err := getMeshConfig()
 			if err != nil {
 				return err
+			}
+			proxyConfig := mesh.DefaultProxyConfig()
+			if meshConfig.DefaultConfig != nil {
+				proxyConfig = *meshConfig.DefaultConfig
 			}
 
 			// set all flags
@@ -572,12 +576,14 @@ var (
 	}
 )
 
-func getProxyConfig() (meshconfig.ProxyConfig, error) {
-	defaultConfig := mesh.DefaultProxyConfig()
-	if proxyConfigEnv != "" {
-		if err := gogoprotomarshal.ApplyJSON(proxyConfigEnv, &defaultConfig); err != nil {
-			return defaultConfig, fmt.Errorf("failed to unmarshal proxy config: %v", err)
+func getMeshConfig() (meshconfig.MeshConfig, error) {
+	defaultConfig := mesh.DefaultMeshConfig()
+	if meshConfig != "" {
+		mc, err := mesh.ApplyMeshConfigJson(meshConfig, defaultConfig)
+		if err != nil || mc == nil {
+			return meshconfig.MeshConfig{}, fmt.Errorf("failed to unmarshal mesh config config: %v", err)
 		}
+		return *mc, nil
 	}
 	return defaultConfig, nil
 }

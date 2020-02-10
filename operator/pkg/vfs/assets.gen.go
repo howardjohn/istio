@@ -10493,9 +10493,9 @@ template: |
       valueFrom:
         fieldRef:
           fieldPath: status.hostIP
-    - name: PROXY_CONFIG
+    - name: MESH_CONFIG
       value: |
-             {{ protoToJSON .ProxyConfig }}
+             {{ protoToJSON .MeshConfig }}
   {{- if eq .Values.global.proxy.tracer "datadog" }}
   {{- if isset .ObjectMeta.Annotations `+"`"+`apm.datadoghq.com/env`+"`"+` }}
   {{- range $key, $value := fromJSON (index .ObjectMeta.Annotations `+"`"+`apm.datadoghq.com/env`+"`"+`) }}
