@@ -16,6 +16,7 @@ package v2
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -230,6 +231,7 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 				}
 			}
 
+
 			switch discReq.TypeUrl {
 			case ClusterType:
 				if con.CDSWatch {
@@ -429,6 +431,9 @@ func (s *DiscoveryServer) initConnection(node *core.Node, con *XdsConnection) (f
 	s.addCon(con.ConID, con)
 	con.mu.Unlock()
 
+	if err := s.Controller.Register(proxy); err != nil {
+		return nil, fmt.Errorf("auto registration failed for %v: %v", proxy.ID, err)
+	}
 	return func() { s.removeCon(con.ConID, con) }, nil
 }
 

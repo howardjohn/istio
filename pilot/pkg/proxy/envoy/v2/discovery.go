@@ -15,6 +15,8 @@
 package v2
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -23,10 +25,22 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
-
+	"istio.io/api/networking/v1alpha3"
+	"istio.io/istio/galley/pkg/config/source/kube"
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/core"
+	"istio.io/istio/pkg/config/schema/collections"
+	"istio.io/pkg/log"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/informers"
+	v12 "k8s.io/client-go/informers/core/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 )
 
 var (
@@ -121,6 +135,7 @@ type DiscoveryServer struct {
 	// This is a map due to an edge case during envoy restart whereby the 'old' envoy
 	// reconnects after the 'new/restarted' envoy
 	adsSidecarIDConnectionsMap map[string]map[string]*XdsConnection
+	Controller                 *AutoRegistrationController
 }
 
 // EndpointShards holds the set of endpoint shards of a service. Registries update
@@ -141,6 +156,101 @@ type EndpointShards struct {
 	// Due to the larger time, it is still possible that connection errors will occur while
 	// CDS is updated.
 	ServiceAccounts map[string]bool
+}
+
+type AutoRegistrationController struct {
+	client           kubernetes.Interface
+	connections      map[string]struct{}
+	dynamicInterface dynamic.Interface
+	services         v12.ServiceInformer
+}
+
+func NewAutoRegistrationController(kubeconfig string) *AutoRegistrationController {
+
+	iface, err := kube.NewInterfacesFromConfigFile(kubeconfig)
+	if err != nil {
+		return nil
+	}
+	client, err := iface.KubeClient()
+	if err != nil {
+		return nil
+	}
+	dynamicInterface, err := iface.DynamicInterface()
+	svc := informers.NewSharedInformerFactory(client, 0).Core().V1().Services()
+	stop := make(chan struct{})
+	go svc.Informer().Run(stop)
+	cache.WaitForCacheSync(stop, svc.Informer().HasSynced)
+	return &AutoRegistrationController{
+		client:           client,
+		connections:      map[string]struct{}{},
+		dynamicInterface: dynamicInterface,
+		services: svc,
+	}
+}
+
+func (c *AutoRegistrationController) Register(proxy *model.Proxy) error {
+	if !proxy.Metadata.AutoRegister {
+		return nil
+	}
+	// Create a pod with just the information needed to find the associated Services
+	dummyPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: proxy.ConfigNamespace,
+			Labels:    proxy.Metadata.Labels,
+		},
+	}
+	log.Errorf("howardjohn: register %v", proxy.ID)
+
+	services, err := c.services.Lister().GetPodServices(dummyPod)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %v", err)
+	}
+	log.Errorf("howardjohn: got services for %v %v => %v", proxy.ConfigNamespace, proxy.Metadata.Labels, len(services))
+	for _, svc := range services {
+		adsLog.Errorf("howardjohn: found matching service for %v: %v", proxy.ID, svc.Name)
+
+		cfg := &v1alpha3.ServiceEntry{
+			Hosts:     []string{fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace)},
+			Addresses: nil,
+			Ports: []*v1alpha3.Port{
+				{
+					Number:   80,
+					Protocol: "HTTP",
+					Name:     "http",
+				},
+			},
+			Resolution: v1alpha3.ServiceEntry_STATIC,
+			Endpoints: []*v1alpha3.ServiceEntry_Endpoint{
+				{
+					Address: proxy.IPAddresses[0],
+				},
+			},
+		}
+		gvk := schema.GroupVersionResource{
+			Group:    collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Group(),
+			Version:  collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Version(),
+			Resource: collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Plural(),
+		}
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(gvk.GroupVersion().WithKind(collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Kind()))
+		obj.SetName(fmt.Sprintf("%s-%s-a", svc.Name, svc.Namespace, proxy.IPAddresses[0]))
+		obj.SetNamespace(svc.Namespace)
+		spec := map[string]interface{}{}
+		b, _ := json.Marshal(cfg)
+		_ = json.Unmarshal(b, &spec)
+		obj.Object["spec"] = spec
+		debug, _ := json.MarshalIndent(obj, "howardjohn", "  ")
+		log.Errorf("howardjohn: %v", string(debug))
+		if _, err := c.dynamicInterface.Resource(gvk).Create(obj, metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("failed to create: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *AutoRegistrationController) Unregister(proxy *model.Proxy) error {
+	return nil
 }
 
 // NewDiscoveryServer creates DiscoveryServer that sources data from Pilot's internal mesh data structures
