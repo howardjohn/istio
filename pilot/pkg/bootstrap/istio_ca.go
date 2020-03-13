@@ -138,8 +138,9 @@ func (s *Server) EnableCA() bool {
 		// No k8s - no self-signed certs.
 		// TODO: implement it using a local directory, for non-k8s env.
 		signingKeyFile := path.Join(localCertDir.Get(), "ca-key.pem")
+		log.Errorf("howardjohn: check %v", signingKeyFile)
 		if _, err := os.Stat(signingKeyFile); err != nil {
-			log.Warn("kubeclient is nil; disable the K8S CA functionality")
+			log.Warnf("kubeclient is nil and %v not found; disable the K8S CA functionality", signingKeyFile)
 			return false
 		}
 		log.Info("Using local CA, no K8S Secrets")

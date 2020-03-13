@@ -344,6 +344,7 @@ func (s *Server) Start(stop <-chan struct{}) error {
 			if !s.waitForCacheSync(stop) {
 				return
 			}
+			log.Infof("starting secure (DNS) gRPC discovery service at %s", s.GRPCDNSListener.Addr())
 			if err := s.secureGRPCServerDNS.Serve(s.GRPCDNSListener); err != nil {
 				log.Errorf("error from GRPC server: %v", err)
 			}
@@ -683,6 +684,7 @@ func (s *Server) initSecureGrpcServerDNS(port string, keepalive *istiokeepalive.
 	cp := x509.NewCertPool()
 	rootCertBytes := s.ca.GetCAKeyCertBundle().GetRootCertPem()
 	cp.AppendCertsFromPEM(rootCertBytes)
+	log.Errorf("howardjohn: root cert: %v", string(rootCertBytes))
 
 	cfg := &tls.Config{
 		Certificates: []tls.Certificate{certP},

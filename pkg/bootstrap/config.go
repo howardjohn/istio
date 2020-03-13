@@ -131,6 +131,7 @@ func (cfg Config) toTemplateParams() (map[string]interface{}, error) {
 
 	// Support passing extra info from node environment as metadata
 	sdsEnabled := cfg.SDSUDSPath != ""
+	log.Errorf("howardjohn: sdsenabled? %v", sdsEnabled)
 	meta, rawMeta, err := getNodeMetaData(cfg.LocalEnv, cfg.PlatEnv, cfg.NodeIPs, sdsEnabled, cfg.STSPort)
 	if err != nil {
 		return nil, err
@@ -448,9 +449,12 @@ func getNodeMetaData(envs []string, plat platform.Environment, nodeIPs []string,
 	if sdsEnabled {
 		// sds is enabled
 		meta.SdsEnabled = true
+		meta.UserSds = true
 		meta.SdsTrustJwt = true
 	}
 
+	debug, _ := json.MarshalIndent(meta, "howardjohn", "  ")
+	log.Errorf("howardjohn: %s", debug)
 	// Add STS port into node metadata if it is not 0.
 	if stsPort != 0 {
 		meta.StsPort = strconv.Itoa(stsPort)

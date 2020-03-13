@@ -606,6 +606,7 @@ func shortHostName(host string, attributes model.ServiceAttributes) string {
 // ApplyToCommonTLSContext completes the commonTlsContext for `ISTIO_MUTUAL` TLS mode
 func ApplyToCommonTLSContext(tlsContext *envoyauth.CommonTlsContext, metadata *model.NodeMetadata, sdsPath string, subjectAltNames []string) {
 	// configure TLS with SDS
+	log.Errorf("howardjohn: apply common tls with %v %v", metadata.SdsEnabled, sdsPath)
 	if metadata.SdsEnabled && sdsPath != "" {
 		// configure egress with SDS
 		tlsContext.ValidationContextType = &envoyauth.CommonTlsContext_CombinedValidationContext{

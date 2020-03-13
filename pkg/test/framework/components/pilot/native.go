@@ -18,6 +18,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"path"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
@@ -128,6 +130,15 @@ func newNative(ctx resource.Context, cfg Config) (Instance, error) {
 
 	bootstrapArgs.MCPOptions.MaxMessageSize = 1024 * 1024 * 4
 
+	if err := os.Setenv("ROOT_CA_DIR", path.Join(env.IstioSrc, "tests/testdata/certs/pilot")); err != nil {
+		return nil, err
+	}
+	if err := os.Setenv("TOKEN_ISSUER", "istiod.istio-system.svc:12345"); err != nil {
+		return nil, err
+	}
+	if err := os.Setenv("ISTIOD_ADDR", "istiod.istio-system.svc:12345"); err != nil {
+		return nil, err
+	}
 	var err error
 	// Create the server for the discovery service.
 	if instance.server, err = bootstrap.NewServer(bootstrapArgs); err != nil {
@@ -174,5 +185,5 @@ func (c *nativeComponent) GetDiscoveryAddress() *net.TCPAddr {
 
 // GetSecureDiscoveryAddress gets the discovery address for pilot.
 func (c *nativeComponent) GetSecureDiscoveryAddress() *net.TCPAddr {
-	return c.server.SecureGRPCListeningAddr.(*net.TCPAddr)
+	return c.server.GRPCDNSListener.Addr().(*net.TCPAddr)
 }

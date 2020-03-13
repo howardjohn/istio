@@ -390,6 +390,17 @@ func newSecretCache(serverOptions sds.Options) (workloadSecretCache *cache.Secre
 					log.Fatal("invalid config - port 15012 missing a root certificate")
 				}
 			} else {
+				log.Errorf("howardjohn: cert provider: %v", serverOptions.PilotCertProvider)
+				log.Info("istiod uses self-issued certificate")
+				if rootCert, err = ioutil.ReadFile(path.Join(CitadelCACertPath, constants.CACertNamespaceConfigMapDataName)); err != nil {
+					certReadErr = true
+				} else {
+					log.Infof("the CA cert of istiod is: %v", string(rootCert))
+				}
+				if certReadErr {
+					rootCert = nil
+					log.Fatal("invalid config - port 15012 missing a root certificate")
+				}
 				// It is ok for CA endpoint to have a port that is not 15010 or 15012, e.g.,
 				// meshca.googleapis.com:443
 				log.Info("the port is not 15010 or 15012")

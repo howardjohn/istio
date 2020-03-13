@@ -139,6 +139,7 @@ func (c *citadelClient) getTLSDialOption() (grpc.DialOption, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot load key pair: %s", err)
 		}
+		log.Errorf("howardjohn: load prov cert from %v %v", ProvCert+"/cert-chain.pem", ProvCert+"/key.pem")
 
 		config.Certificates = []tls.Certificate{certificate}
 	}
@@ -155,6 +156,7 @@ func (c *citadelClient) getTLSDialOption() (grpc.DialOption, error) {
 		config.ServerName = "istiod.istio-system.svc"
 	}
 
+	log.Errorf("howardjohn: tls: %+v", config)
 	transportCreds := credentials.NewTLS(&config)
 	return grpc.WithTransportCredentials(transportCreds), nil
 }

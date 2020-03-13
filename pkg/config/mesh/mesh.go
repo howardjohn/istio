@@ -77,7 +77,7 @@ func DefaultMeshConfig() meshconfig.MeshConfig {
 		AccessLogFile:                     "/dev/stdout",
 		AccessLogEncoding:                 meshconfig.MeshConfig_TEXT,
 		DefaultConfig:                     &proxyConfig,
-		SdsUdsPath:                        "",
+		SdsUdsPath:                        "unix:/etc/istio/proxy/SDS",
 		EnableSdsTokenMount:               false,
 		TrustDomain:                       "cluster.local",
 		TrustDomainAliases:                []string{},

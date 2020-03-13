@@ -32,8 +32,7 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 extendedKeyUsage = clientAuth, serverAuth
 subjectAltName = @alt_names
 [alt_names]
-IP.1 = 127.0.0.1
-IP.2 = ::1
+URI = spiffe://cluster.local/ns/default/sa/default
 EOF
 
 cat > server.conf <<EOF
@@ -47,15 +46,17 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 extendedKeyUsage = clientAuth, serverAuth
 subjectAltName = @alt_names
 [alt_names]
-IP.1 = 127.0.0.1
-IP.2 = ::1
+DNS.1 = istiod.istio-system
+DNS.2 = istiod.istio-system.svc
+DNS.3 = istio-pilot.istio-system
+DNS.4 = istio-pilot.istio-system.svc
 EOF
 
 outfile=testcerts.go
 
 # Create a certificate authority
 openssl genrsa -out CAKey.pem 2048
-openssl req -x509 -new -nodes -key CAKey.pem -days 100000 -out CACert.pem -subj "/CN=${CN_BASE}_ca"
+openssl req -x509 -new -nodes -key CAKey.pem -days 100000 -out CACert.pem -subj "/CN=cluster.local"
 
 # Create a server certificate
 openssl genrsa -out ServerKey.pem 2048

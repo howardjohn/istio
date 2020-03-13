@@ -150,6 +150,7 @@ func (e *envoy) Run(config interface{}, epoch int, abort <-chan error) error {
 		// there is a custom configuration. Don't write our own config - but keep watching the certs.
 		fname = e.Config.CustomConfigFile
 	} else {
+		log.Errorf("howardjohn: set uds 2 %v", e.SDSUDSPath)
 		out, err := bootstrap.New(bootstrap.Config{
 			Node:                e.Node,
 			Proxy:               &e.Config,

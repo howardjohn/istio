@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"istio.io/pkg/log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,7 +122,7 @@ func newWorkload(e *native.Environment, cfg echo.Config, dumpDir string) (out *w
 		// Need NET_ADMIN for iptables.
 		capabilities = []string{"NET_ADMIN"}
 
-		pilotHost := fmt.Sprintf("istio-pilot.%s", e.SystemNamespace)
+		pilotHost := fmt.Sprintf("istiod.%s.svc", e.SystemNamespace)
 
 		pilotAddress := fmt.Sprintf("%s:%d", pilotHost, discoveryPort(cfg.Pilot))
 
@@ -142,13 +143,15 @@ func newWorkload(e *native.Environment, cfg echo.Config, dumpDir string) (out *w
 
 		env = append(env,
 			"ECHO_ARGS="+strings.Join(echoArgs, " "),
+			"ISTIO_AGENT_FLAGS=--log_output_level=debug",
 			"ISTIO_SERVICE="+cfg.Service,
-			"ISTIO_NAMESPACE="+cfg.Namespace.Name(),
+			"ISTIO_NAMESPACE=istio-system",
 			"ISTIO_SYSTEM_NAMESPACE="+e.SystemNamespace,
 			"POD_NAME="+hostName,
 			"POD_NAMESPACE="+cfg.Namespace.Name(),
 			"PILOT_ADDRESS="+pilotAddress,
-			"CITADEL_ADDRESS=istio-citadel:8060", // TODO: need local citadel
+			"CA_ADDR="+pilotAddress,
+			"PROV_CERT=/var/run/secrets/istio",
 			"ENVOY_PORT=15001",
 			"ENVOY_USER=istio-proxy",
 			"ISTIO_AGENT_FLAGS="+agentArgs,
@@ -161,6 +164,7 @@ func newWorkload(e *native.Environment, cfg echo.Config, dumpDir string) (out *w
 			"ISTIO_METAJSON_LABELS="+metaJSONLabels,
 			"ISTIO_META_INTERCEPTION_MODE="+interceptionMode,
 		)
+		log.Errorf("howardjohn: %v", env)
 	} else {
 		w.readinessProbe = noSidecarReadinessProbe(w.portMap.http().hostPort)
 

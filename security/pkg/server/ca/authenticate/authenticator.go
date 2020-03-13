@@ -16,6 +16,7 @@ package authenticate
 
 import (
 	"fmt"
+	"istio.io/pkg/log"
 	"strings"
 
 	oidc "github.com/coreos/go-oidc"
@@ -74,7 +75,8 @@ func (cca *ClientCertAuthenticator) Authenticate(ctx context.Context) (*Caller, 
 	tlsInfo := peer.AuthInfo.(credentials.TLSInfo)
 	chains := tlsInfo.State.VerifiedChains
 	if len(chains) == 0 || len(chains[0]) == 0 {
-		return nil, fmt.Errorf("no verified chain is found")
+		log.Errorf("howardjohn: %+v", tlsInfo.State)
+		return nil, fmt.Errorf("no verified chain is found, have chains: %v", tlsInfo.State.PeerCertificates)
 	}
 
 	ids, err := util.ExtractIDs(chains[0][0].Extensions)
