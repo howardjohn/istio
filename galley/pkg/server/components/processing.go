@@ -93,6 +93,45 @@ func NewProcessing(a *settings.Args) *Processing {
 	}
 }
 
+
+// Start implements process.Component
+func (p *Processing) StartFile(distributor snapshotter.Distributor, src event.Source) (err error) {
+	m := schema.MustGet()
+
+	transformProviders := transforms.Providers(m)
+
+	processorSettings := processor.Settings{
+		Metadata:           m,
+		DomainSuffix:       p.args.DomainSuffix,
+		Source:             src,
+		TransformProviders: transformProviders,
+		Distributor:        distributor,
+		EnabledSnapshots:   p.args.Snapshots,
+	}
+	if p.runtime, err = processorInitialize(processorSettings); err != nil {
+		return
+	}
+	p.stopCh = make(chan struct{})
+
+	options := &source.Options{
+		Watcher:            p.mcpCache,
+		CollectionsOptions: source.CollectionOptionsFromSlice(m.AllCollectionsInSnapshots(snapshots.SnapshotNames())),
+	}
+
+	sourceServerRateLimiter := rate.NewLimiter(rate.Every(envvar.SourceServerStreamFreq.Get()), envvar.SourceServerStreamBurstSize.Get())
+	serverOptions := &source.ServerOptions{
+		RateLimiter: sourceServerRateLimiter,
+	}
+
+	p.mcpSource = source.NewServer(options, serverOptions)
+
+
+	go func() {
+		p.runtime.Start()
+	}()
+	return nil
+}
+
 // Start implements process.Component
 func (p *Processing) Start() (err error) {
 	var mesh event.Source

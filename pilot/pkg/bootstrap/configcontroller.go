@@ -17,6 +17,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"istio.io/istio/galley/pkg/config/source/kube/fs"
 	"net/url"
 	"os"
 	"path"
@@ -73,14 +74,35 @@ func (s *Server) initConfigController(args *PilotArgs) error {
 			return err
 		}
 	} else if args.Config.FileDir != "" {
-		store := memory.Make(collections.Pilot)
-		configController := memory.NewController(store)
-
-		err := s.makeFileMonitor(args.Config.FileDir, configController)
+		filestore, err := fs.New(args.Config.FileDir, collections.Pilot, true)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to setup fs store: %v", err)
 		}
-		s.ConfigStores = append(s.ConfigStores, configController)
+
+		mcpOptions := &mcp.Options{
+			DomainSuffix: args.Config.ControllerOptions.DomainSuffix,
+			ConfigLedger: buildLedger(args.Config),
+			XDSUpdater:   s.EnvoyXdsServer,
+		}
+		all := collections.Pilot.All()
+		cols := make([]sink.CollectionOptions, 0, len(all))
+		for _, c := range all {
+			cols = append(cols, sink.CollectionOptions{Name: c.Name().String(), Incremental: false})
+		}
+
+		mcpController := mcp.NewController(mcpOptions)
+		p := components.NewProcessing(&settings.Args{
+			ConfigPath:   "",
+			DomainSuffix: args.Config.ControllerOptions.DomainSuffix,
+		})
+		go func() {
+			filestore.Start()
+		}()
+		if err := p.StartFile(mcpController, filestore); err != nil {
+			return fmt.Errorf("failed to start file: %v", err)
+		}
+
+		s.ConfigStores = append(s.ConfigStores, mcpController)
 	} else {
 		configController, err := s.makeKubeConfigController(args)
 		if err != nil {

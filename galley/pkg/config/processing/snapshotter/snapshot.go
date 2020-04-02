@@ -114,3 +114,21 @@ func (s *Snapshot) String() string {
 
 	return b.String()
 }
+
+func (s *Snapshot) ResourceInstances(col string) []*resource.Instance {
+	c := s.set.Collection(collection.NewName(col))
+
+	if c == nil {
+		return nil
+	}
+
+	result := make([]*resource.Instance, 0, c.Size())
+
+	s.set.Collection(collection.NewName(col)).ForEach(func(r *resource.Instance) bool {
+		result = append(result, r.Clone()) // or pass by reference?
+		return true
+	})
+
+	return result
+}
+

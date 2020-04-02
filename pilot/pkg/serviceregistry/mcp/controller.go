@@ -17,11 +17,14 @@ package mcp
 import (
 	"errors"
 	"fmt"
+	"istio.io/istio/galley/pkg/config/processing/snapshotter"
+	"istio.io/istio/galley/pkg/config/scope"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/types"
+	resource2 "istio.io/istio/pkg/config/resource"
 
 	"istio.io/pkg/ledger"
 	"istio.io/pkg/log"
@@ -45,6 +48,7 @@ const ledgerLogf = "error tracking pilot config versions for mcp distribution: %
 type Controller interface {
 	model.ConfigStoreCache
 	sink.Updater
+	snapshotter.Distributor
 }
 
 // Options stores the configurable attributes of a Control
@@ -52,6 +56,7 @@ type Options struct {
 	DomainSuffix string
 	XDSUpdater   model.XDSUpdater
 	ConfigLedger ledger.Ledger
+	snapshotter.Distributor
 }
 
 // controller is a temporary storage for the changes received
@@ -64,8 +69,10 @@ type controller struct {
 	eventHandlers map[resource.GroupVersionKind][]func(model.Config, model.Config, model.Event)
 	ledger        ledger.Ledger
 
-	syncedMu sync.Mutex
-	synced   map[string]bool
+	syncedMu      sync.Mutex
+	synced        map[string]bool
+	directMu      sync.Mutex
+	directVersion map[string]string
 }
 
 // NewController provides a new Controller controller
@@ -82,9 +89,51 @@ func NewController(options *Options) Controller {
 		eventHandlers: make(map[resource.GroupVersionKind][]func(model.Config, model.Config, model.Event)),
 		synced:        synced,
 		ledger:        options.ConfigLedger,
+		directVersion: make(map[string]string),
 	}
 }
 
+func (c *controller) Distribute(group string, s *snapshotter.Snapshot) {
+	c.directMu.Lock()
+	defer c.directMu.Unlock()
+	for _, collection := range s.Collections() {
+		if _, exists := c.synced[collection]; !exists {
+			log.Errorf("howardjohn: %v missing", collection)
+			continue
+		}
+
+		version := s.Version(collection)
+		if version == c.directVersion[collection] {
+			continue // skip unchanged collections
+		}
+
+		resources := s.ResourceInstances(collection)
+		objects := make([]*sink.Object, 0, len(resources))
+		for _, r := range resources {
+			metadata, err := resource2.SerializeMetadata(r.Metadata)
+			if err != nil {
+				scope.Processing.Errorf("Error serializing metadata for resource (%v): %v", r, err)
+				continue
+			}
+
+			objects = append(objects, &sink.Object{
+				Metadata: metadata,
+				Body:     r.Message,
+			})
+		}
+		change := &sink.Change{
+			Collection: collection,
+			Objects:    objects,
+		}
+		if err := c.Apply(change); err != nil {
+			log.Errorf("failed to apply collection=%v version=%v: err=%v",
+				collection, version, err)
+			// log error
+		} else {
+			c.directVersion[collection] = version
+		}
+	}
+}
 func (c *controller) Schemas() collection.Schemas {
 	return collections.Pilot
 }
