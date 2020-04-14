@@ -16,6 +16,7 @@
 package translate
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -23,7 +24,9 @@ import (
 	"strings"
 
 	"github.com/ghodss/yaml"
+	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/protobuf/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -32,6 +35,7 @@ import (
 	"istio.io/istio/operator/pkg/object"
 	"istio.io/istio/operator/pkg/tpath"
 	"istio.io/istio/operator/pkg/util"
+	"istio.io/istio/operator/pkg/validate"
 	"istio.io/istio/operator/pkg/version"
 	"istio.io/istio/operator/pkg/vfs"
 	"istio.io/pkg/log"
@@ -224,7 +228,7 @@ func (t *Translator) ProtoToValues(ii *v1alpha1.IstioOperatorSpec) (string, erro
 // TranslateHelmValues creates a Helm values.yaml config data tree from iop using the given translator.
 func (t *Translator) TranslateHelmValues(iop *v1alpha1.IstioOperatorSpec, k8s *v1alpha1.KubernetesResourcesSpec,
 	componentName name.ComponentName, resourceName string) (string, error) {
-	globalVals, globalUnvalidatedVals, apiVals := make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{})
+	apiVals :=  &types.Struct{}
 
 	// First, translate the IstioOperator API to helm Values.
 	apiValsStr, err := t.ProtoToValues(iop)
@@ -241,19 +245,16 @@ func (t *Translator) TranslateHelmValues(iop *v1alpha1.IstioOperatorSpec, k8s *v
 	}
 
 	// Add global overlay from IstioOperatorSpec.Values/UnvalidatedValues.
-	_, err = tpath.SetFromPath(iop, "Values", &globalVals)
-	if err != nil {
-		return "", err
-	}
-	_, err = tpath.SetFromPath(iop, "UnvalidatedValues", &globalUnvalidatedVals)
-	if err != nil {
-		return "", err
+	globalVals := validate.DecodeToMap(iop.Values)
+	globalUnvalidatedVals := validate.DecodeToMap(iop.UnvalidatedValues)
+	if globalUnvalidatedVals == nil {
+		globalUnvalidatedVals = map[string]interface{}{}
 	}
 	if devDbg {
 		scope.Infof("Values from IstioOperatorSpec.Values:\n%s", util.ToYAML(globalVals))
 		scope.Infof("Values from IstioOperatorSpec.UnvalidatedValues:\n%s", util.ToYAML(globalUnvalidatedVals))
 	}
-	mergedVals, err := util.OverlayTrees(apiVals, globalVals)
+	mergedVals, err := util.OverlayTrees(validate.DecodeToMap(apiVals), globalVals)
 	if err != nil {
 		return "", err
 	}
@@ -289,15 +290,48 @@ func applyGatewayTranslations(iop []byte, componentName name.ComponentName, gwNa
 	case name.IngressComponentName:
 		setYAMLNodeByMapPath(iopt, util.PathFromString("gateways.istio-ingressgateway.name"), gwName)
 		if k8s != nil && k8s.Service != nil {
-			setYAMLNodeByMapPath(iopt, util.PathFromString("gateways.istio-ingressgateway.ports"), k8s.Service.Ports)
+			setYAMLNodeByMapPath(iopt, util.PathFromString("gateways.istio-ingressgateway.ports"), listToInterfaceMap(takeSliceArg(k8s.Service.Ports)))
 		}
 	case name.EgressComponentName:
 		setYAMLNodeByMapPath(iopt, util.PathFromString("gateways.istio-egressgateway.name"), gwName)
 		if k8s != nil && k8s.Service != nil {
-			setYAMLNodeByMapPath(iopt, util.PathFromString("gateways.istio-egressgateway.ports"), k8s.Service.Ports)
+			setYAMLNodeByMapPath(iopt, util.PathFromString("gateways.istio-egressgateway.ports"), listToInterfaceMap(takeSliceArg(k8s.Service.Ports)))
 		}
 	}
 	return yaml.Marshal(iopt)
+}
+
+func takeSliceArg(arg interface{}) (out []interface{}) {
+	slice := takeArg(arg)
+	c := slice.Len()
+	out = make([]interface{}, c)
+	for i := 0; i < c; i++ {
+		out[i] = slice.Index(i).Interface()
+	}
+	return out
+}
+
+func takeArg(arg interface{}) (val reflect.Value) {
+	val = reflect.ValueOf(arg)
+	return
+}
+
+func listToInterfaceMap(i []interface{}) interface{} {
+	msgs := []string{}
+	for _, m := range i {
+		b, e := (&jsonpb.Marshaler{}).MarshalToString(m.(proto.Message))
+		if e != nil {
+			panic(e.Error())
+		}
+		msgs = append(msgs, b)
+	}
+	j := "[" + strings.Join(msgs, ",") + "]"
+	var res interface{}
+	e := json.Unmarshal([]byte(j), &res)
+	if e != nil {
+		panic(e.Error())
+	}
+	return res
 }
 
 // setYAMLNodeByMapPath sets the value at the given path to val in treeNode. The path cannot traverse lists and

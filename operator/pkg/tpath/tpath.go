@@ -599,7 +599,7 @@ func Set(val, out interface{}) error {
 	}
 
 	if !reflect.ValueOf(out).CanSet() {
-		return fmt.Errorf("can't set %v(%T) to out type %T", val, val, out)
+		return fmt.Errorf("can't set %T to out type %T", val, out)
 	}
 	reflect.ValueOf(out).Set(reflect.ValueOf(val))
 	return nil

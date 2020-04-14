@@ -33,7 +33,7 @@ type FileTemplateRenderer struct {
 // NewFileTemplateRenderer creates a TemplateRenderer with the given parameters and returns a pointer to it.
 // helmChartDirPath must be an absolute file path to the root of the helm charts.
 func NewFileTemplateRenderer(helmChartDirPath, componentName, namespace string) *FileTemplateRenderer {
-	scope.Infof("NewFileTemplateRenderer with helmChart=%s, componentName=%s", helmChartDirPath, componentName)
+	scope.Debugf("NewFileTemplateRenderer with helmChart=%s, componentName=%s", helmChartDirPath, componentName)
 	return &FileTemplateRenderer{
 		namespace:        namespace,
 		componentName:    componentName,
@@ -43,7 +43,7 @@ func NewFileTemplateRenderer(helmChartDirPath, componentName, namespace string) 
 
 // Run implements the TemplateRenderer interface.
 func (h *FileTemplateRenderer) Run() error {
-	scope.Infof("Run FileTemplateRenderer with helmChart=%s, componentName=%s", h.helmChartDirPath, h.componentName)
+	scope.Debugf("Run FileTemplateRenderer with helmChart=%s, componentName=%s", h.helmChartDirPath, h.componentName)
 	if err := h.loadChart(); err != nil {
 		return err
 	}

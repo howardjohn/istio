@@ -42556,7 +42556,7 @@ spec:
             memory: 1024Mi
         strategy:
           rollingUpdate:
-            maxSurge: "100%"
+            maxSurge: "17%"
             maxUnavailable: "25%"
 
     egressGateways:
