@@ -68,26 +68,26 @@ func TestRenderCharts(t *testing.T) {
 	flagOutputDir := createTempDirOrFail(t, "flag-output")
 	flagOutputValuesDir := createTempDirOrFail(t, "flag-output-values")
 	runTestGroup(t, testGroup{
-		{
-			desc: "all_off",
-		},
-		{
-			desc:                        "all_on",
-			diffIgnore:                  "ConfigMap:*:istio",
-			showOutputFileInPullRequest: true,
-		},
-		{
-			desc:       "prometheus",
-			diffIgnore: "ConfigMap:*:istio",
-		},
-		{
-			desc:       "gateways",
-			diffIgnore: "ConfigMap:*:istio",
-		},
-		{
-			desc:       "gateways_override_default",
-			diffIgnore: "ConfigMap:*:istio",
-		},
+		//{
+		//	desc: "all_off",
+		//},
+		//{
+		//	desc:                        "all_on",
+		//	diffIgnore:                  "ConfigMap:*:istio",
+		//	showOutputFileInPullRequest: true,
+		//},
+		//{
+		//	desc:       "prometheus",
+		//	diffIgnore: "ConfigMap:*:istio",
+		//},
+		//{
+		//	desc:       "gateways",
+		//	diffIgnore: "ConfigMap:*:istio",
+		//},
+		//{
+		//	desc:       "gateways_override_default",
+		//	diffIgnore: "ConfigMap:*:istio",
+		//},
 		{
 			desc:       "component_hub_tag",
 			diffSelect: "Deployment:*:*",

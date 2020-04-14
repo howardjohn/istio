@@ -41,6 +41,8 @@ import (
 	iopv1alpha1 "istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	"istio.io/istio/operator/pkg/helmreconciler"
 	"istio.io/istio/operator/pkg/util"
+	"istio.io/istio/operator/pkg/validate"
+
 	"istio.io/pkg/log"
 )
 
@@ -237,11 +239,11 @@ func (r *ReconcileIstioOperator) Reconcile(request reconcile.Request) (reconcile
 		log.Errorf("failed to generate IstioOperator spec, %v", err)
 		return reconcile.Result{}, err
 	}
-
-	if _, ok := iopMerged.Spec.Values["global"]; !ok {
-		iopMerged.Spec.Values["global"] = make(map[string]interface{})
+	val := validate.DecodeToMap(iopMerged.Spec.Values)
+	if _, ok := val["global"]; !ok {
+		val["global"] = make(map[string]interface{})
 	}
-	globalValues := iopMerged.Spec.Values["global"].(map[string]interface{})
+	globalValues := val["global"].(map[string]interface{})
 	log.Info("Detecting third-party JWT support")
 	var jwtPolicy util.JWTPolicy
 	if jwtPolicy, err = util.DetectSupportedJWTPolicy(r.config); err != nil {

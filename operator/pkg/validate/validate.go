@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/gogo/protobuf/types"
 	"istio.io/api/operator/v1alpha1"
+
 	operator_v1alpha1 "istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	"istio.io/istio/operator/pkg/name"
 	"istio.io/istio/operator/pkg/util"
@@ -55,8 +57,45 @@ func CheckIstioOperatorSpec(is *v1alpha1.IstioOperatorSpec, checkRequiredFields 
 		return util.Errors{}
 	}
 
-	errs = CheckValues(is.Values)
+	errs = CheckValues(DecodeToMap(is.Values))
 	return util.AppendErrs(errs, Validate(DefaultValidations, is, nil, checkRequiredFields))
+}
+
+
+// DecodeToMap converts a pb.Struct to a map from strings to Go types.
+// DecodeToMap panics if s is invalid.
+func DecodeToMap(s *types.Struct) map[string]interface{} {
+	if s == nil {
+		return nil
+	}
+	m := map[string]interface{}{}
+	for k, v := range s.Fields {
+		m[k] = decodeValue(v)
+	}
+	return m
+}
+
+func decodeValue(v *types.Value) interface{} {
+	switch k := v.Kind.(type) {
+	case *types.Value_NullValue:
+		return nil
+	case *types.Value_NumberValue:
+		return k.NumberValue
+	case *types.Value_StringValue:
+		return k.StringValue
+	case *types.Value_BoolValue:
+		return k.BoolValue
+	case *types.Value_StructValue:
+		return DecodeToMap(k.StructValue)
+	case *types.Value_ListValue:
+		s := make([]interface{}, len(k.ListValue.Values))
+		for i, e := range k.ListValue.Values {
+			s[i] = decodeValue(e)
+		}
+		return s
+	default:
+		panic("protostruct: unknown kind")
+	}
 }
 
 // Validate function below is used by third party for integrations and has to be public

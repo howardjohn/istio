@@ -23,7 +23,6 @@ import (
 	yaml2 "github.com/ghodss/yaml"
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
-	jsonpb2 "github.com/golang/protobuf/jsonpb"
 	"github.com/kylelemons/godebug/diff"
 	"sigs.k8s.io/yaml"
 )
@@ -86,7 +85,7 @@ func UnmarshalValuesWithJSONPB(y string, out proto.Message, allowUnknown bool) e
 	if err != nil {
 		return err
 	}
-	u := jsonpb2.Unmarshaler{AllowUnknownFields: allowUnknown}
+	u := jsonpb.Unmarshaler{AllowUnknownFields: allowUnknown}
 	err = u.Unmarshal(bytes.NewReader(jb), out)
 	if err != nil {
 		return err

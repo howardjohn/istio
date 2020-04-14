@@ -197,7 +197,7 @@ func TestValidateValuesFromProfile(t *testing.T) {
 			if err != nil {
 				t.Fatalf(" fail to parse profile to ISCP: (%s), got error %s", tt.profile, err)
 			}
-			errs := CheckValues(val.Spec.Values)
+			errs := CheckValues(DecodeToMap(val.Spec.Values))
 			if gotErr, wantErr := errs, tt.wantErrs; !util.EqualErrors(gotErr, wantErr) {
 				t.Errorf("CheckValues of (%v): gotErr:%s, wantErr:%s", tt.profile, gotErr, wantErr)
 			}

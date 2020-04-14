@@ -462,7 +462,7 @@ func (c *IngressComponent) Namespace() string {
 // Enabled implements the IstioComponent interface.
 func (c *IngressComponent) Enabled() bool {
 	// type assert is guaranteed to work in this context.
-	return boolValue(c.spec.(*v1alpha1.GatewaySpec).Enabled)
+	return c.spec.(*v1alpha1.GatewaySpec).Enabled.GetValue()
 }
 
 // EgressComponent is the egress gateway component.
@@ -512,7 +512,7 @@ func (c *EgressComponent) Namespace() string {
 // Enabled implements the IstioComponent interface.
 func (c *EgressComponent) Enabled() bool {
 	// type assert is guaranteed to work in this context.
-	return boolValue(c.spec.(*v1alpha1.GatewaySpec).Enabled)
+	return c.spec.(*v1alpha1.GatewaySpec).Enabled.GetValue()
 }
 
 // AddonComponent is an external component.
@@ -561,7 +561,7 @@ func (c *AddonComponent) Namespace() string {
 // Enabled implements the IstioComponent interface.
 func (c *AddonComponent) Enabled() bool {
 	// type assert is guaranteed to work in this context.
-	return boolValue(c.spec.(*v1alpha1.ExternalComponentSpec).Enabled)
+	return c.spec.(*v1alpha1.ExternalComponentSpec).Enabled.GetValue()
 }
 
 // runComponent performs startup tasks for the component defined by the given CommonComponentFields.

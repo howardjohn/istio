@@ -59,7 +59,7 @@ func GenerateConfig(inFilenames []string, setOverlayYAML string, force bool, kub
 		return "", nil, err
 	}
 
-	errs, warning := validation.ValidateConfig(false, iops.Values, iops)
+	errs, warning := validation.ValidateConfig(false, validate.DecodeToMap(iops.Values), iops)
 	if warning != "" {
 		l.logAndError(warning)
 	}

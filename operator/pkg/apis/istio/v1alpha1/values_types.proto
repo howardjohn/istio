@@ -16,7 +16,10 @@
 syntax = 'proto3';
 
 import "google/protobuf/duration.proto";
-import "github.com/gogo/protobuf/protobuf/google/protobuf/wrappers.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/any.proto";
+
 
 package v1alpha1;
 
@@ -42,7 +45,7 @@ message CNIConfig {
 
   string hub = 2;
 
-  TypeInterface tag = 3;
+  google.protobuf.Value tag = 3;
 
   string image = 4;
 
@@ -56,7 +59,7 @@ message CNIConfig {
 
   repeated string excludeNamespaces = 9;
 
-  TypeMapStringInterface podAnnotations = 10 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 10 [deprecated=true];
 
   string psp_cluster_role = 11;
 
@@ -73,7 +76,7 @@ message CNIRepairConfig {
 
   string hub = 2;
 
-  TypeInterface tag = 3;
+  google.protobuf.Value tag = 3;
 
   string image = 4;
 
@@ -120,7 +123,7 @@ message CoreDNSConfig {
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 5 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 5 [deprecated=true];
 
   // Number of replicas for Core DNS.
   uint32 replicaCount = 6 [deprecated=true];
@@ -128,7 +131,7 @@ message CoreDNSConfig {
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 7 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 7 [deprecated=true];
 
   // K8s resources settings.
   //
@@ -136,16 +139,16 @@ message CoreDNSConfig {
   Resources resources = 8 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxSurge = 9 [deprecated=true];
+  google.protobuf.Value rollingMaxSurge = 9 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxUnavailable = 10 [deprecated=true];
+  google.protobuf.Value rollingMaxUnavailable = 10 [deprecated=true];
 
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 11 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 11 [deprecated=true];
 
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 12 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 12 [deprecated=true];
 
-  TypeSliceOfMapStringInterface tolerations = 13 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 13 [deprecated=true];
 }
 
 // DefaultPodDisruptionBudgetConfig specifies the default pod disruption budget configuration.
@@ -188,7 +191,7 @@ message EgressGatewayConfig {
   google.protobuf.BoolValue enabled = 7;
 
   // Environment variables passed to the proxy container.
-  TypeMapStringInterface env = 8;
+  google.protobuf.Struct env = 8;
 
   GatewayLabelsConfig labels = 9;
 
@@ -197,12 +200,12 @@ message EgressGatewayConfig {
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 10 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 10 [deprecated=true];
 
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 11 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 11 [deprecated=true];
 
   // Pod anti-affinity label selector.
   //
@@ -226,10 +229,10 @@ message EgressGatewayConfig {
   //  This pod anti-affinity rule says that the pod requires not to be scheduled
   //  onto a node if that node is already running a pod with label having key
   //  “security” and value “S1”.
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 12 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 12 [deprecated=true];
 
   // See PodAntiAffinityLabelSelector.
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 13 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 13 [deprecated=true];
 
   // Ports Configuration for the egress gateway service.
   repeated PortsConfig ports = 14;
@@ -243,7 +246,7 @@ message EgressGatewayConfig {
   repeated SecretVolume secretVolumes = 16;
 
   // Annotations to add to the egress gateway service.
-  TypeMapStringInterface serviceAnnotations = 17;
+  google.protobuf.Struct serviceAnnotations = 17;
 
   // Service type.
   //
@@ -253,17 +256,17 @@ message EgressGatewayConfig {
   // Enables cross-cluster access using SNI matching.
   ZeroVPNConfig zvpn = 19;
 
-  TypeSliceOfMapStringInterface tolerations = 20 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 20 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxSurge = 21 [deprecated=true];
+  google.protobuf.Value rollingMaxSurge = 21 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxUnavailable = 22 [deprecated=true];
+  google.protobuf.Value rollingMaxUnavailable = 22 [deprecated=true];
 
-  TypeSliceOfMapStringInterface configVolumes = 23;
+  repeated google.protobuf.Struct configVolumes = 23;
 
-  TypeSliceOfMapStringInterface additionalContainers = 24;
+  repeated google.protobuf.Struct additionalContainers = 24;
 
   // Next available 26.
 }
@@ -280,9 +283,9 @@ message EnvoyMetricsConfig {
   // Sets the destination Envoy Metrics Service port in Envoy.
   int32 port = 3;
 
-  TypeMapStringInterface tlsSettings = 4;
+  google.protobuf.Struct tlsSettings = 4;
 
-  TypeMapStringInterface tcpKeepalive = 5;
+  google.protobuf.Struct tcpKeepalive = 5;
 }
 
 // GatewayLabelsConfig is a set of Configuration for gateway labels.
@@ -312,7 +315,7 @@ message GlobalConfig {
   //   3 - Most preferred
   ArchConfig arch = 1;
 
-  TypeSliceOfMapStringInterface certificates = 40;
+  repeated google.protobuf.Struct certificates = 40;
 
   // Specifies the namespace for the configuration and validation component.
   string configNamespace = 2;
@@ -329,7 +332,7 @@ message GlobalConfig {
   // Default k8s node selector for all the Istio control plane components
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface defaultNodeSelector = 6 [deprecated=true];
+  google.protobuf.Struct defaultNodeSelector = 6 [deprecated=true];
 
   // Specifies the default pod disruption budget configuration.
   DefaultPodDisruptionBudgetConfig defaultPodDisruptionBudget = 7 [deprecated=true];
@@ -342,7 +345,7 @@ message GlobalConfig {
   // See https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#resource-requests-and-limits-of-pod-and-container
   DefaultResourcesConfig defaultResources = 9 [deprecated=true];
 
-  TypeSliceOfMapStringInterface defaultTolerations = 55 [deprecated=true];
+  repeated google.protobuf.Struct defaultTolerations = 55 [deprecated=true];
 
   // Controls whether the helm test templates are enabled.
   google.protobuf.BoolValue enableHelmTest = 10;
@@ -385,7 +388,7 @@ message GlobalConfig {
   //     to: eu-west
   //   - from: us-west
   //     to: us-east
-  TypeMapStringInterface localityLbSetting = 15;
+  google.protobuf.Struct localityLbSetting = 15;
   // 	LocalityLbSetting map[string]interface{}    `json:"localityLbSetting"`
 
   google.protobuf.BoolValue logAsJson = 36;
@@ -425,7 +428,7 @@ message GlobalConfig {
   //     - registryServiceName: istio-ingressgateway.istio-system.svc.cluster.local
   //       port: 443
   //
-  TypeMapStringInterface meshNetworks = 19;
+  google.protobuf.Struct meshNetworks = 19;
 
   // Specifies the monitor port number for all Istio control plane components.
   uint32 monitoringPort = 20;
@@ -479,7 +482,7 @@ message GlobalConfig {
   SDSConfig sds = 30;
 
   // Specifies the tag for the Istio docker images.
-  TypeInterface tag = 31;
+  google.protobuf.Value tag = 31;
 
   // Specifies the namespace for the telemetry component.
   string telemetryNamespace = 32;
@@ -589,7 +592,7 @@ message IngressGatewayConfig {
   google.protobuf.BoolValue enabled = 10;
 
   // Environment variables passed to the proxy container.
-  TypeMapStringInterface env = 11;
+  google.protobuf.Struct env = 11;
 
   repeated string externalIPs = 12;
 
@@ -610,18 +613,18 @@ message IngressGatewayConfig {
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 19 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 19 [deprecated=true];
 
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 20 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 20 [deprecated=true];
 
   // See EgressGatewayConfig.
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 21 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 21 [deprecated=true];
 
   // See EgressGatewayConfig.
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 22 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 22 [deprecated=true];
 
   // Port Configuration for the ingress gateway.
   repeated PortsConfig ports = 23;
@@ -632,7 +635,7 @@ message IngressGatewayConfig {
   // K8s resources settings.
   //
   // See https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#resource-requests-and-limits-of-pod-and-container
-  TypeMapStringInterface resources = 25 [deprecated=true];
+  google.protobuf.Struct resources = 25 [deprecated=true];
 
   // Secret Discovery Service (SDS) Configuration for ingress gateway.
   IngressGatewaySdsConfig sds = 26;
@@ -641,7 +644,7 @@ message IngressGatewayConfig {
   repeated SecretVolume secretVolumes = 27;
 
   // Annotations to add to the egress gateway service.
-  TypeMapStringInterface serviceAnnotations = 28;
+  google.protobuf.Struct serviceAnnotations = 28;
 
   // Service type.
   //
@@ -652,31 +655,31 @@ message IngressGatewayConfig {
   IngressGatewayZvpnConfig zvpn = 30;
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxSurge = 31 [deprecated=true];
+  google.protobuf.Value rollingMaxSurge = 31 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxUnavailable = 32 [deprecated=true];
+  google.protobuf.Value rollingMaxUnavailable = 32 [deprecated=true];
 
   // Ports to explicitly check for readiness
   string applicationPorts = 33;
 
   string externalTrafficPolicy = 34;
 
-  TypeSliceOfMapStringInterface tolerations = 35 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 35 [deprecated=true];
 
-  TypeSliceOfMapStringInterface ingressPorts = 36;
+  repeated google.protobuf.Struct ingressPorts = 36;
 
-  TypeSliceOfMapStringInterface additionalContainers = 37;
+  repeated google.protobuf.Struct additionalContainers = 37;
 
-  TypeSliceOfMapStringInterface configVolumes = 38;
+  repeated google.protobuf.Struct configVolumes = 38;
 
   google.protobuf.BoolValue certificates = 39;
 
   google.protobuf.BoolValue tls = 40;
 
-  TypeMapStringInterface telemetry_addon_gateways = 41;
+  google.protobuf.Struct telemetry_addon_gateways = 41;
 
-  TypeSliceOfMapStringInterface hosts = 42;
+  repeated google.protobuf.Struct hosts = 42;
 
   string telemetry_domain_name = 43;
 
@@ -825,7 +828,7 @@ message MixerPolicyConfig {
   // K8s annotations to attach to mixer policy deployment
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 7 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 7 [deprecated=true];
 
   // Number of replicas in the Mixer Policy Deployment
   uint32 replicaCount = 8 [deprecated=true];
@@ -842,19 +845,19 @@ message MixerPolicyConfig {
   Resources resources = 11 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxSurge = 12 [deprecated=true];
+  google.protobuf.Value rollingMaxSurge = 12 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxUnavailable = 13 [deprecated=true];
+  google.protobuf.Value rollingMaxUnavailable = 13 [deprecated=true];
 
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 14 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 14 [deprecated=true];
 
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 15 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 15 [deprecated=true];
 
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 16 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 16 [deprecated=true];
 
   // Environment variables passed to the Mixer container.
   //
@@ -862,13 +865,13 @@ message MixerPolicyConfig {
   // env:
   //   ENV_VAR_1: value1
   //   ENV_VAR_2: value2
-  TypeMapStringInterface env = 17;
+  google.protobuf.Struct env = 17;
 
-  TypeSliceOfMapStringInterface tolerations = 18 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 18 [deprecated=true];
 
   string hub = 19;
 
-  TypeInterface tag = 20;
+  google.protobuf.Value tag = 20;
 }
 
 // Configuration for Mixer Telemetry.
@@ -896,7 +899,7 @@ message MixerTelemetryConfig {
   // env:
   //   ENV_VAR_1: value1
   //   ENV_VAR_2: value2
-  TypeMapStringInterface env = 7;
+  google.protobuf.Struct env = 7;
 
   // Image name used for Mixer Telemetry.
   //
@@ -911,21 +914,21 @@ message MixerTelemetryConfig {
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 10 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 10 [deprecated=true];
 
   // K8s annotations to attach to mixer telemetry deployment
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 11 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 11 [deprecated=true];
 
   // Number of replicas in the Mixer Telemetry Deployment.
   uint32 replicaCount = 12 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxSurge  = 15 [deprecated=true];
+  string rollingMaxSurge  = 15 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxUnavailable = 16 [deprecated=true];
+  string rollingMaxUnavailable = 16 [deprecated=true];
 
   // Controls whether to use of Mesh Configuration Protocol to distribute configuration.
   google.protobuf.BoolValue useMCP = 17;
@@ -942,15 +945,15 @@ message MixerTelemetryConfig {
   // Controls whether to enable the sticky session setting when choosing backend pods.
   google.protobuf.BoolValue sessionAffinityEnabled = 14;
 
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 20 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 20 [deprecated=true];
 
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 21 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 21 [deprecated=true];
 
-  TypeSliceOfMapStringInterface tolerations = 22 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 22 [deprecated=true];
 
   string hub = 23;
 
-  TypeInterface tag = 24;
+  google.protobuf.Value tag = 24;
 }
 
 // MultiClusterConfig specifies the Configuration for Istio mesh across multiple clusters through the istio gateways.
@@ -1026,7 +1029,7 @@ message PilotConfig {
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 12 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 12 [deprecated=true];
 
   // Maximum duration that a sidecar can be connected to a pilot.
   //
@@ -1038,13 +1041,13 @@ message PilotConfig {
   // Labels that are added to Pilot pods.
   //
   // See https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-  TypeMapStringInterface deploymentLabels = 14;
+  google.protobuf.Struct deploymentLabels = 14;
 
   // See EgressGatewayConfig.
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 16 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 16 [deprecated=true];
 
   // See EgressGatewayConfig.
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 17 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 17 [deprecated=true];
 
   // Configuration settings passed to Pilot as a ConfigMap.
   //
@@ -1066,21 +1069,21 @@ message PilotConfig {
   // env:
   //   ENV_VAR_1: value1
   //   ENV_VAR_2: value2
-  TypeMapStringInterface env = 21;
+  google.protobuf.Struct env = 21;
 
   // Controls whether Istio policy is applied to Pilot.
   PilotPolicyConfig policy = 22;
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxSurge  = 24 [deprecated=true];
+  google.protobuf.Value rollingMaxSurge  = 24 [deprecated=true];
 
   // K8s rolling update strategy
-  TypeIntOrStringForPB rollingMaxUnavailable = 25 [deprecated=true];
+  google.protobuf.Value rollingMaxUnavailable = 25 [deprecated=true];
 
   //
-  TypeSliceOfMapStringInterface tolerations = 26 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 26 [deprecated=true];
 
-  TypeSliceOfMapStringInterface appNamespaces = 27;
+  repeated google.protobuf.Struct appNamespaces = 27;
 
   // if protocol sniffing is enabled for outbound
   google.protobuf.BoolValue enableProtocolSniffingForOutbound = 28;
@@ -1090,7 +1093,7 @@ message PilotConfig {
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 30 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 30 [deprecated=true];
 
   // ConfigSource describes a source of configuration data for networking
   // rules, and other Istio configuration artifacts. Multiple data sources
@@ -1099,11 +1102,11 @@ message PilotConfig {
 
   string jwksResolverExtraRootCA = 32;
 
-  TypeSliceOfMapStringInterface plugins = 33;
+  repeated google.protobuf.Struct plugins = 33;
 
   string hub = 34;
 
-  TypeInterface tag = 35;
+  google.protobuf.Value tag = 35;
 }
 
 // Controls legacy k8s ingress. Only one pilot profile should enable ingress support.
@@ -1192,7 +1195,7 @@ message TelemetryV2StackDriverConfig {
 
   google.protobuf.BoolValue disableOutbound = 6;
 
-  TypeMapStringInterface configOverride = 5;
+  google.protobuf.Struct configOverride = 5;
 }
 
 // PilotConfigSource describes information about a configuration store inside a
@@ -1228,11 +1231,11 @@ message PrometheusConfig {
 
   string hub = 4;
 
-  TypeInterface tag = 5;
+  google.protobuf.Value tag = 5;
 
   string retention = 6;
 
-  TypeMapStringInterface nodeSelector = 7 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 7 [deprecated=true];
   // GOSTRUCT: NodeSelector             map[string]interface{}    `json:"nodeSelector,omitempty"`
 
   google.protobuf.Duration scrapeInterval = 8;
@@ -1243,23 +1246,23 @@ message PrometheusConfig {
 
   PrometheusSecurityConfig security = 12;
 
-  TypeSliceOfMapStringInterface tolerations = 13 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 13 [deprecated=true];
 
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 14 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 14 [deprecated=true];
 
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 15 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 15 [deprecated=true];
 
   // K8s resources settings.
   //
   // See https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#resource-requests-and-limits-of-pod-and-container
   Resources resources = 16 [deprecated=true];
 
-  TypeSliceOfMapStringInterface datasources = 17 [deprecated=true];
+  repeated google.protobuf.Struct datasources = 17 [deprecated=true];
 
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 18 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 18 [deprecated=true];
 
   string image = 19 [deprecated=true];
 
@@ -1290,7 +1293,7 @@ message PrometheusSecurityConfig {
 
 // Configuration for Prometheus adapter service.
 message PrometheusServiceConfig {
-  TypeMapStringInterface annotations = 1;
+  google.protobuf.Struct annotations = 1;
   PrometheusServiceNodePortConfig nodePort = 2;
 }
 
@@ -1410,7 +1413,7 @@ message ProxyConfig {
 
   string outlierLogPath = 34;
 
-  TypeMapStringInterface lifecycle = 36;
+  google.protobuf.Struct lifecycle = 36;
 }
 
 // Specifies which tracer to use.
@@ -1430,7 +1433,7 @@ message EnvoyAccessLogConfig {
 
   EnvoyAccessLogtlsSettings tlsSettings = 4;
 
-  TypeMapStringInterface tcpKeepalive = 5;
+  google.protobuf.Struct tcpKeepalive = 5;
 }
 
 message EnvoyAccessLogtlsSettings {
@@ -1478,7 +1481,7 @@ message SDSConfig {
   // Enables SDS use of trustworthy JWT to request for certificates.
   google.protobuf.BoolValue useTrustworthyJwt = 4 [deprecated=true];
 
-  TypeMapStringInterface token = 5 [deprecated=true];
+  google.protobuf.Struct token = 5 [deprecated=true];
 }
 
 // Configuration for secret volume mounts.
@@ -1494,7 +1497,7 @@ message SecretVolume {
 
 // ServiceConfig is described in istio.io documentation.
 message ServiceConfig {
-  TypeMapStringInterface annotations = 1;
+  google.protobuf.Struct annotations = 1;
 
   uint32 externalPort = 2;
 
@@ -1513,10 +1516,10 @@ message SidecarInjectorConfig {
   // Annotations in the pods have higher precedence than the label selectors.
   // Order of evaluation: Pod Annotations → NeverInjectSelector → AlwaysInjectSelector → Default Policy.
   // See https://istio.io/docs/setup/kubernetes/additional-setup/sidecar-injection/#more-control-adding-exceptions
-  TypeSliceOfMapStringInterface neverInjectSelector = 11;
+  repeated google.protobuf.Struct neverInjectSelector = 11;
 
   // See NeverInjectSelector.
-  TypeSliceOfMapStringInterface alwaysInjectSelector = 12;
+  repeated google.protobuf.Struct alwaysInjectSelector = 12;
 
   //  If true, webhook or istioctl injector will rewrite PodSpec for liveness health check to redirect request to sidecar. This makes liveness check work even when mTLS is enabled.
   google.protobuf.BoolValue rewriteAppHTTPProbe = 16;
@@ -1525,10 +1528,10 @@ message SidecarInjectorConfig {
 
   // injectedAnnotations are additional annotations that will be added to the pod spec after injection
   // This is primarily to support PSP annotations.
-  TypeMapStringInterface injectedAnnotations = 19;
+  google.protobuf.Struct injectedAnnotations = 19;
 
   // Enable objectSelector to filter out pods with no need for sidecar before calling istio-sidecar-injector.
-  TypeMapStringInterface objectSelector = 21;
+  google.protobuf.Struct objectSelector = 21;
 }
 
 // Configuration for stdio adapter in mixer, recommended for debug usage only.
@@ -1647,7 +1650,7 @@ message TracingConfig {
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 4 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 4 [deprecated=true];
 
   // Configures which tracing system to be installed.
   string provider = 5;
@@ -1663,12 +1666,12 @@ message TracingConfig {
   string contextPath = 9;
 
   // See EgressGatewayConfig.
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 13 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 13 [deprecated=true];
 
   // See EgressGatewayConfig.
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 14 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 14 [deprecated=true];
 
-  TypeSliceOfMapStringInterface tolerations = 15 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 15 [deprecated=true];
 }
 
 message TracingOpencensusConfig {
@@ -1676,22 +1679,22 @@ message TracingOpencensusConfig {
   string hub = 1;
 
   // Image tag for Opencensus tracing deployment.
-  TypeInterface tag = 2;
+  google.protobuf.Value tag = 2;
 
   TracingOpencensusExportersConfig exporters  = 3;
   // K8s resources settings.
   //
   // See https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#resource-requests-and-limits-of-pod-and-container
-  TypeMapStringInterface resources = 5 [deprecated=true];
+  google.protobuf.Struct resources = 5 [deprecated=true];
 
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 6 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 6 [deprecated=true];
 }
 
 message TracingOpencensusExportersConfig {
-  TypeMapStringInterface stackdriver = 1;
+  google.protobuf.Struct stackdriver = 1;
 }
 
 // Configuration for addon Jaeger tracing.
@@ -1700,7 +1703,7 @@ message TracingJaegerConfig {
   string hub = 1;
 
   // Image tag for Jaeger tracing deployment.
-  TypeInterface tag = 2;
+  google.protobuf.Value tag = 2;
 
   string image = 10;
 
@@ -1718,12 +1721,12 @@ message TracingJaegerConfig {
   // K8s resources settings.
   //
   // See https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#resource-requests-and-limits-of-pod-and-container
-  TypeMapStringInterface resources = 8 [deprecated=true];
+  google.protobuf.Struct resources = 8 [deprecated=true];
 
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 9 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 9 [deprecated=true];
 }
 
 // Configuration for Jaeger in-memory storage setting.
@@ -1738,7 +1741,7 @@ message TracingZipkinConfig {
   string hub = 1;
 
   // Image tag for Zipkin tracing deployment.
-  TypeInterface tag = 2;
+  google.protobuf.Value tag = 2;
 
   string image = 9;
 
@@ -1770,7 +1773,7 @@ message TracingZipkinConfig {
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 10 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 10 [deprecated=true];
 }
 
 // Configuration for GC values of JAVA_OPTS for Zipkin deployment
@@ -1788,7 +1791,7 @@ message KialiSecurityConfig {
 }
 
 message KialiServiceConfig {
-  TypeMapStringInterface annotations = 1;
+  google.protobuf.Struct annotations = 1;
 
   // Service type.
   //
@@ -1809,7 +1812,7 @@ message KialiDashboardConfig {
 
   string jaegerURL = 6;
 
-  TypeMapStringInterface auth = 7;
+  google.protobuf.Struct auth = 7;
 
   string grafanaInClusterURL = 8;
 
@@ -1826,7 +1829,7 @@ message KialiConfig {
   string hub = 3;
 
   // Image tag for kiali deployment.
-  TypeInterface tag = 4;
+  google.protobuf.Value tag = 4;
 
   // Number of replicas for Kiali.
   uint32 replicaCount = 5 [deprecated=true];
@@ -1842,12 +1845,12 @@ message KialiConfig {
   // K8s node selector.
   //
   // See https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-  TypeMapStringInterface nodeSelector = 10 [deprecated=true];
+  google.protobuf.Struct nodeSelector = 10 [deprecated=true];
 
   // K8s annotations for pods.
   //
   // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-  TypeMapStringInterface podAnnotations = 11 [deprecated=true];
+  google.protobuf.Struct podAnnotations = 11 [deprecated=true];
 
   // Pod anti-affinity label selector.
   //
@@ -1871,12 +1874,12 @@ message KialiConfig {
   //  This pod anti-affinity rule says that the pod requires not to be scheduled
   //  onto a node if that node is already running a pod with label having key
   //  “security” and value “S1”.
-  TypeSliceOfMapStringInterface podAntiAffinityLabelSelector = 12 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityLabelSelector = 12 [deprecated=true];
 
   // See PodAntiAffinityLabelSelector.
-  TypeSliceOfMapStringInterface podAntiAffinityTermLabelSelector = 13 [deprecated=true];
+  repeated google.protobuf.Struct podAntiAffinityTermLabelSelector = 13 [deprecated=true];
 
-  TypeSliceOfMapStringInterface tolerations = 14 [deprecated=true];
+  repeated google.protobuf.Struct tolerations = 14 [deprecated=true];
 
   string image = 16 [deprecated=true];
 
@@ -1899,7 +1902,7 @@ message Values {
 
   GlobalConfig global = 6;
 
-  TypeMapStringInterface grafana = 7;
+  google.protobuf.Struct grafana = 7;
 
   MixerConfig mixer = 8;
 
@@ -1922,7 +1925,7 @@ message Values {
   google.protobuf.BoolValue clusterResources = 17;
 
   // TODO: populate these.
-  TypeMapStringInterface prometheusOperator = 18;
+  google.protobuf.Struct prometheusOperator = 18;
   CNIConfig istio_cni = 19;
 
   google.protobuf.BoolValue kustomize = 20;
@@ -1930,17 +1933,8 @@ message Values {
   string revision = 21;
 
   // TODO can this import the real mesh config API?
-  TypeInterface meshConfig = 36;
+  google.protobuf.Struct meshConfig = 36;
 }
-
-// GOTYPE: map[string]interface{}
-message TypeMapStringInterface {}
-
-// GOTYPE: []map[string]interface{}
-message TypeSliceOfMapStringInterface {}
-
-// GOTYPE: *IntOrStringForPB
-message TypeIntOrStringForPB {}
 
 // ZeroVPNConfig enables cross-cluster access using SNI matching.
 message ZeroVPNConfig {
@@ -1950,5 +1944,3 @@ message ZeroVPNConfig {
   string suffix = 2;
 }
 
-// GOTYPE: interface{}
-message TypeInterface {}

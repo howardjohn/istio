@@ -16,8 +16,11 @@ package patch
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/gogo/protobuf/jsonpb"
+	"github.com/gogo/protobuf/types"
 	"istio.io/api/operator/v1alpha1"
 	"istio.io/istio/operator/pkg/util"
 )
@@ -215,6 +218,21 @@ a:
 			}
 		})
 	}
+}
+
+func TestJson(t *testing.T) {
+	x := &types.Value{Kind: &types.Value_StringValue{StringValue: "foo"}}
+	y := &types.Value{Kind: &types.Value_NumberValue{NumberValue: 3}}
+	o, _ := (&jsonpb.Marshaler{}).MarshalToString(x)
+	t.Errorf(o)
+	o, _ = (&jsonpb.Marshaler{}).MarshalToString(y)
+	t.Errorf(o)
+	om := &types.Value{}
+	jsonpb.Unmarshal(strings.NewReader(`"foo"`), om)
+	t.Errorf("%+v", om)
+	am := &types.Value{}
+	jsonpb.Unmarshal(strings.NewReader(`5`), am)
+	t.Errorf("%+v", am)
 }
 
 func TestPatchYAMLManifestRealYAMLSuccess(t *testing.T) {
@@ -419,7 +437,7 @@ spec:
 			desc: "UpdateInteriorNode",
 			path: `spec.template.spec.containers.[name:galley].ports.[containerPort:15014]`,
 			value: `
-      fooPort: 15015`,
+      containerPort: 15015`,
 			want: `
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -441,7 +459,6 @@ spec:
         name: galley
         ports:
         - containerPort: 443
-        - fooPort: 15015
         - containerPort: 9901
 
 `,

@@ -15,9 +15,10 @@
 package v1alpha1
 
 import (
+	"github.com/gogo/protobuf/types"
 	"istio.io/api/operator/v1alpha1"
 
-	"github.com/golang/protobuf/jsonpb"
+	"github.com/gogo/protobuf/jsonpb"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -34,15 +35,12 @@ func Namespace(iops *v1alpha1.IstioOperatorSpec) string {
 	if iops.Values == nil {
 		return ""
 	}
-	if iops.Values[globalKey] == nil {
+	if iops.Values.Fields[globalKey] == nil {
 		return ""
 	}
-	v := iops.Values[globalKey].(map[string]interface{})
-	n := v[istioNamespaceKey]
-	if n == nil {
-		return ""
-	}
-	return n.(string)
+	v := iops.Values.Fields[globalKey]
+	n := v.GetStructValue().Fields[istioNamespaceKey].GetStringValue()
+	return n
 }
 
 // SetNamespace returns the namespace of the containing CR.
@@ -51,13 +49,13 @@ func SetNamespace(iops *v1alpha1.IstioOperatorSpec, namespace string) {
 		iops.Namespace = namespace
 	}
 	if iops.Values == nil {
-		iops.Values = make(map[string]interface{})
+		iops.Values = &types.Struct{}
 	}
-	if iops.Values[globalKey] == nil {
-		iops.Values[globalKey] = make(map[string]interface{})
-	}
-	v := iops.Values[globalKey].(map[string]interface{})
-	v[istioNamespaceKey] = namespace
+	//if iops.Values.[globalKey] == nil {
+	//	iops.Values[globalKey] = make(map[string]interface{})
+	//}
+	//v := iops.Values[globalKey].(map[string]interface{})
+	//v[istioNamespaceKey] = namespace
 }
 
 // define new type from k8s intstr to marshal/unmarshal jsonpb
@@ -74,3 +72,4 @@ func (intstrpb *IntOrStringForPB) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, er
 func (intstrpb *IntOrStringForPB) UnmarshalJSONPB(_ *jsonpb.Unmarshaler, value []byte) error {
 	return intstrpb.UnmarshalJSON(value)
 }
+
