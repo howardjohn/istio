@@ -147,18 +147,6 @@ func TestSetup(ctx resource.Context) (err error) {
 	if err != nil {
 		return
 	}
-	// Application scraping will not work with permissive mode
-	if err = galInst.ApplyConfig(appNsInst, fmt.Sprintf(`
-apiVersion: security.istio.io/v1beta1
-kind: PeerAuthentication
-metadata:
-  name: default
-  namespace: %s
-spec:
-  mtls:
-    mode: STRICT`, appNsInst.Name())); err != nil {
-		return err
-	}
 	return nil
 }
 
