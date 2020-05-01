@@ -83,7 +83,7 @@ func ValidateMetric(t *testing.T, prometheus prometheus.Instance, query, metricN
 	var got float64
 	retry.UntilSuccessOrFail(t, func() error {
 		var err error
-		got, err = getMetric(t, prometheus, query, metricName)
+		got, err = GetMetric(t, prometheus, query, metricName)
 		return err
 	}, retry.Delay(time.Second), retry.Timeout(2*time.Minute))
 
@@ -94,7 +94,7 @@ func ValidateMetric(t *testing.T, prometheus prometheus.Instance, query, metricN
 	}
 }
 
-func getMetric(t *testing.T, prometheus prometheus.Instance, query, metricName string) (float64, error) {
+func GetMetric(t *testing.T, prometheus prometheus.Instance, query, metricName string) (float64, error) {
 	t.Helper()
 
 	t.Logf("prometheus query: %s", query)
@@ -227,7 +227,7 @@ func FetchRequestCount(t *testing.T, prometheus prometheus.Instance, service, ad
 		t.Helper()
 		t.Logf("Trying to find metrics via promql (attempt %d)...", i)
 		query := fmt.Sprintf("istio_requests_total{%s=\"%s\",%s=\"%s\",%s}", destLabel, Fqdn(service, namespace), reporterLabel, "destination", additionalLabels)
-		totalReq, err := getMetric(t, prometheus, query, "istio_requests_total")
+		totalReq, err := GetMetric(t, prometheus, query, "istio_requests_total")
 		t.Logf("Expected Req: %v Got: %v", totalReqExpected, totalReq)
 		if totalReqExpected == float64(0) && totalReq == float64(0) {
 			return fmt.Errorf("returning 0. totalReqExpected : %v", totalReqExpected)
@@ -249,7 +249,7 @@ func FetchRequestCount(t *testing.T, prometheus prometheus.Instance, service, ad
 
 	query := fmt.Sprintf("istio_requests_total{%s=\"%s\",%s=\"%s\",%s=\"%s\",%s}", destLabel, Fqdn(service, namespace),
 		reporterLabel, "destination", responseCodeLabel, "429", additionalLabels)
-	prior429s, err = getMetric(t, prometheus, query, "istio_requests_total")
+	prior429s, err = GetMetric(t, prometheus, query, "istio_requests_total")
 	if err != nil {
 		t.Logf("prometheus values for %s:\n%s", metricName, PromDump(prometheus, metricName))
 		t.Logf("error getting prior 429s, using 0 as value (msg: %v)", err)
@@ -258,7 +258,7 @@ func FetchRequestCount(t *testing.T, prometheus prometheus.Instance, service, ad
 
 	query = fmt.Sprintf("istio_requests_total{%s=\"%s\",%s=\"%s\",%s=\"%s\",%s}", destLabel, Fqdn(service, namespace),
 		reporterLabel, "destination", responseCodeLabel, "200", additionalLabels)
-	prior200s, err = getMetric(t, prometheus, query, "istio_requests_total")
+	prior200s, err = GetMetric(t, prometheus, query, "istio_requests_total")
 	if err != nil {
 		t.Logf("prometheus values for %s:\n%s", metricName, PromDump(prometheus, metricName))
 		t.Logf("error getting prior 200s, using 0 as value (msg: %v)", err)

@@ -289,12 +289,17 @@ func RunExternalRequest(cases []*TestCase, prometheus prometheus.Instance, mode 
 								return fmt.Errorf("expected to be handled by gateway. response: %+v", r.RawResponse)
 							}
 						}
+						if tc.Expected.Metric != "" {
+							got, err := util.GetMetric(t, prometheus, tc.Expected.PromQueryFormat, tc.Expected.Metric)
+							if err != nil {
+								return err
+							}
+							if got < 1 {
+								return fmt.Errorf("got metric %v for %v, want at least 1", got, tc.Expected.PromQueryFormat)
+							}
+						}
 						return nil
 					}, retry.Delay(time.Second), retry.Timeout(20*time.Second))
-
-					if tc.Expected.Metric != "" {
-						util.ValidateMetric(t, prometheus, tc.Expected.PromQueryFormat, tc.Expected.Metric, 1)
-					}
 				})
 			}
 		})
