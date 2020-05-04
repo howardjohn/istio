@@ -589,7 +589,6 @@ func (s *DiscoveryServer) Debug(w http.ResponseWriter, req *http.Request) {
 		adsLog.Errorf("Error in rendering index template %v", err)
 		w.WriteHeader(500)
 	}
-	w.WriteHeader(200)
 }
 
 // edsz implements a status and debug interface for EDS.
