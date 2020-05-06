@@ -214,6 +214,7 @@
           "name": "envoy.transport_sockets.tls",
           "typed_config": {
             "@type": "type.googleapis.com/envoy.api.v2.auth.UpstreamTlsContext",
+            "sni": "{{.sni}}",
             "common_tls_context": {
               "alpn_protocols": [
                 "h2"
@@ -243,7 +244,7 @@
                   "filename": "./var/run/secrets/istio/root-cert.pem"
                   {{- end }}
                 },
-                "match_subject_alt_names": {{ .pilot_SAN }}
+                "match_subject_alt_names": [{"suffix": ".istio-system.svc"}]
               }
             }
           }

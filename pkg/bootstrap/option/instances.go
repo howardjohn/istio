@@ -78,6 +78,10 @@ func SubZone(value string) Instance {
 	return newOptionOrSkipIfZero("sub_zone", value)
 }
 
+func Sni(value string) Instance {
+	return newOptionOrSkipIfZero("sni", value)
+}
+
 func NodeMetadata(meta *model.NodeMetadata, rawMeta map[string]interface{}) Instance {
 	return newOptionOrSkipIfZero("meta_json_str", meta).withConvert(nodeMetadataConverter(meta, rawMeta))
 }

@@ -140,7 +140,7 @@ func (cfg Config) toTemplateParams() (map[string]interface{}, error) {
 		return nil, err
 	}
 	opts = append(opts, getNodeMetadataOptions(meta, rawMeta, cfg.PlatEnv, cfg.Proxy)...)
-
+	opts = append(opts, option.Sni(cfg.Proxy.ProxyMetadata["ROUTER"]))
 	// Check if nodeIP carries IPv4 or IPv6 and set up proxy accordingly
 	if isIPv6Proxy(cfg.NodeIPs) {
 		opts = append(opts,
