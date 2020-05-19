@@ -674,7 +674,7 @@ func shouldH2Upgrade(clusterName string, direction model.TrafficDirection, port 
 	// protocol sniffing uses Cluster_USE_DOWNSTREAM_PROTOCOL.
 	// Therefore if the client upgrades connection to http2, the server will send h2 stream to the application,
 	// even though the application only supports http 1.1.
-	if port != nil && !port.Protocol.IsHTTP() {
+	if port != nil && !port.Protocol.IsHTTP() && port.Protocol != protocol.HTTPS {
 		return false
 	}
 

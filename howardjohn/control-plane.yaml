@@ -1,0 +1,132 @@
+apiVersion: cert-manager.io/v1alpha2
+kind: Issuer
+metadata:
+  name: letsencrypt-staging
+  namespace: istio-system
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: howardjohn@google.com
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+      - selector: {}
+        http01:
+          ingress:
+            class: istio
+---
+apiVersion: cert-manager.io/v1alpha2
+kind: Issuer
+metadata:
+  name: letsencrypt-prod
+  namespace: istio-system
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: howardjohn@google.com
+    privateKeySecretRef:
+      name: letsencrypt-pod
+    solvers:
+      - selector: {}
+        http01:
+          ingress:
+            class: istio
+---
+apiVersion: cert-manager.io/v1alpha2
+kind: Certificate
+metadata:
+  name: istiod
+  namespace: istio-system
+spec:
+  secretName: istiod-tls
+  issuerRef:
+    name: letsencrypt-prod
+  commonName: istiod.howardjohn-mc.qualistio.org
+  dnsNames:
+    - istiod.howardjohn-mc.qualistio.org
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: istiod
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: istiod-tls
+      hosts:
+        - istiod.howardjohn-mc.qualistio.org
+        - "*" # TODO(https://github.com/envoyproxy/envoy/issues/11254)
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: istiod
+  namespace: istio-system
+spec:
+  hosts:
+    - "*"
+#    - istiod.howardjohn-mc.qualistio.org # TODO(https://github.com/envoyproxy/envoy/issues/11254)
+  gateways:
+    - istiod
+  http:
+    - match:
+        - uri:
+            prefix: /envoy.service.discovery.v2.AggregatedDiscoveryService/StreamAggregatedResources
+      route:
+        - destination:
+            host: istiod
+            port:
+              number: 15012
+            subset: tls
+    - match:
+        - uri:
+            prefix: /istio.v1.auth.IstioCertificateService/CreateCertificate
+      route:
+        - destination:
+            host: istiod
+            port:
+              number: 15012
+            subset: tls
+    - match:
+        - uri:
+            prefix: /inject
+      route:
+        - destination:
+            host: istiod
+            port:
+              number: 443
+            subset: tls
+    - match:
+        - uri:
+            prefix: /validate
+      route:
+        - destination:
+            host: istiod
+            port:
+              number: 443
+            subset: tls
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: istiod
+  namespace: istio-system
+spec:
+  host: istiod.istio-system.svc.cluster.local
+  subsets:
+    # Set up TLS to istiod backends
+    - name: tls
+      trafficPolicy:
+        connectionPool:
+          http:
+            h2UpgradePolicy: UPGRADE
+        tls:
+          mode: SIMPLE

@@ -152,12 +152,6 @@ template: |
     - name: PILOT_CERT_PROVIDER
       value: {{ .Values.global.pilotCertProvider }}
     # Temp, pending PR to make it default or based on the istiodAddr env
-    - name: CA_ADDR
-    {{- if .Values.global.caAddress }}
-      value: {{ .Values.global.caAddress }}
-    {{- else }}
-      value: istiod{{- if not (eq .Values.revision "") }}-{{ .Values.revision }}{{- end }}.{{ .Values.global.istioNamespace }}.svc:15012
-    {{- end }}
     - name: POD_NAME
       valueFrom:
         fieldRef:
@@ -383,6 +377,7 @@ template: |
   - name: istiod-ca-cert
     configMap:
       name: istio-ca-root-cert
+      optional: true
   {{- end }}
   {{- if .Values.global.mountMtlsCerts }}
   # Use the key and cert mounted to /etc/certs/ for the in-cluster mTLS communications.

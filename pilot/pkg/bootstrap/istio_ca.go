@@ -17,13 +17,10 @@ package bootstrap
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
-	"strings"
 	"time"
 
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
@@ -33,7 +30,6 @@ import (
 	"istio.io/istio/pilot/pkg/features"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
 	"istio.io/pkg/env"
@@ -105,7 +101,7 @@ var (
 
 	k8sInCluster = env.RegisterStringVar("KUBERNETES_SERVICE_HOST", "",
 		"Kuberenetes service host, set automatically when running in-cluster")
-
+	gkeAutoTrustedIssuer = env.RegisterBoolVar("GKE_AUTO_TRUST_ISSUER", true, "")
 	// ThirdPartyJWTPath is the well-known location of the projected K8S JWT. This is mounted on all workloads, as well as istiod.
 	ThirdPartyJWTPath = "./var/run/secrets/tokens/istio-token"
 
@@ -181,7 +177,7 @@ func (s *Server) RunCA(grpc *grpc.Server, ca caserver.CertificateAuthority, opts
 	ch := make(chan struct{})
 	token, err := ioutil.ReadFile(s.jwtPath)
 	if err == nil {
-		tok, err := detectAuthEnv(string(token))
+		tok, err := authenticate.ParseJwtToken(string(token))
 		if err != nil {
 			log.Warna("Starting with invalid K8S JWT token", err, string(token))
 		} else {
@@ -219,6 +215,13 @@ func (s *Server) RunCA(grpc *grpc.Server, ca caserver.CertificateAuthority, opts
 			log.Infoa("K8S token doesn't support OIDC, using only in-cluster auth")
 		}
 	}
+if gkeAutoTrustedIssuer.Get() {
+	auth, err := authenticate.NewAutoJwtAuthenticator(opts.TrustDomain, aud)
+	if err != nil {
+		log.Errorf("failed to start auto authenticator: %v", err)
+	}
+	caServer.Authenticators = append(caServer.Authenticators, auth)
+}
 
 	// Allow authorization with a previously issued certificate, for VMs
 	// Will return a caller with identities extracted from the SAN, should be a SPIFFE identity.
@@ -230,56 +233,13 @@ func (s *Server) RunCA(grpc *grpc.Server, ca caserver.CertificateAuthority, opts
 
 		log.Warnf("Failed to start GRPC server with error: %v", serverErr)
 	}
-	log.Info("Istiod CA has started")
+	authenticators := []string{}
+	for _, a := range caServer.Authenticators {
+		authenticators = append(authenticators, a.AuthenticatorType())
+	}
+	log.Infof("Istiod CA has started with authenticators: %v", authenticators)
 }
 
-// detectAuthEnv will use the JWT token that is mounted in istiod to set the default audience
-// and trust domain for Istiod, if not explicitly defined.
-// K8S will use the same kind of tokens for the pods, and the value in istiod's own token is
-// simplest and safest way to have things match.
-//
-// Note that K8S is not required to use JWT tokens - we will fallback to the defaults
-// or require explicit user option for K8S clusters using opaque tokens.
-func detectAuthEnv(jwt string) (*authenticate.JwtPayload, error) {
-	jwtSplit := strings.Split(jwt, ".")
-	if len(jwtSplit) != 3 {
-		return nil, fmt.Errorf("invalid JWT parts: %s", jwt)
-	}
-	payload := jwtSplit[1]
-
-	payloadBytes, err := base64.RawStdEncoding.DecodeString(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode jwt: %v", err.Error())
-	}
-
-	structuredPayload := &authenticate.JwtPayload{}
-	err = json.Unmarshal(payloadBytes, &structuredPayload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal jwt: %v", err.Error())
-	}
-
-	return structuredPayload, nil
-}
-
-func extractBearerToken(ctx context.Context) (string, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", fmt.Errorf("no metadata is attached")
-	}
-
-	authHeader, exists := md[httpAuthHeader]
-	if !exists {
-		return "", fmt.Errorf("no HTTP authorization header exists")
-	}
-
-	for _, value := range authHeader {
-		if strings.HasPrefix(value, bearerTokenPrefix) {
-			return strings.TrimPrefix(value, bearerTokenPrefix), nil
-		}
-	}
-
-	return "", fmt.Errorf("no bearer token exists in HTTP authorization header")
-}
 
 // Save the root public key file and initialize the path the the file, to be used by other
 // components.
