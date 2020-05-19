@@ -178,7 +178,7 @@ func NewWebhook(p WebhookParameters) (*Webhook, error) {
 		env:                    p.Env,
 		revision:               p.Revision,
 	}
-	p.Mux.HandleFunc("/inject", wh.serveInject)
+	p.Mux.HandleFunc("/inject/", wh.serveInject)
 
 	p.Env.Watcher.AddMeshHandler(func() {
 		wh.mu.Lock()
@@ -655,7 +655,7 @@ func toAdmissionResponse(err error) *v1beta1.AdmissionResponse {
 	return &v1beta1.AdmissionResponse{Result: &metav1.Status{Message: err.Error()}}
 }
 
-func (wh *Webhook) inject(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
+func (wh *Webhook) inject(ar *v1beta1.AdmissionReview, overrides map[string]string) *v1beta1.AdmissionResponse {
 	req := ar.Request
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
@@ -738,7 +738,8 @@ func (wh *Webhook) inject(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionRespons
 		deployMeta.Name = pod.Name
 	}
 
-	spec, iStatus, err := InjectionData(wh.Config.Template, wh.valuesConfig, wh.sidecarTemplateVersion, typeMetadata, deployMeta, &pod.Spec, &pod.ObjectMeta, wh.meshConfig) // nolint: lll
+	spec, iStatus, err := InjectionData(wh.Config.Template, wh.valuesConfig, wh.sidecarTemplateVersion,
+		typeMetadata, deployMeta, &pod.Spec, &pod.ObjectMeta, wh.meshConfig, overrides)
 	if err != nil {
 		handleError(fmt.Sprintf("Injection data: err=%v spec=%v\n", err, iStatus))
 		return toAdmissionResponse(err)
@@ -772,6 +773,19 @@ func (wh *Webhook) inject(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionRespons
 }
 
 func (wh *Webhook) serveInject(w http.ResponseWriter, r *http.Request) {
+	spl := strings.Split(r.URL.Path, "/")
+	args := spl[len(spl) - 1]
+	overrides := map[string]string {
+	}
+	if strings.Contains(args, "=") {
+		for _, param := range strings.Split(args, ";") {
+			spl := strings.Split(param, "=")
+			if len(spl) != 2 {
+				log.Warnf("invalid param: %v", param)
+			}
+			overrides[spl[0]] = spl[1]
+		}
+	}
 	totalInjections.Increment()
 	var body []byte
 	if r.Body != nil {
@@ -799,7 +813,7 @@ func (wh *Webhook) serveInject(w http.ResponseWriter, r *http.Request) {
 		handleError(fmt.Sprintf("Could not decode body: %v", err))
 		reviewResponse = toAdmissionResponse(err)
 	} else {
-		reviewResponse = wh.inject(&ar)
+		reviewResponse = wh.inject(&ar, overrides)
 	}
 
 	response := v1beta1.AdmissionReview{}

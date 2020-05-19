@@ -1,0 +1,23 @@
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  namespace: istio-system
+spec:
+  hub: gcr.io/howardjohn-istio
+  tag: full-remote
+  meshConfig:
+    accessLogFile: /dev/stdout
+    # TODO this is a bug in mainline code?
+    enableAutoMtls: false
+  values:
+    global:
+      imagePullPolicy: Always
+
+    # simplify a bit
+    prometheus:
+      enabled: false
+    pilot:
+      autoscaleEnabled: false
+    gateways:
+      istio-ingressgateway:
+        autoscaleEnabled: false

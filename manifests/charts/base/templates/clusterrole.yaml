@@ -29,7 +29,7 @@ rules:
 {{- if .Values.global.istiod.enableAnalysis }}
     verbs: ["get", "watch", "list", "update"]
 {{- else }}
-    verbs: ["get", "watch", "list", "create", "update"]
+    verbs: ["get", "watch", "list", "create", "update", "delete"]
 {{- end }}
     resources: ["*"]
 

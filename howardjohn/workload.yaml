@@ -7,7 +7,7 @@ metadata:
 webhooks:
   - name: sidecar-injector.istio.io
     clientConfig:
-      url: https://istiod.howardjohn-mc.qualistio.org/inject
+      url: https://istiod.howardjohn-mc.qualistio.org/inject/discoveryAddress=istiod.howardjohn-mc.qualistio.org:443
     rules:
       - operations: [ "CREATE" ]
         apiGroups: [""]

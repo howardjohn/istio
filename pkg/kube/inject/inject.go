@@ -441,9 +441,7 @@ func flippedContains(needle, haystack string) bool {
 }
 
 // InjectionData renders sidecarTemplate with valuesConfig.
-func InjectionData(sidecarTemplate, valuesConfig, version string, typeMetadata *metav1.TypeMeta, deploymentMetadata *metav1.ObjectMeta, spec *corev1.PodSpec,
-	metadata *metav1.ObjectMeta, meshConfig *meshconfig.MeshConfig) (
-	*SidecarInjectionSpec, string, error) {
+func InjectionData(sidecarTemplate, valuesConfig, version string, typeMetadata *metav1.TypeMeta, deploymentMetadata *metav1.ObjectMeta, spec *corev1.PodSpec, metadata *metav1.ObjectMeta, meshConfig *meshconfig.MeshConfig, overrides map[string]string) (*SidecarInjectionSpec, string, error) {
 
 	// If DNSPolicy is not ClusterFirst, the Envoy sidecar may not able to connect to Istio Pilot.
 	if spec.DNSPolicy != "" && spec.DNSPolicy != corev1.DNSClusterFirst {
@@ -469,6 +467,9 @@ func InjectionData(sidecarTemplate, valuesConfig, version string, typeMetadata *
 		if merr != nil {
 			return nil, "", merr
 		}
+	}
+	if da, f := overrides["discoveryAddress"]; f {
+		meshConfig.DefaultConfig.DiscoveryAddress = da
 	}
 	data := SidecarTemplateData{
 		TypeMeta:       typeMetadata,
@@ -737,15 +738,7 @@ func IntoObject(sidecarTemplate string, valuesConfig string, revision string, me
 		}
 	}
 
-	spec, status, err := InjectionData(
-		sidecarTemplate,
-		valuesConfig,
-		sidecarTemplateVersionHash(sidecarTemplate),
-		typeMeta,
-		deploymentMetadata,
-		podSpec,
-		metadata,
-		meshconfig)
+	spec, status, err := InjectionData(sidecarTemplate, valuesConfig, sidecarTemplateVersionHash(sidecarTemplate), typeMeta, deploymentMetadata, podSpec, metadata, meshconfig, nil)
 	if err != nil {
 		return nil, err
 	}

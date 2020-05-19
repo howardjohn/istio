@@ -5,8 +5,9 @@ Example remote control plane setup. Workloads connect to a gateway exposed under
 ## Setup - Control Plane
 
 ```
+istioctl install -f howardjohn/iop.yaml -d manifests
 kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/v0.15.0/cert-manager.yaml
-kubectl apply -f controlplane.yaml
+kubectl apply -f howardjohn/controlplane.yaml
 ```
 
 The control plane setup deploys a standard out-of-the-box Istio install.
@@ -52,7 +53,6 @@ Deploy a workload with annotations:
 annotations:
   proxy.istio.io/config: |
     discoveryAddress: istiod.howardjohn-mc.qualistio.org:443
-  sidecar.istio.io/proxyImage: gcr.io/howardjohn-istio/proxyv2:full-remote
 ```
 
 The proxy image is from a fork with some minor modifications: `howardjohn/istio:istio/full-remote`.

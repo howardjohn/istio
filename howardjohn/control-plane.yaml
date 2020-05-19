@@ -75,7 +75,7 @@ spec:
     - "*"
 #    - istiod.howardjohn-mc.qualistio.org # TODO(https://github.com/envoyproxy/envoy/issues/11254)
   gateways:
-    - istiod
+    - istio-system/istiod
   http:
     - match:
         - uri:
