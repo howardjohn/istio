@@ -29,11 +29,13 @@ import (
 func TestGetMeshConfig(t *testing.T) {
 	meshOverride := `
 defaultConfig:
+  concurrency: null
   discoveryAddress: foo:123
   proxyMetadata:
     SOME: setting
   drainDuration: 1s`
 	proxyOverride := `discoveryAddress: foo:123
+concurrency: null
 proxyMetadata:
   SOME: setting
 drainDuration: 1s`
@@ -42,6 +44,7 @@ drainDuration: 1s`
 		m.DiscoveryAddress = "foo:123"
 		m.ProxyMetadata = map[string]string{"SOME": "setting"}
 		m.DrainDuration = types.DurationProto(time.Second)
+		m.Concurrency = nil
 		return m
 	}()
 	cases := []struct {

@@ -535,9 +535,6 @@ func InjectionData(sidecarTemplate, valuesConfig, version string, typeMetadata *
 		return nil, "", multierror.Prefix(err, "failed parsing generated injected YAML (check Istio sidecar injector configuration):")
 	}
 
-	// set sidecar --concurrency
-	applyConcurrency(sic.Containers)
-
 	status := &SidecarInjectionStatus{Version: version}
 	for _, c := range sic.InitContainers {
 		status.InitContainers = append(status.InitContainers, c.Name)

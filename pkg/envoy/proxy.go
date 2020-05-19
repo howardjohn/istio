@@ -133,6 +133,7 @@ func (e *envoy) args(fname string, epoch int, bootstrapConfig string) []string {
 			startupArgs = append(startupArgs, "--config-yaml", string(bytes))
 		}
 	}
+	log.Errorf("howardjohn: proxy config concurrency: %v", e.Config.Concurrency)
 
 	if e.Config.Concurrency.GetValue() > 0 {
 		startupArgs = append(startupArgs, "--concurrency", fmt.Sprint(e.Config.Concurrency.GetValue()))

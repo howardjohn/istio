@@ -17,12 +17,12 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/gogo/protobuf/types"
-
 	networking "istio.io/api/networking/v1alpha3"
 
 	"istio.io/api/annotation"
@@ -93,7 +93,14 @@ func constructProxyConfig() (meshconfig.ProxyConfig, error) {
 		proxyConfig = *meshConfig.DefaultConfig
 	}
 
-	proxyConfig.Concurrency = &types.Int32Value{Value: int32(concurrency)}
+	// If concurrency is unset, we will automatically set this based on CPU requests/limits
+	if proxyConfig.Concurrency == nil {
+		log.Errorf("howardjohn: auto determine conrency")
+		proxyConfig.Concurrency = determineConcurrencyOption()
+	} else {
+		log.Errorf("howardjohn: do not auto determine concurrency")
+	}
+	log.Errorf("howardjohn: concurrency set to %v", proxyConfig.Concurrency)
 	proxyConfig.ServiceCluster = serviceCluster
 	// resolve statsd address
 	if proxyConfig.StatsdUdpAddress != "" {
@@ -113,6 +120,18 @@ func constructProxyConfig() (meshconfig.ProxyConfig, error) {
 	return applyAnnotations(proxyConfig, annotations), nil
 }
 
+func determineConcurrencyOption() *types.Int32Value {
+	limit, err := readPodCPULimits()
+	if err == nil && limit > 0 {
+		return &types.Int32Value{Value: int32(math.Ceil(float64(limit)/1000))}
+	}
+	requests, err := readPodCPURequests()
+	if err == nil && requests > 0 {
+		return &types.Int32Value{Value: int32(math.Ceil(float64(requests)/1000))}
+	}
+	return nil
+}
+
 // getMeshConfig gets the mesh config to use for proxy configuration
 // 1. First we take the default config
 // 2. Then we apply any settings from file (this comes from gateway mounting configmap)
@@ -124,6 +143,7 @@ func constructProxyConfig() (meshconfig.ProxyConfig, error) {
 func getMeshConfig(fileOverride, annotationOverride string) (meshconfig.MeshConfig, error) {
 	mc := mesh.DefaultMeshConfig()
 
+	log.Errorf("howardjohn: concurrency preset 1 set to %v", mc.DefaultConfig.Concurrency)
 	if fileOverride != "" {
 		log.Infof("Apply mesh config from file %v", fileOverride)
 		fileMesh, err := mesh.ApplyMeshConfig(fileOverride, mc)
@@ -132,6 +152,7 @@ func getMeshConfig(fileOverride, annotationOverride string) (meshconfig.MeshConf
 		}
 		mc = *fileMesh
 	}
+	log.Errorf("howardjohn: concurrency preset 2 set to %v", mc.DefaultConfig.Concurrency)
 
 	if proxyConfigEnv != "" {
 		log.Infof("Apply proxy config from env %v", proxyConfigEnv)
@@ -141,6 +162,7 @@ func getMeshConfig(fileOverride, annotationOverride string) (meshconfig.MeshConf
 		}
 		mc = *envMesh
 	}
+	log.Errorf("howardjohn: concurrency preset 3 set to %v", mc.DefaultConfig.Concurrency)
 
 	if annotationOverride != "" {
 		log.Infof("Apply proxy config from annotation %v", annotationOverride)
@@ -150,6 +172,7 @@ func getMeshConfig(fileOverride, annotationOverride string) (meshconfig.MeshConf
 		}
 		mc = *annotationMesh
 	}
+	log.Errorf("howardjohn: concurrency preset 4 set to %v", mc.DefaultConfig.Concurrency)
 
 	return mc, nil
 }
@@ -167,6 +190,22 @@ func readPodAnnotations() (map[string]string, error) {
 		return nil, err
 	}
 	return bootstrap.ParseDownwardAPI(string(b))
+}
+
+func readPodCPURequests() (int, error) {
+	b, err := ioutil.ReadFile(constants.PodInfoCPURequestsPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(string(b))
+}
+
+func readPodCPULimits() (int, error) {
+	b, err := ioutil.ReadFile(constants.PodInfoCPULimitsPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(string(b))
 }
 
 // Apply any overrides to proxy config from annotations
