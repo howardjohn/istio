@@ -5,7 +5,6 @@ Example remote control plane setup. Workloads connect to a gateway exposed under
 ## Setup - Control Plane
 
 ```
-istioctl install -d manifests --set values.pilot.env.PILOT_USE_ENDPOINT_SLICE=true
 kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/v0.15.0/cert-manager.yaml
 kubectl apply -f controlplane.yaml
 ```

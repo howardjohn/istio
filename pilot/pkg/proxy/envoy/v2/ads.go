@@ -237,7 +237,12 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 				if err := s.initConnection(discReq.Node, con); err != nil {
 					return err
 				}
-				defer s.removeCon(con.ConID)
+				defer func() {
+					s.removeCon(con.ConID)
+					if s.InternalGen != nil {
+						s.InternalGen.OnDisconnect(con.node)
+					}
+				}()
 			}
 			if s.StatusReporter != nil {
 				s.StatusReporter.RegisterEvent(con.ConID, discReq.TypeUrl, discReq.ResponseNonce)
@@ -491,6 +496,9 @@ func (s *DiscoveryServer) initConnection(node *core.Node, con *XdsConnection) er
 	s.addCon(con.ConID, con)
 	con.mu.Unlock()
 
+	if s.InternalGen != nil {
+		s.InternalGen.OnConnect(proxy)
+	}
 	return nil
 }
 
