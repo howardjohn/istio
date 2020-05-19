@@ -47,7 +47,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update"]
 
   # ingress controller
 {{- if .Values.global.istiod.enableAnalysis }}
