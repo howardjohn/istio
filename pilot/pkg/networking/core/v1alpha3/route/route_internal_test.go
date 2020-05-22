@@ -23,10 +23,12 @@ import (
 	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	xdstype "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/ptypes/wrappers"
 
 	networking "istio.io/api/networking/v1alpha3"
 
+	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config/labels"
 )
 
@@ -555,6 +557,37 @@ func TestMirrorPercent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTranslateRoute(t *testing.T) {
+	proxy := &model.Proxy{
+		Metadata: &model.NodeMetadata{},
+	}
+	vsRoute := &networking.HTTPRoute{
+		Route: []*networking.HTTPRouteDestination{
+			{
+				Destination: &networking.Destination{Host: "foo"},
+				Headers: &networking.Headers{
+					Request: &networking.Headers_HeaderOperations{Remove: []string{"remove-route"}},
+				},
+			},
+			{
+				Destination: &networking.Destination{Host: "foo"},
+				Headers: &networking.Headers{
+					Request: &networking.Headers_HeaderOperations{Remove: []string{"remove-route"}},
+				},
+			},
+		},
+		Headers: &networking.Headers{
+			Request: &networking.Headers_HeaderOperations{Remove: []string{"remove"}},
+		},
+	}
+	got := translateRoute(nil, proxy, vsRoute, nil, 80, model.Config{}, nil, nil)
+	s, err := (&jsonpb.Marshaler{Indent: "  "}).MarshalToString(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(s)
 }
 
 func TestSourceMatchHTTP(t *testing.T) {
