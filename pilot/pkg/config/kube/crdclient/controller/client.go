@@ -102,8 +102,8 @@ type cacheHandler struct {
 	dynamicClient dynamic.NamespaceableResourceInterface
 }
 
-func (cl *Client) createCacheHandler(schema collection.Schema, informers externalversions.SharedInformerFactory, dynamicClient dynamic.Interface) (*cacheHandler, error) {
-
+func (cl *Client) createCacheHandler(schema collection.Schema,
+	informers externalversions.SharedInformerFactory, dynamicClient dynamic.Interface) (*cacheHandler, error) {
 	gvr := kubeSchema.GroupVersionResource{
 		Group:    schema.Resource().Group(),
 		Version:  schema.Resource().Version(),
@@ -236,8 +236,12 @@ var _ model.ConfigStoreCache = &Client{}
 var scope = log.RegisterScope("kube", "Kubernetes client messages", 0)
 
 // NewForConfig creates a client to the Kubernetes API using a rest config.
-func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger ledger.Ledger, revision string, options controller2.Options) (model.ConfigStoreCache, error) {
+func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger ledger.Ledger,
+	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
 	ic, err := versionedclient.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
 	informers := externalversions.NewSharedInformerFactory(ic, options.ResyncPeriod)
 
 	crdClient, err := apiextensionsclient.NewForConfig(cfg)

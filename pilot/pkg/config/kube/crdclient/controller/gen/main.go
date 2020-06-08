@@ -41,7 +41,7 @@ type ConfigData struct {
 func MakeConfigData(schema collection.Schema) ConfigData {
 	pkg := schema.Resource().ProtoPackage()
 	spl := strings.Split(pkg, "/")
-	importName := strings.Join(spl[len(spl)-2:len(spl)], "_")
+	importName := strings.Join(spl[len(spl)-2:], "_")
 
 	out := ConfigData{
 		VariableName: schema.VariableName(),

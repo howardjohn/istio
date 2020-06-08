@@ -2,6 +2,7 @@ package controller_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -22,10 +23,10 @@ var nextWrite = 0
 
 func buildNewClient(b *testing.B) model.ConfigStoreCache {
 	schemas := collections.Pilot
-	kubeconfig := "/home/howardjohn/.kube/alt/config"
+	kubeconfig := os.Getenv("KUBECONFIG")
 
 	if len(kubeconfig) == 0 {
-		b.Fatalf("Environment variables KUBECONFIG and NAMESPACE need to be set")
+		b.Skip("Environment variables KUBECONFIG and NAMESPACE need to be set")
 	}
 
 	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -44,10 +45,10 @@ func buildNewClient(b *testing.B) model.ConfigStoreCache {
 
 func buildOldClient(b *testing.B) model.ConfigStoreCache {
 	schemas := collections.Pilot
-	kubeconfig := "/home/howardjohn/.kube/alt/config"
+	kubeconfig := os.Getenv("KUBECONFIG")
 
 	if len(kubeconfig) == 0 {
-		b.Fatalf("Environment variables KUBECONFIG and NAMESPACE need to be set")
+		b.Skip("Environment variables KUBECONFIG and NAMESPACE need to be set")
 	}
 
 	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -70,8 +71,8 @@ func buildOldClient(b *testing.B) model.ConfigStoreCache {
 
 // Run with -benchtime=100x or results are inconsistent
 func BenchmarkCRD(b *testing.B) {
-	//config := buildNewClient(b)
-	config := buildOldClient(b)
+	config := buildNewClient(b) // switch to buildOldClient to compare
+	_ = buildOldClient
 	for n := 0; n < 200; n++ {
 		nextWrite++
 		name := fmt.Sprintf("test-gw-%d", nextWrite)
