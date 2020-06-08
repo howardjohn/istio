@@ -28,9 +28,9 @@ import (
 	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/config/schema/resource"
 
-	security_v1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 	config_client "istio.io/client-go/pkg/apis/config/v1alpha2"
 	networking_v1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
+	security_v1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 )
 
 func TranslateObject(r runtime.Object, gvk resource.GroupVersionKind, domainSuffix string) *model.Config {
@@ -43,238 +43,238 @@ var translationMap = map[resource.GroupVersionKind]func(r runtime.Object) *model
 	collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*config_client.HTTPAPISpecBinding)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().Kind(),
-			Group:             collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().Group(),
-			Version:           collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().Kind(),
+				Group:             collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().Group(),
+				Version:           collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioConfigV1Alpha2Httpapispecs.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*config_client.HTTPAPISpec)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioConfigV1Alpha2Httpapispecs.Resource().Kind(),
-			Group:             collections.IstioConfigV1Alpha2Httpapispecs.Resource().Group(),
-			Version:           collections.IstioConfigV1Alpha2Httpapispecs.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioConfigV1Alpha2Httpapispecs.Resource().Kind(),
+				Group:             collections.IstioConfigV1Alpha2Httpapispecs.Resource().Group(),
+				Version:           collections.IstioConfigV1Alpha2Httpapispecs.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*config_client.QuotaSpecBinding)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().Kind(),
-			Group:             collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().Group(),
-			Version:           collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().Kind(),
+				Group:             collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().Group(),
+				Version:           collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioMixerV1ConfigClientQuotaspecs.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*config_client.QuotaSpec)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioMixerV1ConfigClientQuotaspecs.Resource().Kind(),
-			Group:             collections.IstioMixerV1ConfigClientQuotaspecs.Resource().Group(),
-			Version:           collections.IstioMixerV1ConfigClientQuotaspecs.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioMixerV1ConfigClientQuotaspecs.Resource().Kind(),
+				Group:             collections.IstioMixerV1ConfigClientQuotaspecs.Resource().Group(),
+				Version:           collections.IstioMixerV1ConfigClientQuotaspecs.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioNetworkingV1Alpha3Destinationrules.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*networking_v1alpha3.DestinationRule)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioNetworkingV1Alpha3Destinationrules.Resource().Kind(),
-			Group:             collections.IstioNetworkingV1Alpha3Destinationrules.Resource().Group(),
-			Version:           collections.IstioNetworkingV1Alpha3Destinationrules.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioNetworkingV1Alpha3Destinationrules.Resource().Kind(),
+				Group:             collections.IstioNetworkingV1Alpha3Destinationrules.Resource().Group(),
+				Version:           collections.IstioNetworkingV1Alpha3Destinationrules.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*networking_v1alpha3.EnvoyFilter)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().Kind(),
-			Group:             collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().Group(),
-			Version:           collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().Kind(),
+				Group:             collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().Group(),
+				Version:           collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioNetworkingV1Alpha3Gateways.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*networking_v1alpha3.Gateway)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioNetworkingV1Alpha3Gateways.Resource().Kind(),
-			Group:             collections.IstioNetworkingV1Alpha3Gateways.Resource().Group(),
-			Version:           collections.IstioNetworkingV1Alpha3Gateways.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioNetworkingV1Alpha3Gateways.Resource().Kind(),
+				Group:             collections.IstioNetworkingV1Alpha3Gateways.Resource().Group(),
+				Version:           collections.IstioNetworkingV1Alpha3Gateways.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioNetworkingV1Alpha3Serviceentries.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*networking_v1alpha3.ServiceEntry)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Kind(),
-			Group:             collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Group(),
-			Version:           collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Kind(),
+				Group:             collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Group(),
+				Version:           collections.IstioNetworkingV1Alpha3Serviceentries.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioNetworkingV1Alpha3Sidecars.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*networking_v1alpha3.Sidecar)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioNetworkingV1Alpha3Sidecars.Resource().Kind(),
-			Group:             collections.IstioNetworkingV1Alpha3Sidecars.Resource().Group(),
-			Version:           collections.IstioNetworkingV1Alpha3Sidecars.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioNetworkingV1Alpha3Sidecars.Resource().Kind(),
+				Group:             collections.IstioNetworkingV1Alpha3Sidecars.Resource().Group(),
+				Version:           collections.IstioNetworkingV1Alpha3Sidecars.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*networking_v1alpha3.VirtualService)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Kind(),
-			Group:             collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Group(),
-			Version:           collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Kind(),
+				Group:             collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Group(),
+				Version:           collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioNetworkingV1Alpha3Workloadentries.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*networking_v1alpha3.WorkloadEntry)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioNetworkingV1Alpha3Workloadentries.Resource().Kind(),
-			Group:             collections.IstioNetworkingV1Alpha3Workloadentries.Resource().Group(),
-			Version:           collections.IstioNetworkingV1Alpha3Workloadentries.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioNetworkingV1Alpha3Workloadentries.Resource().Kind(),
+				Group:             collections.IstioNetworkingV1Alpha3Workloadentries.Resource().Group(),
+				Version:           collections.IstioNetworkingV1Alpha3Workloadentries.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*security_v1beta1.AuthorizationPolicy)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().Kind(),
-			Group:             collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().Group(),
-			Version:           collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().Kind(),
+				Group:             collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().Group(),
+				Version:           collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioSecurityV1Beta1Peerauthentications.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*security_v1beta1.PeerAuthentication)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioSecurityV1Beta1Peerauthentications.Resource().Kind(),
-			Group:             collections.IstioSecurityV1Beta1Peerauthentications.Resource().Group(),
-			Version:           collections.IstioSecurityV1Beta1Peerauthentications.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioSecurityV1Beta1Peerauthentications.Resource().Kind(),
+				Group:             collections.IstioSecurityV1Beta1Peerauthentications.Resource().Group(),
+				Version:           collections.IstioSecurityV1Beta1Peerauthentications.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},
 	collections.IstioSecurityV1Beta1Requestauthentications.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
 		obj := r.(*security_v1beta1.RequestAuthentication)
 		return &model.Config{
-		ConfigMeta: model.ConfigMeta{
-			Type:              collections.IstioSecurityV1Beta1Requestauthentications.Resource().Kind(),
-			Group:             collections.IstioSecurityV1Beta1Requestauthentications.Resource().Group(),
-			Version:           collections.IstioSecurityV1Beta1Requestauthentications.Resource().Version(),
-			Name:              obj.Name,
-			Namespace:         obj.Namespace,
-			Labels:            obj.Labels,
-			Annotations:       obj.Annotations,
-			ResourceVersion:   obj.ResourceVersion,
-			CreationTimestamp: obj.CreationTimestamp.Time,
-		},
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.IstioSecurityV1Beta1Requestauthentications.Resource().Kind(),
+				Group:             collections.IstioSecurityV1Beta1Requestauthentications.Resource().Group(),
+				Version:           collections.IstioSecurityV1Beta1Requestauthentications.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
 			Spec: &obj.Spec,
 		}
 	},

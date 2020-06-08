@@ -27,4 +27,8 @@ func TestClient(t *testing.T) {
 	}
 	cfg := config.Get(collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind(), "foo", "default")
 	t.Log(cfg)
+	cfgs, err := config.List(collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind(), "default")
+	t.Log(cfgs, err)
+
 }
+
