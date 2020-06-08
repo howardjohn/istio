@@ -22,6 +22,7 @@ package controller
 // as declared in the Istio config model.
 
 import (
+	"istio.io/pkg/log"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"istio.io/istio/pilot/pkg/model"
@@ -34,7 +35,12 @@ import (
 )
 
 func TranslateObject(r runtime.Object, gvk resource.GroupVersionKind, domainSuffix string) *model.Config {
-	c := translationMap[gvk](r)
+	translateFunc, f := translationMap[gvk]
+	if !f {
+		log.Errorf("unknown type %v", gvk)
+		return nil
+	}
+	c := translateFunc(r)
 	c.Domain = domainSuffix
 	return c
 }

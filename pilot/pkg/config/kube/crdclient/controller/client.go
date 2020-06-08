@@ -18,15 +18,19 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
+	"time"
 
-	"istio.io/client-go/pkg/informers/externalversions"
-	"istio.io/pkg/monitoring"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
+
+	"istio.io/client-go/pkg/informers/externalversions"
+	"istio.io/pkg/monitoring"
 
 	"istio.io/api/label"
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
@@ -46,6 +50,7 @@ import (
 	controller2 "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	"istio.io/istio/pkg/config/schema/collection"
 	"istio.io/istio/pkg/config/schema/resource"
+	"istio.io/istio/pkg/queue"
 	"istio.io/istio/pkg/util/gogoprotomarshal"
 )
 
@@ -62,22 +67,168 @@ type Client struct {
 	configLedger ledger.Ledger
 
 	// revision for this control plane instance. We will only read configs that match this revision.
-	revision     string
-	informers    externalversions.SharedInformerFactory
-	gvrMap       map[resource.GroupVersionKind]externalversions.GenericInformer
-	dynClientMap map[resource.GroupVersionKind]dynamic.NamespaceableResourceInterface
+	revision string
+	kinds    map[resource.GroupVersionKind]*cacheHandler
+	queue    queue.Instance
+}
+
+func incrementEvent(kind, event string) {
+	k8sEvents.With(typeTag.Value(kind), eventTag.Value(event)).Increment()
+}
+
+func (cl *Client) tryLedgerPut(obj interface{}, kind string) {
+	iobj := obj.(metav1.Object)
+	key := model.Key(kind, iobj.GetName(), iobj.GetNamespace())
+	_, err := cl.configLedger.Put(key, iobj.GetResourceVersion())
+	if err != nil {
+		scope.Errorf("Failed to update %s in ledger, status will be out of date.", key)
+	}
+}
+
+func (cl *Client) tryLedgerDelete(obj interface{}, kind string) {
+	iobj := obj.(metav1.Object)
+	key := model.Key(kind, iobj.GetName(), iobj.GetNamespace())
+	err := cl.configLedger.Delete(key)
+	if err != nil {
+		scope.Errorf("Failed to delete %s in ledger, status will be out of date.", key)
+	}
+}
+
+type cacheHandler struct {
+	client        *Client
+	informer      externalversions.GenericInformer
+	handlers      []func(model.Config, model.Config, model.Event)
+	schema        collection.Schema
+	dynamicClient dynamic.NamespaceableResourceInterface
+}
+
+func (cl *Client) createCacheHandler(schema collection.Schema, informers externalversions.SharedInformerFactory, dynamicClient dynamic.Interface) (*cacheHandler, error) {
+
+	gvr := kubeSchema.GroupVersionResource{
+		Group:    schema.Resource().Group(),
+		Version:  schema.Resource().Version(),
+		Resource: schema.Resource().Plural(),
+	}
+	i, err := informers.ForResource(gvr)
+	if err != nil {
+		return nil, err
+	}
+	// TODO
+	//var stop chan struct{}
+	//go i.Informer().Run(stop)
+	//cache.WaitForCacheSync(stop, i.Informer().HasSynced)
+	h := &cacheHandler{
+		client:        cl,
+		schema:        schema,
+		informer:      i,
+		dynamicClient: dynamicClient.Resource(gvr),
+	}
+	kind := schema.Resource().Kind()
+	i.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		// TODO: filtering functions to skip over un-referenced resources (perf)
+		AddFunc: func(obj interface{}) {
+			incrementEvent(kind, "add")
+			cl.tryLedgerPut(obj, kind)
+			cl.queue.Push(func() error {
+				return h.onEvent(nil, obj, model.EventAdd)
+			})
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			cl.tryLedgerPut(cur, kind)
+			if !reflect.DeepEqual(old, cur) {
+				incrementEvent(kind, "update")
+				cl.queue.Push(func() error {
+					return h.onEvent(old, cur, model.EventUpdate)
+				})
+			} else {
+				incrementEvent(kind, "updatesame")
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			incrementEvent(kind, "delete")
+			cl.tryLedgerDelete(obj, kind)
+			cl.queue.Push(func() error {
+				return h.onEvent(nil, obj, model.EventDelete)
+			})
+		},
+	})
+	return h, nil
+}
+
+func (h *cacheHandler) onEvent(old interface{}, curr interface{}, event model.Event) error {
+	if err := h.client.checkReadyForEvents(curr); err != nil {
+		return err
+	}
+
+	var currItem, oldItem runtime.Object
+
+	ok := false
+
+	if currItem, ok = curr.(runtime.Object); !ok {
+		log.Warnf("New Object can not be converted to runtime Object %v, is type %T", curr, curr)
+		return nil
+	}
+	currConfig := TranslateObject(currItem, h.schema.Resource().GroupVersionKind(), h.client.domainSuffix)
+
+	var oldConfig model.Config
+	if old != nil {
+		if oldItem, ok = old.(runtime.Object); !ok {
+			log.Warnf("Old Object can not be converted to runtime Object %v, is type %T", old, old)
+			return nil
+		}
+		oldConfig = *TranslateObject(oldItem, h.schema.Resource().GroupVersionKind(), h.client.domainSuffix)
+	}
+
+	for _, f := range h.handlers {
+		f(oldConfig, *currConfig, event)
+	}
+	return nil
+}
+
+func (cl *Client) checkReadyForEvents(curr interface{}) error {
+	if !cl.HasSynced() {
+		return errors.New("waiting till full synchronization")
+	}
+	_, err := cache.DeletionHandlingMetaNamespaceKeyFunc(curr)
+	if err != nil {
+		log.Infof("Error retrieving key: %v", err)
+	}
+	return nil
 }
 
 func (cl *Client) RegisterEventHandler(kind resource.GroupVersionKind, handler func(model.Config, model.Config, model.Event)) {
-	panic("implement me")
+	h, exists := cl.kinds[kind]
+	if !exists {
+		return
+	}
+
+	h.handlers = append(h.handlers, handler)
 }
 
 func (cl *Client) Run(stop <-chan struct{}) {
-	panic("implement me")
+	log.Infoa("Starting Pilot K8S CRD controller")
+
+	go func() {
+		cache.WaitForCacheSync(stop, cl.HasSynced)
+		cl.queue.Run(stop)
+	}()
+
+	for _, ctl := range cl.kinds {
+		go ctl.informer.Informer().Run(stop)
+	}
+
+	<-stop
+	log.Info("controller terminated")
 }
 
 func (cl *Client) HasSynced() bool {
-	panic("implement me")
+	for kind, ctl := range cl.kinds {
+		if !ctl.informer.Informer().HasSynced() {
+			log.Infof("controller %q is syncing...", kind)
+			return false
+		}
+	}
+	return true
 }
 
 var _ model.ConfigStoreCache = &Client{}
@@ -99,34 +250,22 @@ func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger led
 		return nil, err
 	}
 
-	informerMap := map[resource.GroupVersionKind]externalversions.GenericInformer{}
-	dynClientMap := map[resource.GroupVersionKind]dynamic.NamespaceableResourceInterface{}
-	for _, r := range schemas.All() {
-		gvr := kubeSchema.GroupVersionResource{
-			Group:    r.Resource().Group(),
-			Version:  r.Resource().Version(),
-			Resource: r.Resource().Plural(),
-		}
-		i, err := informers.ForResource(gvr)
-		if err != nil {
-			return nil, err
-		}
-		var stop chan struct{}
-		go i.Informer().Run(stop)
-		cache.WaitForCacheSync(stop, i.Informer().HasSynced)
-		informerMap[r.Resource().GroupVersionKind()] = i
-		dynClientMap[r.Resource().GroupVersionKind()] = dynClient.Resource(gvr)
-	}
-
 	out := &Client{
 		crdClient:    crdClient,
 		domainSuffix: options.DomainSuffix,
 		configLedger: configLedger,
 		schemas:      schemas,
 		revision:     revision,
-		informers:    informers,
-		dynClientMap: dynClientMap,
-		gvrMap:       informerMap,
+		queue:        queue.NewQueue(1 * time.Second),
+		kinds:        map[resource.GroupVersionKind]*cacheHandler{},
+	}
+	// TODO known CRDs only
+	for _, r := range schemas.All() {
+		ch, err := out.createCacheHandler(r, informers, dynClient)
+		if err != nil {
+			return nil, err
+		}
+		out.kinds[r.Resource().GroupVersionKind()] = ch
 	}
 
 	return out, nil
@@ -139,13 +278,13 @@ func (cl *Client) Schemas() collection.Schemas {
 
 // Get implements store interface
 func (cl *Client) Get(typ resource.GroupVersionKind, name, namespace string) *model.Config {
-	informer, f := cl.gvrMap[typ]
+	h, f := cl.kinds[typ]
 	if !f {
 		scope.Warnf("unknown type: %s", typ)
 		return nil
 	}
 
-	obj, err := informer.Lister().ByNamespace(namespace).Get(name)
+	obj, err := h.informer.Lister().ByNamespace(namespace).Get(name)
 	if err != nil {
 		// TODO we should be returning errors not logging
 		scope.Warna(err)
@@ -201,7 +340,7 @@ func handleValidationFailure(obj *model.Config, err error) {
 
 // Create implements store interface
 func (cl *Client) Create(config model.Config) (string, error) {
-	client, f := cl.dynClientMap[config.GroupVersionKind()]
+	h, f := cl.kinds[config.GroupVersionKind()]
 	if !f {
 		return "", fmt.Errorf("unrecognized type: %s", config.GroupVersionKind())
 	}
@@ -211,7 +350,7 @@ func (cl *Client) Create(config model.Config) (string, error) {
 		return "", fmt.Errorf("unstructured conversion: %v", err)
 	}
 
-	o, err := client.Namespace(config.Namespace).Create(context.TODO(), u, metav1.CreateOptions{})
+	o, err := h.dynamicClient.Namespace(config.Namespace).Create(context.TODO(), u, metav1.CreateOptions{})
 	if err != nil {
 		return "", fmt.Errorf("create %v/%v: %v", config.Name, config.Namespace, err)
 	}
@@ -255,11 +394,13 @@ func toUnstructured(cfg *model.Config) (*unstructured.Unstructured, error) {
 
 // Update implements store interface
 func (cl *Client) Update(config model.Config) (string, error) {
+	// TODO
 	return "", nil
 }
 
 // Delete implements store interface
 func (cl *Client) Delete(typ resource.GroupVersionKind, name, namespace string) error {
+	// TODO
 	return nil
 }
 
@@ -282,12 +423,12 @@ func (cl *Client) SetLedger(l ledger.Ledger) error {
 
 // List implements store interface
 func (cl *Client) List(kind resource.GroupVersionKind, namespace string) ([]model.Config, error) {
-	informer, f := cl.gvrMap[kind]
+	h, f := cl.kinds[kind]
 	if !f {
 		return nil, fmt.Errorf("unrecognized type: %s", kind)
 	}
 
-	list, err := informer.Lister().ByNamespace(namespace).List(klabels.Everything())
+	list, err := h.informer.Lister().ByNamespace(namespace).List(klabels.Everything())
 	if err != nil {
 		return nil, err
 	}

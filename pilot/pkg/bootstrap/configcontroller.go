@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"istio.io/istio/pilot/pkg/status"
+	kubecfg "istio.io/istio/pkg/kube"
 
 	"istio.io/istio/galley/pkg/server/components"
 	"istio.io/istio/galley/pkg/server/settings"
@@ -46,6 +47,7 @@ import (
 
 	configaggregate "istio.io/istio/pilot/pkg/config/aggregate"
 	"istio.io/istio/pilot/pkg/config/kube/crd/controller"
+	crdclient "istio.io/istio/pilot/pkg/config/kube/crdclient/controller"
 	"istio.io/istio/pilot/pkg/config/kube/ingress"
 	"istio.io/istio/pilot/pkg/config/memory"
 	configmonitor "istio.io/istio/pilot/pkg/config/monitor"
@@ -372,6 +374,17 @@ func (s *Server) mcpController(
 }
 
 func (s *Server) makeKubeConfigController(args *PilotArgs) (model.ConfigStoreCache, error) {
+	if true {
+		cfg, err := kubecfg.BuildClientConfig(args.Config.KubeConfig, "")
+		if err != nil {
+			return nil, err
+		}
+		c, err := crdclient.NewForConfig(cfg, collections.Pilot, buildLedger(args.Config), args.Revision, args.Config.ControllerOptions)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
 	// TODO(howardjohn) allow the collection here to be configurable to allow running with only
 	// Kubernetes APIs.
 	schemas := collection.NewSchemasBuilder()

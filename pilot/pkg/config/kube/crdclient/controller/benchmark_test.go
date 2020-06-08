@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	networking "istio.io/api/networking/v1alpha3"
-	"istio.io/pkg/log"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+
+	networking "istio.io/api/networking/v1alpha3"
+	"istio.io/pkg/log"
 
 	legacy "istio.io/istio/pilot/pkg/config/kube/crd/controller"
 	"istio.io/istio/pilot/pkg/config/kube/crdclient/controller"
