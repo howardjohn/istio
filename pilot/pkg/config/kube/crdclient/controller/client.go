@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 
-	"istio.io/client-go/pkg/apis/networking/v1alpha3"
 	"istio.io/client-go/pkg/informers/externalversions"
 	"k8s.io/client-go/tools/cache"
 
@@ -40,7 +39,6 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	controller2 "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	"istio.io/istio/pkg/config/schema/collection"
-	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/config/schema/resource"
 )
 
@@ -60,7 +58,6 @@ type Client struct {
 	revision       string
 	informers      externalversions.SharedInformerFactory
 	gvrMap         map[resource.GroupVersionKind]externalversions.GenericInformer
-	translationMap map[resource.GroupVersionKind]translation
 }
 
 func (cl *Client) RegisterEventHandler(kind resource.GroupVersionKind, handler func(model.Config, model.Config, model.Event)) {
@@ -92,7 +89,6 @@ func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger led
 	}
 
 	informerMap := map[resource.GroupVersionKind]externalversions.GenericInformer{}
-	translationMap := map[resource.GroupVersionKind]translation{}
 	for _, r := range schemas.All() {
 		gvr := kubeSchema.GroupVersionResource{
 			Group:    r.Resource().Group(),
@@ -109,24 +105,6 @@ func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger led
 		informerMap[r.Resource().GroupVersionKind()] = i
 	}
 
-	translationMap[collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind()] = func(r runtime.Object) *model.Config {
-		vs := r.(*v1alpha3.VirtualService)
-		return &model.Config{
-			ConfigMeta: model.ConfigMeta{
-				Type:              collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Kind(),
-				Group:             collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Group(),
-				Version:           collections.IstioNetworkingV1Alpha3Virtualservices.Resource().Version(),
-				Name:              vs.Name,
-				Namespace:         vs.Namespace,
-				Domain:            options.DomainSuffix,
-				Labels:            vs.Labels,
-				Annotations:       vs.Annotations,
-				ResourceVersion:   vs.ResourceVersion,
-				CreationTimestamp: vs.CreationTimestamp.Time,
-			},
-			Spec: &vs.Spec,
-		}
-	}
 
 	out := &Client{
 		crdClient:      crdClient,
@@ -136,7 +114,6 @@ func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger led
 		revision:       revision,
 		informers:      informers,
 		gvrMap:         informerMap,
-		translationMap: translationMap,
 	}
 
 	return out, nil
@@ -165,7 +142,7 @@ func (cl *Client) Get(typ resource.GroupVersionKind, name, namespace string) *mo
 		return nil
 	}
 
-	return cl.translationMap[typ](obj)
+	return TranslateObject(obj, typ, cl.domainSuffix)
 }
 
 
