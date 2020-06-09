@@ -242,20 +242,28 @@ func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger led
 	if err != nil {
 		return nil, err
 	}
-	informers := externalversions.NewSharedInformerFactory(ic, options.ResyncPeriod)
 
-	crdClient, err := apiextensionsclient.NewForConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
+	//crdClient, err := apiextensionsclient.NewForConfig(cfg)
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	dynClient, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	return New(ic, dynClient, schemas, configLedger, revision, options)
+}
+
+func New(ic versionedclient.Interface, dynClient dynamic.Interface, schemas collection.Schemas, configLedger ledger.Ledger,
+	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
+
+	informers := externalversions.NewSharedInformerFactory(ic, options.ResyncPeriod)
+
 	out := &Client{
-		crdClient:    crdClient,
+		// TODO use CRD client
+		crdClient:    nil,
 		domainSuffix: options.DomainSuffix,
 		configLedger: configLedger,
 		schemas:      schemas,
