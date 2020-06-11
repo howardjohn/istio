@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	crdclient2 "istio.io/istio/pilot/pkg/config/kube/crdclient"
 	"istio.io/istio/pilot/pkg/status"
 	kubecfg "istio.io/istio/pkg/kube"
 
@@ -37,7 +38,6 @@ import (
 
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/hashicorp/go-multierror"
 	"google.golang.org/grpc"
 
 	mcpapi "istio.io/api/mcp/v1alpha1"
@@ -46,8 +46,6 @@ import (
 	"istio.io/pkg/log"
 
 	configaggregate "istio.io/istio/pilot/pkg/config/aggregate"
-	"istio.io/istio/pilot/pkg/config/kube/crd/controller"
-	crdclient "istio.io/istio/pilot/pkg/config/kube/crdclient/controller"
 	"istio.io/istio/pilot/pkg/config/kube/ingress"
 	"istio.io/istio/pilot/pkg/config/memory"
 	configmonitor "istio.io/istio/pilot/pkg/config/monitor"
@@ -374,17 +372,6 @@ func (s *Server) mcpController(
 }
 
 func (s *Server) makeKubeConfigController(args *PilotArgs) (model.ConfigStoreCache, error) {
-	if true {
-		cfg, err := kubecfg.BuildClientConfig(args.Config.KubeConfig, "")
-		if err != nil {
-			return nil, err
-		}
-		c, err := crdclient.NewForConfig(cfg, collections.Pilot, buildLedger(args.Config), args.Revision, args.Config.ControllerOptions)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
-	}
 	// TODO(howardjohn) allow the collection here to be configurable to allow running with only
 	// Kubernetes APIs.
 	schemas := collection.NewSchemasBuilder()
@@ -401,13 +388,16 @@ func (s *Server) makeKubeConfigController(args *PilotArgs) (model.ConfigStoreCac
 			return nil, err
 		}
 	}
-	configClient, err := controller.NewClient(args.Config.KubeConfig, "", schemas.Build(),
-		args.Config.ControllerOptions.DomainSuffix, buildLedger(args.Config), args.Revision)
+	// TODO use schemas
+	cfg, err := kubecfg.BuildClientConfig(args.Config.KubeConfig, "")
 	if err != nil {
-		return nil, multierror.Prefix(err, "failed to open a config client.")
+		return nil, err
 	}
-
-	return controller.NewController(configClient, args.Config.ControllerOptions), nil
+	c, err := crdclient2.NewForConfig(cfg, collections.Pilot, buildLedger(args.Config), args.Revision, args.Config.ControllerOptions)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 func (s *Server) makeFileMonitor(fileDir string, domainSuffix string, configController model.ConfigStore) error {

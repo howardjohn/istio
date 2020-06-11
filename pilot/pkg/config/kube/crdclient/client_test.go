@@ -1,16 +1,15 @@
-package controller
+package crdclient
 
 import (
 	"context"
 	"testing"
 
-	networking "istio.io/api/networking/v1alpha3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeSchema "k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
-	restfake "k8s.io/client-go/rest/fake"
 
+	networking "istio.io/api/networking/v1alpha3"
 	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
 
 	"istio.io/istio/pilot/pkg/model"

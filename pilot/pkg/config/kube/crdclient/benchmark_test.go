@@ -1,4 +1,4 @@
-package controller_test
+package crdclient_test
 
 import (
 	"fmt"
@@ -6,14 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
 	networking "istio.io/api/networking/v1alpha3"
 	"istio.io/pkg/log"
 
-	legacy "istio.io/istio/pilot/pkg/config/kube/crd/controller"
-	"istio.io/istio/pilot/pkg/config/kube/crdclient/controller"
+	"istio.io/istio/pilot/pkg/config/kube/crdclient"
 	"istio.io/istio/pilot/pkg/model"
 	controller2 "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	"istio.io/istio/pkg/config/schema/collections"
@@ -35,7 +33,7 @@ func buildNewClient(b *testing.B) model.ConfigStoreCache {
 	if err != nil {
 		b.Fatalf("Failed to create k8s rest client: %s", err)
 	}
-	config, err := controller.NewForConfig(restConfig, schemas, nil, "", controller2.Options{})
+	config, err := crdclient.NewForConfig(restConfig, schemas, nil, "", controller2.Options{})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -43,36 +41,8 @@ func buildNewClient(b *testing.B) model.ConfigStoreCache {
 	return config
 }
 
-func buildOldClient(b *testing.B) model.ConfigStoreCache {
-	schemas := collections.Pilot
-	kubeconfig := os.Getenv("KUBECONFIG")
-
-	if len(kubeconfig) == 0 {
-		b.Skip("Environment variables KUBECONFIG and NAMESPACE need to be set")
-	}
-
-	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	restConfig.QPS = 100000
-	restConfig.Burst = 100000
-	if err != nil {
-		b.Fatalf("Failed to create k8s rest client: %s", err)
-	}
-	config, err := legacy.NewForConfig(restConfig, schemas, "cluster.local", &model.DisabledLedger{}, "")
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	controller := legacy.NewController(config, controller2.Options{})
-	var stop chan struct{}
-	go controller.Run(stop)
-	cache.WaitForCacheSync(stop, controller.HasSynced)
-	return controller
-}
-
-// Run with -benchtime=100x or results are inconsistent
 func BenchmarkCRD(b *testing.B) {
-	config := buildNewClient(b) // switch to buildOldClient to compare
-	_ = buildOldClient
+	config := buildNewClient(b)
 	for n := 0; n < 200; n++ {
 		nextWrite++
 		name := fmt.Sprintf("test-gw-%d", nextWrite)

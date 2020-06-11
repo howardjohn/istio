@@ -14,7 +14,7 @@
 
 // Package controller provides an implementation of the config store and cache
 // using Kubernetes Custom Resources and the informer framework from Kubernetes
-package controller
+package crdclient
 
 import (
 	"context"
@@ -29,10 +29,13 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 
+	networkingv1alpha3 "istio.io/api/networking/v1alpha3"
+
 	"istio.io/client-go/pkg/informers/externalversions"
 	"istio.io/pkg/monitoring"
 
 	"istio.io/api/label"
+	clientnetworkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
 
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -49,10 +52,22 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	controller2 "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	"istio.io/istio/pkg/config/schema/collection"
+	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/config/schema/resource"
 	"istio.io/istio/pkg/queue"
 	"istio.io/istio/pkg/util/gogoprotomarshal"
 )
+
+func TranslateObject(r runtime.Object, gvk resource.GroupVersionKind, domainSuffix string) *model.Config {
+	translateFunc, f := translationMap[gvk]
+	if !f {
+		log.Errorf("unknown type %v", gvk)
+		return nil
+	}
+	c := translateFunc(r)
+	c.Domain = domainSuffix
+	return c
+}
 
 // Client is a basic REST client for CRDs implementing config store
 type Client struct {
@@ -70,6 +85,7 @@ type Client struct {
 	revision string
 	kinds    map[resource.GroupVersionKind]*cacheHandler
 	queue    queue.Instance
+	ic       versionedclient.Interface
 }
 
 func incrementEvent(kind, event string) {
@@ -270,6 +286,7 @@ func New(ic versionedclient.Interface, dynClient dynamic.Interface, schemas coll
 		revision:     revision,
 		queue:        queue.NewQueue(1 * time.Second),
 		kinds:        map[resource.GroupVersionKind]*cacheHandler{},
+		ic:           ic,
 	}
 	// TODO known CRDs only
 	for _, r := range schemas.All() {
@@ -352,21 +369,30 @@ func handleValidationFailure(obj *model.Config, err error) {
 
 // Create implements store interface
 func (cl *Client) Create(config model.Config) (string, error) {
-	h, f := cl.kinds[config.GroupVersionKind()]
-	if !f {
-		return "", fmt.Errorf("unrecognized type: %s", config.GroupVersionKind())
+	if config.Spec == nil {
+		return "", fmt.Errorf("nil spec for %v/%v", config.Name, config.Namespace)
 	}
-
-	u, err := toUnstructured(&config)
-	if err != nil {
-		return "", fmt.Errorf("unstructured conversion: %v", err)
+	objMeta := metav1.ObjectMeta{
+		Name:        config.Name,
+		Namespace:   config.Namespace,
+		Labels:      config.Labels,
+		Annotations: config.Annotations,
 	}
-
-	o, err := h.dynamicClient.Namespace(config.Namespace).Create(context.TODO(), u, metav1.CreateOptions{})
-	if err != nil {
-		return "", fmt.Errorf("create %v/%v: %v", config.Name, config.Namespace, err)
+	var meta metav1.Object
+	var err error
+	switch config.GroupVersionKind() {
+	case collections.IstioNetworkingV1Alpha3Destinationrules.Resource().GroupVersionKind():
+		meta, err = cl.ic.NetworkingV1alpha3().DestinationRules(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.DestinationRule{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*networkingv1alpha3.DestinationRule)),
+		}, metav1.CreateOptions{})
+	case collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind():
+		meta, err = cl.ic.NetworkingV1alpha3().VirtualServices(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.VirtualService{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*networkingv1alpha3.VirtualService)),
+		}, metav1.CreateOptions{})
 	}
-	return o.GetResourceVersion(), nil
+	return meta.GetResourceVersion(), err
 }
 
 // IstioKind is the generic Kubernetes API object wrapper
