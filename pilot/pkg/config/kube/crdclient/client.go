@@ -295,6 +295,16 @@ func create(ic versionedclient.Interface, config model.Config, objMeta metav1.Ob
 			ObjectMeta: objMeta,
 			Spec:       *(config.Spec.(*networkingv1alpha3.WorkloadEntry)),
 		}, metav1.CreateOptions{})
+	case collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().GroupVersionKind():
+		return ic.NetworkingV1alpha3().EnvoyFilters(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.EnvoyFilter{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*networkingv1alpha3.EnvoyFilter)),
+		}, metav1.CreateOptions{})
+	case collections.IstioNetworkingV1Alpha3Sidecars.Resource().GroupVersionKind():
+		return ic.NetworkingV1alpha3().Sidecars(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.Sidecar{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*networkingv1alpha3.Sidecar)),
+		}, metav1.CreateOptions{})
 	case collections.IstioNetworkingV1Alpha3Serviceentries.Resource().GroupVersionKind():
 		return ic.NetworkingV1alpha3().ServiceEntries(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.ServiceEntry{
 			ObjectMeta: objMeta,
