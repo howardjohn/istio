@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"go/format"
 	"io/ioutil"
 	"log"
 	"strings"
@@ -69,10 +70,15 @@ func main() {
 		log.Fatal(fmt.Errorf("template: %v", err))
 	}
 
+	// Format source code.
+	out, err := format.Source(buffer.Bytes())
+	if err != nil {
+		log.Fatal(err)
+	}
 	// Output
 	if outputFile == nil || *outputFile == "" {
-		fmt.Println(buffer.String())
-	} else if err := ioutil.WriteFile(*outputFile, buffer.Bytes(), 0644); err != nil {
+		fmt.Println(string(out))
+	} else if err := ioutil.WriteFile(*outputFile, out, 0644); err != nil {
 		panic(err)
 	}
 }
