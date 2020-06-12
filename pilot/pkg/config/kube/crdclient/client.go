@@ -20,13 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 
 	networkingv1alpha3 "istio.io/api/networking/v1alpha3"
@@ -40,7 +37,6 @@ import (
 
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeSchema "k8s.io/apimachinery/pkg/runtime/schema"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"  // import GKE cluster authentication plugin
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc" // import OIDC cluster authentication plugin, e.g. for Tectonic
 	"k8s.io/client-go/rest"
@@ -55,7 +51,6 @@ import (
 	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/config/schema/resource"
 	"istio.io/istio/pkg/queue"
-	"istio.io/istio/pkg/util/gogoprotomarshal"
 )
 
 func TranslateObject(r runtime.Object, gvk resource.GroupVersionKind, domainSuffix string) *model.Config {
@@ -108,97 +103,6 @@ func (cl *Client) tryLedgerDelete(obj interface{}, kind string) {
 	if err != nil {
 		scope.Errorf("Failed to delete %s in ledger, status will be out of date.", key)
 	}
-}
-
-type cacheHandler struct {
-	client        *Client
-	informer      externalversions.GenericInformer
-	handlers      []func(model.Config, model.Config, model.Event)
-	schema        collection.Schema
-	dynamicClient dynamic.NamespaceableResourceInterface
-}
-
-func (cl *Client) createCacheHandler(schema collection.Schema,
-	informers externalversions.SharedInformerFactory, dynamicClient dynamic.Interface) (*cacheHandler, error) {
-	gvr := kubeSchema.GroupVersionResource{
-		Group:    schema.Resource().Group(),
-		Version:  schema.Resource().Version(),
-		Resource: schema.Resource().Plural(),
-	}
-	i, err := informers.ForResource(gvr)
-	if err != nil {
-		return nil, err
-	}
-	// TODO
-	//var stop chan struct{}
-	//go i.Informer().Run(stop)
-	//cache.WaitForCacheSync(stop, i.Informer().HasSynced)
-	h := &cacheHandler{
-		client:        cl,
-		schema:        schema,
-		informer:      i,
-		dynamicClient: dynamicClient.Resource(gvr),
-	}
-	kind := schema.Resource().Kind()
-	i.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		// TODO: filtering functions to skip over un-referenced resources (perf)
-		AddFunc: func(obj interface{}) {
-			incrementEvent(kind, "add")
-			cl.tryLedgerPut(obj, kind)
-			cl.queue.Push(func() error {
-				return h.onEvent(nil, obj, model.EventAdd)
-			})
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			cl.tryLedgerPut(cur, kind)
-			if !reflect.DeepEqual(old, cur) {
-				incrementEvent(kind, "update")
-				cl.queue.Push(func() error {
-					return h.onEvent(old, cur, model.EventUpdate)
-				})
-			} else {
-				incrementEvent(kind, "updatesame")
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			incrementEvent(kind, "delete")
-			cl.tryLedgerDelete(obj, kind)
-			cl.queue.Push(func() error {
-				return h.onEvent(nil, obj, model.EventDelete)
-			})
-		},
-	})
-	return h, nil
-}
-
-func (h *cacheHandler) onEvent(old interface{}, curr interface{}, event model.Event) error {
-	if err := h.client.checkReadyForEvents(curr); err != nil {
-		return err
-	}
-
-	var currItem, oldItem runtime.Object
-
-	ok := false
-
-	if currItem, ok = curr.(runtime.Object); !ok {
-		log.Warnf("New Object can not be converted to runtime Object %v, is type %T", curr, curr)
-		return nil
-	}
-	currConfig := TranslateObject(currItem, h.schema.Resource().GroupVersionKind(), h.client.domainSuffix)
-
-	var oldConfig model.Config
-	if old != nil {
-		if oldItem, ok = old.(runtime.Object); !ok {
-			log.Warnf("Old Object can not be converted to runtime Object %v, is type %T", old, old)
-			return nil
-		}
-		oldConfig = *TranslateObject(oldItem, h.schema.Resource().GroupVersionKind(), h.client.domainSuffix)
-	}
-
-	for _, f := range h.handlers {
-		f(oldConfig, *currConfig, event)
-	}
-	return nil
 }
 
 func (cl *Client) checkReadyForEvents(curr interface{}) error {
@@ -264,15 +168,10 @@ func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger led
 	//	return nil, err
 	//}
 
-	dynClient, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return New(ic, dynClient, schemas, configLedger, revision, options)
+	return New(ic, schemas, configLedger, revision, options)
 }
 
-func New(ic versionedclient.Interface, dynClient dynamic.Interface, schemas collection.Schemas, configLedger ledger.Ledger,
+func New(ic versionedclient.Interface, schemas collection.Schemas, configLedger ledger.Ledger,
 	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
 
 	informers := externalversions.NewSharedInformerFactory(ic, options.ResyncPeriod)
@@ -290,7 +189,7 @@ func New(ic versionedclient.Interface, dynClient dynamic.Interface, schemas coll
 	}
 	// TODO known CRDs only
 	for _, r := range schemas.All() {
-		ch, err := out.createCacheHandler(r, informers, dynClient)
+		ch, err := createCacheHandler(out, r, informers)
 		if err != nil {
 			return nil, err
 		}
@@ -332,7 +231,7 @@ func (cl *Client) Get(typ resource.GroupVersionKind, name, namespace string) *mo
 		}
 
 	}
-	return nil
+	return cfg
 }
 
 var (
@@ -367,6 +266,28 @@ func handleValidationFailure(obj *model.Config, err error) {
 	k8sTotalErrors.Increment()
 }
 
+func create(ic versionedclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
+	switch config.GroupVersionKind() {
+	case collections.IstioNetworkingV1Alpha3Destinationrules.Resource().GroupVersionKind():
+		return ic.NetworkingV1alpha3().DestinationRules(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.DestinationRule{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*networkingv1alpha3.DestinationRule)),
+		}, metav1.CreateOptions{})
+	case collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind():
+		return ic.NetworkingV1alpha3().VirtualServices(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.VirtualService{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*networkingv1alpha3.VirtualService)),
+		}, metav1.CreateOptions{})
+	case collections.IstioNetworkingV1Alpha3Gateways.Resource().GroupVersionKind():
+		return ic.NetworkingV1alpha3().Gateways(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.Gateway{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*networkingv1alpha3.Gateway)),
+		}, metav1.CreateOptions{})
+	default:
+		return nil, fmt.Errorf("unsupported type: %v", config.GroupVersionKind())
+	}
+}
+
 // Create implements store interface
 func (cl *Client) Create(config model.Config) (string, error) {
 	if config.Spec == nil {
@@ -378,56 +299,12 @@ func (cl *Client) Create(config model.Config) (string, error) {
 		Labels:      config.Labels,
 		Annotations: config.Annotations,
 	}
-	var meta metav1.Object
-	var err error
-	switch config.GroupVersionKind() {
-	case collections.IstioNetworkingV1Alpha3Destinationrules.Resource().GroupVersionKind():
-		meta, err = cl.ic.NetworkingV1alpha3().DestinationRules(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.DestinationRule{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.DestinationRule)),
-		}, metav1.CreateOptions{})
-	case collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind():
-		meta, err = cl.ic.NetworkingV1alpha3().VirtualServices(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.VirtualService{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.VirtualService)),
-		}, metav1.CreateOptions{})
-	}
-	return meta.GetResourceVersion(), err
-}
 
-// IstioKind is the generic Kubernetes API object wrapper
-type UnstructuredKind struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata"`
-	Spec              map[string]interface{} `json:"spec"`
-}
-
-func toUnstructured(cfg *model.Config) (*unstructured.Unstructured, error) {
-	spec, err := gogoprotomarshal.ToJSONMap(cfg.Spec)
+	meta, err := create(cl.ic, config, objMeta)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	namespace := cfg.Namespace
-	if namespace == "" {
-		namespace = metav1.NamespaceDefault
-	}
-	uk := &UnstructuredKind{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       cfg.Type,
-			APIVersion: cfg.Group + "/" + cfg.Version,
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              cfg.Name,
-			Namespace:         namespace,
-			ResourceVersion:   cfg.ResourceVersion,
-			Labels:            cfg.Labels,
-			Annotations:       cfg.Annotations,
-			CreationTimestamp: metav1.NewTime(cfg.CreationTimestamp),
-		},
-		Spec: spec,
-	}
-	o, err := runtime.DefaultUnstructuredConverter.ToUnstructured(uk)
-	return &unstructured.Unstructured{Object: o}, err
+	return meta.GetResourceVersion(), nil
 }
 
 // Update implements store interface

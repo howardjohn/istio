@@ -214,7 +214,7 @@ func CheckMapInvariant(r model.ConfigStore, t *testing.T, namespace string, n in
 	// check that the config descriptor is the mock config descriptor
 	_, contains := r.Schemas().FindByGroupVersionKind(mockGvk)
 	if !contains {
-		t.Error("expected config mock types")
+		t.Fatal("expected config mock types")
 	}
 	log.Info("Created mock descriptor")
 
@@ -389,22 +389,24 @@ func CheckIstioConfigTypes(store model.ConfigStore, namespace string, t *testing
 	}
 
 	for _, c := range cases {
-		configMeta := model.ConfigMeta{
-			Type:    c.schema.Resource().Kind(),
-			Name:    c.configName,
-			Group:   c.schema.Resource().Group(),
-			Version: c.schema.Resource().Version(),
-		}
-		if !c.schema.Resource().IsClusterScoped() {
-			configMeta.Namespace = namespace
-		}
+		t.Run(c.name, func(t *testing.T) {
+			configMeta := model.ConfigMeta{
+				Type:    c.schema.Resource().Kind(),
+				Name:    c.configName,
+				Group:   c.schema.Resource().Group(),
+				Version: c.schema.Resource().Version(),
+			}
+			if !c.schema.Resource().IsClusterScoped() {
+				configMeta.Namespace = namespace
+			}
 
-		if _, err := store.Create(model.Config{
-			ConfigMeta: configMeta,
-			Spec:       c.spec,
-		}); err != nil {
-			t.Errorf("Post(%v) => got %v", c.name, err)
-		}
+			if _, err := store.Create(model.Config{
+				ConfigMeta: configMeta,
+				Spec:       c.spec,
+			}); err != nil {
+				t.Errorf("Post(%v) => got %v", c.name, err)
+			}
+		})
 	}
 }
 
