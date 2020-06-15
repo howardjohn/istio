@@ -28,6 +28,7 @@ import (
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	serviceapisclient "sigs.k8s.io/service-apis/pkg/client/clientset/versioned"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config/schema/collections"
@@ -39,15 +40,17 @@ import (
 	clientconfigv1alpha3 "istio.io/client-go/pkg/apis/config/v1alpha2"
 	clientnetworkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	clientsecurityv1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
+
+	servicev1alpha1 "sigs.k8s.io/service-apis/apis/v1alpha1"
 )
 
-func create(ic versionedclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
+func create(ic versionedclient.Interface, sc serviceapisclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
 	switch config.GroupVersionKind() {
 {{- range . }}
 	case collections.{{ .VariableName }}.Resource().GroupVersionKind():
-		return ic.{{ .ClientGroupPath }}().{{ .ClientTypePath }}(config.Namespace).Create(context.TODO(), &{{ .ClientImport }}.{{ .Kind }}{
+		return {{.Client}}.{{ .ClientGroupPath }}().{{ .ClientTypePath }}({{if .Namespaced}}config.Namespace{{end}}).Create(context.TODO(), &{{ .ClientImport }}.{{ .Kind }}{
 			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*{{ .ApiImport }}.{{ .Kind }})),
+			Spec:       *(config.Spec.(*{{ .ApiImport }}.{{ .Kind }}{{ .TypeSuffix }})),
 		}, metav1.CreateOptions{})
 {{- end }}
 	default:
@@ -55,13 +58,13 @@ func create(ic versionedclient.Interface, config model.Config, objMeta metav1.Ob
 	}
 }
 
-func update(ic versionedclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
+func update(ic versionedclient.Interface, sc serviceapisclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
 	switch config.GroupVersionKind() {
 {{- range . }}
 	case collections.{{ .VariableName }}.Resource().GroupVersionKind():
-		return ic.{{ .ClientGroupPath }}().{{ .ClientTypePath }}(config.Namespace).Update(context.TODO(), &{{ .ClientImport }}.{{ .Kind }}{
+		return {{.Client}}.{{ .ClientGroupPath }}().{{ .ClientTypePath }}({{if .Namespaced}}config.Namespace{{end}}).Update(context.TODO(), &{{ .ClientImport }}.{{ .Kind }}{
 			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*{{ .ApiImport }}.{{ .Kind }})),
+			Spec:       *(config.Spec.(*{{ .ApiImport }}.{{ .Kind }}{{ .TypeSuffix }})),
 		}, metav1.UpdateOptions{})
 {{- end }}
 	default:
@@ -69,11 +72,11 @@ func update(ic versionedclient.Interface, config model.Config, objMeta metav1.Ob
 	}
 }
 
-func delete(ic versionedclient.Interface, typ resource.GroupVersionKind, name, namespace string) error {
+func delete(ic versionedclient.Interface, sc serviceapisclient.Interface, typ resource.GroupVersionKind, name, namespace string) error {
 	switch typ {
 {{- range . }}
 	case collections.{{ .VariableName }}.Resource().GroupVersionKind():
-		return ic.{{ .ClientGroupPath }}().{{ .ClientTypePath }}(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+		return {{.Client}}.{{ .ClientGroupPath }}().{{ .ClientTypePath }}({{if .Namespaced}}namespace{{end}}).Delete(context.TODO(), name, metav1.DeleteOptions{})
 {{- end }}
 	default:
 		return fmt.Errorf("unsupported type: %v", typ)

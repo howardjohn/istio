@@ -121,7 +121,7 @@ func TestClient(t *testing.T) {
 			}
 			// Kubernetes is eventually consistent, so we allow a short time to pass before we get
 			retry.UntilSuccessOrFail(t, func() error {
-				cfg := store.Get(r.GroupVersionKind(), configName, configNamespace)
+				cfg := store.Get(r.GroupVersionKind(), configName, configMeta.Namespace)
 				if cfg == nil || !reflect.DeepEqual(cfg.ConfigMeta, configMeta) {
 					return fmt.Errorf("get(%v) => got unexpected object %v", name, cfg)
 				}

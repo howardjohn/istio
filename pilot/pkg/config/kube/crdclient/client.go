@@ -80,7 +80,12 @@ type Client struct {
 	queue queue.Instance
 
 	// The istio/client-go client we will use to access objects
-	ic istioclient.Interface
+	istioClient istioclient.Interface
+
+	// The service-apis client we will use to access objects
+	serviceApisClient serviceapisclient.Interface
+
+	clusterScopedTypes map[resource.GroupVersionKind]struct{}
 }
 
 var _ model.ConfigStoreCache = &Client{}
@@ -116,7 +121,7 @@ func (cl *Client) Run(stop <-chan struct{}) {
 	}()
 
 	for _, ctl := range cl.kinds {
-		go ctl.informer.Informer().Run(stop)
+		go ctl.informer.Run(stop)
 	}
 
 	<-stop
@@ -125,7 +130,7 @@ func (cl *Client) Run(stop <-chan struct{}) {
 
 func (cl *Client) HasSynced() bool {
 	for kind, ctl := range cl.kinds {
-		if !ctl.informer.Informer().HasSynced() {
+		if !ctl.informer.HasSynced() {
 			log.Infof("controller %q is syncing...", kind)
 			return false
 		}
@@ -160,13 +165,14 @@ func New(istioClient istioclient.Interface, serviceApisClient serviceapisclient.
 	serviceApiInformers := serviceapisinformers.NewSharedInformerFactory(serviceApisClient, options.ResyncPeriod)
 
 	out := &Client{
-		domainSuffix: options.DomainSuffix,
-		configLedger: configLedger,
-		schemas:      collections.PilotServiceApi,
-		revision:     revision,
-		queue:        queue.NewQueue(1 * time.Second),
-		kinds:        map[resource.GroupVersionKind]*cacheHandler{},
-		ic:           istioClient,
+		domainSuffix:      options.DomainSuffix,
+		configLedger:      configLedger,
+		schemas:           collections.PilotServiceApi,
+		revision:          revision,
+		queue:             queue.NewQueue(1 * time.Second),
+		kinds:             map[resource.GroupVersionKind]*cacheHandler{},
+		istioClient:       istioClient,
+		serviceApisClient: serviceApisClient,
 	}
 	known := knownCRDs(crdClient)
 	for _, s := range out.schemas.All() {
@@ -206,10 +212,10 @@ func (cl *Client) Get(typ resource.GroupVersionKind, name, namespace string) *mo
 		return nil
 	}
 
-	obj, err := h.informer.Lister().ByNamespace(namespace).Get(name)
+	obj, err := h.lister(namespace).Get(name)
 	if err != nil {
 		// TODO we should be returning errors not logging
-		scope.Warna(err)
+		scope.Warnf("error on get %v/%v: %v", name, namespace, err)
 		return nil
 	}
 
@@ -234,7 +240,7 @@ func (cl *Client) Create(config model.Config) (string, error) {
 		return "", fmt.Errorf("nil spec for %v/%v", config.Name, config.Namespace)
 	}
 
-	meta, err := create(cl.ic, config, getObjectMetadata(config))
+	meta, err := create(cl.istioClient, cl.serviceApisClient, config, getObjectMetadata(config))
 	if err != nil {
 		return "", err
 	}
@@ -247,7 +253,7 @@ func (cl *Client) Update(config model.Config) (string, error) {
 		return "", fmt.Errorf("nil spec for %v/%v", config.Name, config.Namespace)
 	}
 
-	meta, err := update(cl.ic, config, getObjectMetadata(config))
+	meta, err := update(cl.istioClient, cl.serviceApisClient, config, getObjectMetadata(config))
 	if err != nil {
 		return "", err
 	}
@@ -256,7 +262,7 @@ func (cl *Client) Update(config model.Config) (string, error) {
 
 // Delete implements store interface
 func (cl *Client) Delete(typ resource.GroupVersionKind, name, namespace string) error {
-	return delete(cl.ic, typ, name, namespace)
+	return delete(cl.istioClient, cl.serviceApisClient, typ, name, namespace)
 }
 
 // List implements store interface
@@ -266,7 +272,7 @@ func (cl *Client) List(kind resource.GroupVersionKind, namespace string) ([]mode
 		return nil, fmt.Errorf("unrecognized type: %s", kind)
 	}
 
-	list, err := h.informer.Lister().ByNamespace(namespace).List(klabels.Everything())
+	list, err := h.lister(namespace).List(klabels.Everything())
 	if err != nil {
 		return nil, err
 	}

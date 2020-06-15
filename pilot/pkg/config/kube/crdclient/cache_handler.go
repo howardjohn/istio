@@ -7,8 +7,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
-	"istio.io/client-go/pkg/informers/externalversions"
-
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"  // import GKE cluster authentication plugin
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc" // import OIDC cluster authentication plugin, e.g. for Tectonic
 
@@ -22,9 +20,10 @@ import (
 // and will be invoked on each informer event.
 type cacheHandler struct {
 	client   *Client
-	informer externalversions.GenericInformer
+	informer cache.SharedIndexInformer
 	handlers []func(model.Config, model.Config, model.Event)
 	schema   collection.Schema
+	lister   func (namespace string) cache.GenericNamespaceLister
 }
 
 func (h *cacheHandler) onEvent(old interface{}, curr interface{}, event model.Event) error {
@@ -59,9 +58,16 @@ func (h *cacheHandler) onEvent(old interface{}, curr interface{}, event model.Ev
 
 func createCacheHandler(cl *Client, schema collection.Schema, i informers.GenericInformer) (*cacheHandler, error) {
 	h := &cacheHandler{
-		client:   cl,
-		schema:   schema,
-		informer: i,
+		client:        cl,
+		schema:        schema,
+		informer:      i.Informer(),
+	}
+	h.lister = func (namespace string) cache.GenericNamespaceLister {
+		if schema.Resource().IsClusterScoped() {
+			return i.Lister()
+		} else {
+			return i.Lister().ByNamespace(namespace)
+		}
 	}
 	kind := schema.Resource().Kind()
 	i.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

@@ -28,6 +28,7 @@ import (
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	serviceapisclient "sigs.k8s.io/service-apis/pkg/client/clientset/versioned"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config/schema/collections"
@@ -39,9 +40,11 @@ import (
 	clientconfigv1alpha3 "istio.io/client-go/pkg/apis/config/v1alpha2"
 	clientnetworkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	clientsecurityv1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
+
+	servicev1alpha1 "sigs.k8s.io/service-apis/apis/v1alpha1"
 )
 
-func create(ic versionedclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
+func create(ic versionedclient.Interface, sc serviceapisclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
 	switch config.GroupVersionKind() {
 	case collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().GroupVersionKind():
 		return ic.ConfigV1alpha2().HTTPAPISpecBindings(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.HTTPAPISpecBinding{
@@ -113,12 +116,37 @@ func create(ic versionedclient.Interface, config model.Config, objMeta metav1.Ob
 			ObjectMeta: objMeta,
 			Spec:       *(config.Spec.(*securityv1beta1.RequestAuthentication)),
 		}, metav1.CreateOptions{})
+	case collections.K8SServiceApisV1Alpha1Gatewayclasses.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().GatewayClasses().Create(context.TODO(), &servicev1alpha1.GatewayClass{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.GatewayClassSpec)),
+		}, metav1.CreateOptions{})
+	case collections.K8SServiceApisV1Alpha1Gateways.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().Gateways(config.Namespace).Create(context.TODO(), &servicev1alpha1.Gateway{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.GatewaySpec)),
+		}, metav1.CreateOptions{})
+	case collections.K8SServiceApisV1Alpha1Httproutes.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().HTTPRoutes(config.Namespace).Create(context.TODO(), &servicev1alpha1.HTTPRoute{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.HTTPRouteSpec)),
+		}, metav1.CreateOptions{})
+	case collections.K8SServiceApisV1Alpha1Tcproutes.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().TcpRoutes(config.Namespace).Create(context.TODO(), &servicev1alpha1.TcpRoute{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.TcpRouteSpec)),
+		}, metav1.CreateOptions{})
+	case collections.K8SServiceApisV1Alpha1Trafficsplits.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().TrafficSplits(config.Namespace).Create(context.TODO(), &servicev1alpha1.TrafficSplit{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.TrafficSplitSpec)),
+		}, metav1.CreateOptions{})
 	default:
 		return nil, fmt.Errorf("unsupported type: %v", config.GroupVersionKind())
 	}
 }
 
-func update(ic versionedclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
+func update(ic versionedclient.Interface, sc serviceapisclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
 	switch config.GroupVersionKind() {
 	case collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().GroupVersionKind():
 		return ic.ConfigV1alpha2().HTTPAPISpecBindings(config.Namespace).Update(context.TODO(), &clientconfigv1alpha3.HTTPAPISpecBinding{
@@ -190,12 +218,37 @@ func update(ic versionedclient.Interface, config model.Config, objMeta metav1.Ob
 			ObjectMeta: objMeta,
 			Spec:       *(config.Spec.(*securityv1beta1.RequestAuthentication)),
 		}, metav1.UpdateOptions{})
+	case collections.K8SServiceApisV1Alpha1Gatewayclasses.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().GatewayClasses().Update(context.TODO(), &servicev1alpha1.GatewayClass{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.GatewayClassSpec)),
+		}, metav1.UpdateOptions{})
+	case collections.K8SServiceApisV1Alpha1Gateways.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().Gateways(config.Namespace).Update(context.TODO(), &servicev1alpha1.Gateway{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.GatewaySpec)),
+		}, metav1.UpdateOptions{})
+	case collections.K8SServiceApisV1Alpha1Httproutes.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().HTTPRoutes(config.Namespace).Update(context.TODO(), &servicev1alpha1.HTTPRoute{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.HTTPRouteSpec)),
+		}, metav1.UpdateOptions{})
+	case collections.K8SServiceApisV1Alpha1Tcproutes.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().TcpRoutes(config.Namespace).Update(context.TODO(), &servicev1alpha1.TcpRoute{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.TcpRouteSpec)),
+		}, metav1.UpdateOptions{})
+	case collections.K8SServiceApisV1Alpha1Trafficsplits.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().TrafficSplits(config.Namespace).Update(context.TODO(), &servicev1alpha1.TrafficSplit{
+			ObjectMeta: objMeta,
+			Spec:       *(config.Spec.(*servicev1alpha1.TrafficSplitSpec)),
+		}, metav1.UpdateOptions{})
 	default:
 		return nil, fmt.Errorf("unsupported type: %v", config.GroupVersionKind())
 	}
 }
 
-func delete(ic versionedclient.Interface, typ resource.GroupVersionKind, name, namespace string) error {
+func delete(ic versionedclient.Interface, sc serviceapisclient.Interface, typ resource.GroupVersionKind, name, namespace string) error {
 	switch typ {
 	case collections.IstioConfigV1Alpha2Httpapispecbindings.Resource().GroupVersionKind():
 		return ic.ConfigV1alpha2().HTTPAPISpecBindings(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
@@ -225,6 +278,16 @@ func delete(ic versionedclient.Interface, typ resource.GroupVersionKind, name, n
 		return ic.SecurityV1beta1().PeerAuthentications(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 	case collections.IstioSecurityV1Beta1Requestauthentications.Resource().GroupVersionKind():
 		return ic.SecurityV1beta1().RequestAuthentications(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	case collections.K8SServiceApisV1Alpha1Gatewayclasses.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().GatewayClasses().Delete(context.TODO(), name, metav1.DeleteOptions{})
+	case collections.K8SServiceApisV1Alpha1Gateways.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().Gateways(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	case collections.K8SServiceApisV1Alpha1Httproutes.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().HTTPRoutes(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	case collections.K8SServiceApisV1Alpha1Tcproutes.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().TcpRoutes(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	case collections.K8SServiceApisV1Alpha1Trafficsplits.Resource().GroupVersionKind():
+		return sc.NetworkingV1alpha1().TrafficSplits(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 	default:
 		return fmt.Errorf("unsupported type: %v", typ)
 	}
@@ -459,6 +522,91 @@ var translationMap = map[resource.GroupVersionKind]func(r runtime.Object) *model
 				Type:              collections.IstioSecurityV1Beta1Requestauthentications.Resource().Kind(),
 				Group:             collections.IstioSecurityV1Beta1Requestauthentications.Resource().Group(),
 				Version:           collections.IstioSecurityV1Beta1Requestauthentications.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
+			Spec: &obj.Spec,
+		}
+	},
+	collections.K8SServiceApisV1Alpha1Gatewayclasses.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
+		obj := r.(*servicev1alpha1.GatewayClass)
+		return &model.Config{
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.K8SServiceApisV1Alpha1Gatewayclasses.Resource().Kind(),
+				Group:             collections.K8SServiceApisV1Alpha1Gatewayclasses.Resource().Group(),
+				Version:           collections.K8SServiceApisV1Alpha1Gatewayclasses.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
+			Spec: &obj.Spec,
+		}
+	},
+	collections.K8SServiceApisV1Alpha1Gateways.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
+		obj := r.(*servicev1alpha1.Gateway)
+		return &model.Config{
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.K8SServiceApisV1Alpha1Gateways.Resource().Kind(),
+				Group:             collections.K8SServiceApisV1Alpha1Gateways.Resource().Group(),
+				Version:           collections.K8SServiceApisV1Alpha1Gateways.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
+			Spec: &obj.Spec,
+		}
+	},
+	collections.K8SServiceApisV1Alpha1Httproutes.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
+		obj := r.(*servicev1alpha1.HTTPRoute)
+		return &model.Config{
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.K8SServiceApisV1Alpha1Httproutes.Resource().Kind(),
+				Group:             collections.K8SServiceApisV1Alpha1Httproutes.Resource().Group(),
+				Version:           collections.K8SServiceApisV1Alpha1Httproutes.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
+			Spec: &obj.Spec,
+		}
+	},
+	collections.K8SServiceApisV1Alpha1Tcproutes.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
+		obj := r.(*servicev1alpha1.TcpRoute)
+		return &model.Config{
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.K8SServiceApisV1Alpha1Tcproutes.Resource().Kind(),
+				Group:             collections.K8SServiceApisV1Alpha1Tcproutes.Resource().Group(),
+				Version:           collections.K8SServiceApisV1Alpha1Tcproutes.Resource().Version(),
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+			},
+			Spec: &obj.Spec,
+		}
+	},
+	collections.K8SServiceApisV1Alpha1Trafficsplits.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {
+		obj := r.(*servicev1alpha1.TrafficSplit)
+		return &model.Config{
+			ConfigMeta: model.ConfigMeta{
+				Type:              collections.K8SServiceApisV1Alpha1Trafficsplits.Resource().Kind(),
+				Group:             collections.K8SServiceApisV1Alpha1Trafficsplits.Resource().Group(),
+				Version:           collections.K8SServiceApisV1Alpha1Trafficsplits.Resource().Version(),
 				Name:              obj.Name,
 				Namespace:         obj.Namespace,
 				Labels:            obj.Labels,

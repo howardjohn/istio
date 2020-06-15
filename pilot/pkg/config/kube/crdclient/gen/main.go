@@ -34,23 +34,34 @@ import (
 
 // ConfigData is data struct to feed to types.go template.
 type ConfigData struct {
+	Namespaced      bool
 	VariableName    string
 	ApiImport       string
 	ClientImport    string
 	ClientGroupPath string
 	ClientTypePath  string
 	Kind            string
+
+	// Support service-apis, which require a custom client and the Spec suffix
+	Client     string
+	TypeSuffix string
 }
 
 // MakeConfigData prepare data for code generation for the given schema.
 func MakeConfigData(schema collection.Schema) ConfigData {
 	out := ConfigData{
+		Namespaced:      !schema.Resource().IsClusterScoped(),
 		VariableName:    schema.VariableName(),
 		ApiImport:       apiImport[schema.Resource().ProtoPackage()],
 		ClientImport:    clientGoImport[schema.Resource().ProtoPackage()],
 		ClientGroupPath: clientGoAccessPath[schema.Resource().ProtoPackage()],
 		ClientTypePath:  clientGoTypePath[schema.Resource().Plural()],
 		Kind:            schema.Resource().Kind(),
+		Client:          "ic",
+	}
+	if schema.Resource().Group() == "networking.x-k8s.io" {
+		out.Client = "sc"
+		out.TypeSuffix = "Spec"
 	}
 	log.Printf("Generating Istio type %s for %s/%s CRD\n", out.VariableName, out.ApiImport, out.Kind)
 	return out
@@ -59,21 +70,24 @@ func MakeConfigData(schema collection.Schema) ConfigData {
 var (
 	// Mapping from istio/api path import to api import path
 	apiImport = map[string]string{
-		"istio.io/api/mixer/v1/config/client": "mixerclientv1",
-		"istio.io/api/networking/v1alpha3":    "networkingv1alpha3",
-		"istio.io/api/security/v1beta1":       "securityv1beta1",
+		"istio.io/api/mixer/v1/config/client":    "mixerclientv1",
+		"istio.io/api/networking/v1alpha3":       "networkingv1alpha3",
+		"istio.io/api/security/v1beta1":          "securityv1beta1",
+		"sigs.k8s.io/service-apis/apis/v1alpha1": "servicev1alpha1",
 	}
 	// Mapping from istio/api path import to client go import path
 	clientGoImport = map[string]string{
-		"istio.io/api/mixer/v1/config/client": "clientconfigv1alpha3",
-		"istio.io/api/networking/v1alpha3":    "clientnetworkingv1alpha3",
-		"istio.io/api/security/v1beta1":       "clientsecurityv1beta1",
+		"istio.io/api/mixer/v1/config/client":    "clientconfigv1alpha3",
+		"istio.io/api/networking/v1alpha3":       "clientnetworkingv1alpha3",
+		"istio.io/api/security/v1beta1":          "clientsecurityv1beta1",
+		"sigs.k8s.io/service-apis/apis/v1alpha1": "servicev1alpha1",
 	}
 	// Translates an api import path to the top level path in client-go
 	clientGoAccessPath = map[string]string{
-		"istio.io/api/mixer/v1/config/client": "ConfigV1alpha2",
-		"istio.io/api/networking/v1alpha3":    "NetworkingV1alpha3",
-		"istio.io/api/security/v1beta1":       "SecurityV1beta1",
+		"istio.io/api/mixer/v1/config/client":    "ConfigV1alpha2",
+		"istio.io/api/networking/v1alpha3":       "NetworkingV1alpha3",
+		"istio.io/api/security/v1beta1":          "SecurityV1beta1",
+		"sigs.k8s.io/service-apis/apis/v1alpha1": "NetworkingV1alpha1",
 	}
 	// Translates a plural type name to the type path in client-go
 	// TODO: can we automatically derive this? I don't think we can, its internal to the kubegen
@@ -92,6 +106,10 @@ var (
 		"authorizationpolicies":  "AuthorizationPolicies",
 		"peerauthentications":    "PeerAuthentications",
 		"requestauthentications": "RequestAuthentications",
+		"gatewayclasses":         "GatewayClasses",
+		"httproutes":             "HTTPRoutes",
+		"tcproutes":              "TcpRoutes",
+		"trafficsplits":          "TrafficSplits",
 	}
 )
 
@@ -104,7 +122,7 @@ func main() {
 
 	// Prepare to generate types for mock schema and all Istio schemas
 	typeList := []ConfigData{}
-	for _, s := range collections.Pilot.All() {
+	for _, s := range collections.PilotServiceApi.All() {
 		typeList = append(typeList, MakeConfigData(s))
 	}
 	var buffer bytes.Buffer
