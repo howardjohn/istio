@@ -26,18 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 
-	mixerclientv1 "istio.io/api/mixer/v1/config/client"
-	networkingv1alpha3 "istio.io/api/networking/v1alpha3"
-	policyv1beta1 "istio.io/api/policy/v1beta1"
-	securityv1beta1 "istio.io/api/security/v1beta1"
-
 	"istio.io/client-go/pkg/informers/externalversions"
 	"istio.io/pkg/monitoring"
 
 	"istio.io/api/label"
-	clientconfigv1alpha3 "istio.io/client-go/pkg/apis/config/v1alpha2"
-	clientnetworkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
-	clientsecurityv1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
 
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -53,7 +45,6 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	controller2 "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	"istio.io/istio/pkg/config/schema/collection"
-	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/config/schema/resource"
 	"istio.io/istio/pkg/queue"
 )
@@ -271,107 +262,12 @@ func handleValidationFailure(obj *model.Config, err error) {
 	k8sTotalErrors.Increment()
 }
 
-// Avoid using dynamic client for optimization. This could/should probably be codegen, but we don't have all the metadata and its not
-// so hard to maintain.
-func create(ic versionedclient.Interface, config model.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
-	switch config.GroupVersionKind() {
-	case collections.IstioNetworkingV1Alpha3Destinationrules.Resource().GroupVersionKind():
-		return ic.NetworkingV1alpha3().DestinationRules(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.DestinationRule{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.DestinationRule)),
-		}, metav1.CreateOptions{})
-	case collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind():
-		return ic.NetworkingV1alpha3().VirtualServices(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.VirtualService{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.VirtualService)),
-		}, metav1.CreateOptions{})
-	case collections.IstioNetworkingV1Alpha3Gateways.Resource().GroupVersionKind():
-		return ic.NetworkingV1alpha3().Gateways(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.Gateway{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.Gateway)),
-		}, metav1.CreateOptions{})
-	case collections.IstioNetworkingV1Alpha3Workloadentries.Resource().GroupVersionKind():
-		return ic.NetworkingV1alpha3().WorkloadEntries(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.WorkloadEntry{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.WorkloadEntry)),
-		}, metav1.CreateOptions{})
-	case collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().GroupVersionKind():
-		return ic.NetworkingV1alpha3().EnvoyFilters(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.EnvoyFilter{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.EnvoyFilter)),
-		}, metav1.CreateOptions{})
-	case collections.IstioNetworkingV1Alpha3Sidecars.Resource().GroupVersionKind():
-		return ic.NetworkingV1alpha3().Sidecars(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.Sidecar{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.Sidecar)),
-		}, metav1.CreateOptions{})
-	case collections.IstioNetworkingV1Alpha3Serviceentries.Resource().GroupVersionKind():
-		return ic.NetworkingV1alpha3().ServiceEntries(config.Namespace).Create(context.TODO(), &clientnetworkingv1alpha3.ServiceEntry{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*networkingv1alpha3.ServiceEntry)),
-		}, metav1.CreateOptions{})
-	case collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().GroupVersionKind():
-		return ic.SecurityV1beta1().AuthorizationPolicies(config.Namespace).Create(context.TODO(), &clientsecurityv1beta1.AuthorizationPolicy{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*securityv1beta1.AuthorizationPolicy)),
-		}, metav1.CreateOptions{})
-	case collections.IstioSecurityV1Beta1Requestauthentications.Resource().GroupVersionKind():
-		return ic.SecurityV1beta1().RequestAuthentications(config.Namespace).Create(context.TODO(), &clientsecurityv1beta1.RequestAuthentication{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*securityv1beta1.RequestAuthentication)),
-		}, metav1.CreateOptions{})
-	case collections.IstioSecurityV1Beta1Peerauthentications.Resource().GroupVersionKind():
-		return ic.SecurityV1beta1().PeerAuthentications(config.Namespace).Create(context.TODO(), &clientsecurityv1beta1.PeerAuthentication{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*securityv1beta1.PeerAuthentication)),
-		}, metav1.CreateOptions{})
-	case collections.IstioSecurityV1Beta1Peerauthentications.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().AttributeManifests(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.AttributeManifest{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*policyv1beta1.AttributeManifest)),
-		}, metav1.CreateOptions{})
-	case collections.IstioPolicyV1Beta1Attributemanifests.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().AttributeManifests(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.AttributeManifest{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*policyv1beta1.AttributeManifest)),
-		}, metav1.CreateOptions{})
-	case collections.IstioConfigV1Alpha2Httpapispecs.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().HTTPAPISpecs(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.HTTPAPISpec{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*mixerclientv1.HTTPAPISpec)),
-		}, metav1.CreateOptions{})
-	case collections.K8SConfigIstioIoV1Alpha2Httpapispecbindings.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().HTTPAPISpecBindings(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.HTTPAPISpecBinding{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*mixerclientv1.HTTPAPISpecBinding)),
-		}, metav1.CreateOptions{})
-	case collections.IstioPolicyV1Beta1Handlers.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().Handlers(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.Handler{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*policyv1beta1.Handler)),
-		}, metav1.CreateOptions{})
-	case collections.IstioPolicyV1Beta1Instances.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().Instances(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.Instance{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*policyv1beta1.Instance)),
-		}, metav1.CreateOptions{})
-	case collections.IstioMixerV1ConfigClientQuotaspecs.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().QuotaSpecs(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.QuotaSpec{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*mixerclientv1.QuotaSpec)),
-		}, metav1.CreateOptions{})
-	case collections.IstioMixerV1ConfigClientQuotaspecbindings.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().QuotaSpecBindings(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.QuotaSpecBinding{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*mixerclientv1.QuotaSpecBinding)),
-		}, metav1.CreateOptions{})
-	case collections.IstioPolicyV1Beta1Rules.Resource().GroupVersionKind():
-		return ic.ConfigV1alpha2().Rules(config.Namespace).Create(context.TODO(), &clientconfigv1alpha3.Rule{
-			ObjectMeta: objMeta,
-			Spec:       *(config.Spec.(*policyv1beta1.Rule)),
-		}, metav1.CreateOptions{})
-	default:
-		return nil, fmt.Errorf("unsupported type: %v", config.GroupVersionKind())
+func getObjectMetadata(config model.Config) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:        config.Name,
+		Namespace:   config.Namespace,
+		Labels:      config.Labels,
+		Annotations: config.Annotations,
 	}
 }
 
@@ -380,14 +276,8 @@ func (cl *Client) Create(config model.Config) (string, error) {
 	if config.Spec == nil {
 		return "", fmt.Errorf("nil spec for %v/%v", config.Name, config.Namespace)
 	}
-	objMeta := metav1.ObjectMeta{
-		Name:        config.Name,
-		Namespace:   config.Namespace,
-		Labels:      config.Labels,
-		Annotations: config.Annotations,
-	}
 
-	meta, err := create(cl.ic, config, objMeta)
+	meta, err := create(cl.ic, config, getObjectMetadata(config))
 	if err != nil {
 		return "", err
 	}
@@ -396,14 +286,20 @@ func (cl *Client) Create(config model.Config) (string, error) {
 
 // Update implements store interface
 func (cl *Client) Update(config model.Config) (string, error) {
-	// TODO
-	return "", nil
+	if config.Spec == nil {
+		return "", fmt.Errorf("nil spec for %v/%v", config.Name, config.Namespace)
+	}
+
+	meta, err := update(cl.ic, config, getObjectMetadata(config))
+	if err != nil {
+		return "", err
+	}
+	return meta.GetResourceVersion(), nil
 }
 
 // Delete implements store interface
 func (cl *Client) Delete(typ resource.GroupVersionKind, name, namespace string) error {
-	// TODO
-	return nil
+	return delete(cl.ic, typ, name, namespace)
 }
 
 func (cl *Client) Version() string {

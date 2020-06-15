@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
 	"k8s.io/client-go/tools/cache"
+
+	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"

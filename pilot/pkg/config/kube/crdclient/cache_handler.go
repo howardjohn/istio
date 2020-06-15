@@ -19,10 +19,10 @@ import (
 )
 
 type cacheHandler struct {
-	client        *Client
-	informer      externalversions.GenericInformer
-	handlers      []func(model.Config, model.Config, model.Event)
-	schema        collection.Schema
+	client   *Client
+	informer externalversions.GenericInformer
+	handlers []func(model.Config, model.Config, model.Event)
+	schema   collection.Schema
 }
 
 func (h *cacheHandler) onEvent(old interface{}, curr interface{}, event model.Event) error {
@@ -71,9 +71,9 @@ func createCacheHandler(cl *Client, schema collection.Schema,
 	//go i.Informer().Run(stop)
 	//cache.WaitForCacheSync(stop, i.Informer().HasSynced)
 	h := &cacheHandler{
-		client:        cl,
-		schema:        schema,
-		informer:      i,
+		client:   cl,
+		schema:   schema,
+		informer: i,
 	}
 	kind := schema.Resource().Kind()
 	i.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

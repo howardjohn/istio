@@ -24,37 +24,79 @@ import (
 	"go/format"
 	"io/ioutil"
 	"log"
-	"strings"
+	"path"
 	"text/template"
 
 	"istio.io/istio/pkg/config/schema/collection"
 	"istio.io/istio/pkg/config/schema/collections"
+	"istio.io/istio/pkg/test/env"
 )
 
 // ConfigData is data struct to feed to types.go template.
 type ConfigData struct {
-	VariableName string
-	Import       string
-	Kind         string
+	VariableName    string
+	ApiImport       string
+	ClientImport    string
+	ClientGroupPath string
+	ClientTypePath  string
+	Kind            string
 }
 
 // MakeConfigData prepare data for code generation for the given schema.
 func MakeConfigData(schema collection.Schema) ConfigData {
-	pkg := schema.Resource().ProtoPackage()
-	spl := strings.Split(pkg, "/")
-	importName := strings.Join(spl[len(spl)-2:], "_")
-
 	out := ConfigData{
-		VariableName: schema.VariableName(),
-		Import:       importName,
-		Kind:         schema.Resource().Kind(),
+		VariableName:    schema.VariableName(),
+		ApiImport:       apiImport[schema.Resource().ProtoPackage()],
+		ClientImport:    clientGoImport[schema.Resource().ProtoPackage()],
+		ClientGroupPath: clientGoAccessPath[schema.Resource().ProtoPackage()],
+		ClientTypePath:  clientGoTypePath[schema.Resource().Plural()],
+		Kind:            schema.Resource().Kind(),
 	}
-	log.Printf("Generating Istio type %s for %s/%s CRD\n", out.VariableName, out.Import, out.Kind)
+	log.Printf("Generating Istio type %s for %s/%s CRD\n", out.VariableName, out.ApiImport, out.Kind)
 	return out
 }
 
+var (
+	// Mapping from istio/api path import to api import path
+	apiImport = map[string]string{
+		"istio.io/api/mixer/v1/config/client": "mixerclientv1",
+		"istio.io/api/networking/v1alpha3":    "networkingv1alpha3",
+		"istio.io/api/security/v1beta1":       "securityv1beta1",
+	}
+	// Mapping from istio/api path import to client go import path
+	clientGoImport = map[string]string{
+		"istio.io/api/mixer/v1/config/client": "clientconfigv1alpha3",
+		"istio.io/api/networking/v1alpha3":    "clientnetworkingv1alpha3",
+		"istio.io/api/security/v1beta1":       "clientsecurityv1beta1",
+	}
+	// Translates an api import path to the top level path in client-go
+	clientGoAccessPath = map[string]string{
+		"istio.io/api/mixer/v1/config/client": "ConfigV1alpha2",
+		"istio.io/api/networking/v1alpha3":    "NetworkingV1alpha3",
+		"istio.io/api/security/v1beta1":       "SecurityV1beta1",
+	}
+	// Translates a plural type name to the type path in client-go
+	// TODO: can we automatically derive this? I don't think we can, its internal to the kubegen
+	clientGoTypePath = map[string]string{
+		"httpapispecbindings":    "HTTPAPISpecBindings",
+		"httpapispecs":           "HTTPAPISpecs",
+		"quotaspecbindings":      "QuotaSpecBindings",
+		"quotaspecs":             "QuotaSpecs",
+		"destinationrules":       "DestinationRules",
+		"envoyfilters":           "EnvoyFilters",
+		"gateways":               "Gateways",
+		"serviceentries":         "ServiceEntries",
+		"sidecars":               "Sidecars",
+		"virtualservices":        "VirtualServices",
+		"workloadentries":        "WorkloadEntries",
+		"authorizationpolicies":  "AuthorizationPolicies",
+		"peerauthentications":    "PeerAuthentications",
+		"requestauthentications": "RequestAuthentications",
+	}
+)
+
 func main() {
-	templateFile := flag.String("template", "pilot/tools/types.go.tmpl", "Template file")
+	templateFile := flag.String("template", path.Join(env.IstioSrc, "pilot/pkg/config/kube/crdclient/gen/types.go.tmpl"), "Template file")
 	outputFile := flag.String("output", "", "Output file. Leave blank to go to stdout")
 	flag.Parse()
 
