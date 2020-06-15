@@ -80,7 +80,6 @@ func delete(ic versionedclient.Interface, typ resource.GroupVersionKind, name, n
 	}
 }
 
-
 var translationMap = map[resource.GroupVersionKind]func(r runtime.Object) *model.Config{
 {{- range . }}
 	collections.{{ .VariableName }}.Resource().GroupVersionKind(): func(r runtime.Object) *model.Config {

@@ -302,23 +302,6 @@ func (cl *Client) Delete(typ resource.GroupVersionKind, name, namespace string) 
 	return delete(cl.ic, typ, name, namespace)
 }
 
-func (cl *Client) Version() string {
-	return cl.configLedger.RootHash()
-}
-
-func (cl *Client) GetResourceAtVersion(version string, key string) (resourceVersion string, err error) {
-	return cl.configLedger.GetPreviousValue(version, key)
-}
-
-func (cl *Client) GetLedger() ledger.Ledger {
-	return cl.configLedger
-}
-
-func (cl *Client) SetLedger(l ledger.Ledger) error {
-	cl.configLedger = l
-	return nil
-}
-
 // List implements store interface
 func (cl *Client) List(kind resource.GroupVersionKind, namespace string) ([]model.Config, error) {
 	h, f := cl.kinds[kind]
@@ -350,6 +333,23 @@ func (cl *Client) List(kind resource.GroupVersionKind, namespace string) ([]mode
 	}
 
 	return out, err
+}
+
+func (cl *Client) Version() string {
+	return cl.configLedger.RootHash()
+}
+
+func (cl *Client) GetResourceAtVersion(version string, key string) (resourceVersion string, err error) {
+	return cl.configLedger.GetPreviousValue(version, key)
+}
+
+func (cl *Client) GetLedger() ledger.Ledger {
+	return cl.configLedger
+}
+
+func (cl *Client) SetLedger(l ledger.Ledger) error {
+	cl.configLedger = l
+	return nil
 }
 
 func (cl *Client) objectInRevision(o *model.Config) bool {
