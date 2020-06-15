@@ -31,12 +31,14 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
+	serviceapisclient "sigs.k8s.io/service-apis/pkg/client/clientset/versioned"
+	serviceapisinformers "sigs.k8s.io/service-apis/pkg/client/informers/externalversions"
 
 	"istio.io/api/label"
-	versionedclient "istio.io/client-go/pkg/clientset/versioned"
-	"istio.io/client-go/pkg/informers/externalversions"
-
+	istioclient "istio.io/client-go/pkg/clientset/versioned"
+	istioinformers "istio.io/client-go/pkg/informers/externalversions"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"  // import GKE cluster authentication plugin
@@ -78,7 +80,7 @@ type Client struct {
 	queue queue.Instance
 
 	// The istio/client-go client we will use to access objects
-	ic versionedclient.Interface
+	ic istioclient.Interface
 }
 
 var _ model.ConfigStoreCache = &Client{}
@@ -134,7 +136,7 @@ func (cl *Client) HasSynced() bool {
 // NewForConfig creates a client to the Kubernetes API using a rest config.
 func NewForConfig(cfg *rest.Config, configLedger ledger.Ledger,
 	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
-	ic, err := versionedclient.NewForConfig(cfg)
+	ic, err := istioclient.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -143,30 +145,42 @@ func NewForConfig(cfg *rest.Config, configLedger ledger.Ledger,
 	if err != nil {
 		return nil, err
 	}
+	sc, err := serviceapisclient.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
 
-	return New(ic, crdClient, configLedger, revision, options)
+	return New(ic, sc, crdClient, configLedger, revision, options)
 }
 
-func New(ic versionedclient.Interface, crdClient apiextensionsclient.Interface, configLedger ledger.Ledger,
+func New(istioClient istioclient.Interface, serviceApisClient serviceapisclient.Interface, crdClient apiextensionsclient.Interface, configLedger ledger.Ledger,
 	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
 
-	informers := externalversions.NewSharedInformerFactory(ic, options.ResyncPeriod)
+	istioInformers := istioinformers.NewSharedInformerFactory(istioClient, options.ResyncPeriod)
+	serviceApiInformers := serviceapisinformers.NewSharedInformerFactory(serviceApisClient, options.ResyncPeriod)
 
 	out := &Client{
 		domainSuffix: options.DomainSuffix,
 		configLedger: configLedger,
-		schemas:      collections.Pilot,
+		schemas:      collections.PilotServiceApi,
 		revision:     revision,
 		queue:        queue.NewQueue(1 * time.Second),
 		kinds:        map[resource.GroupVersionKind]*cacheHandler{},
-		ic:           ic,
+		ic:           istioClient,
 	}
 	known := knownCRDs(crdClient)
 	for _, s := range out.schemas.All() {
 		// From the spec: "Its name MUST be in the format <.spec.name>.<.spec.group>."
 		name := fmt.Sprintf("%s.%s", s.Resource().Plural(), s.Resource().Group())
 		if _, f := known[name]; f {
-			ch, err := createCacheHandler(out, s, informers)
+			var i informers.GenericInformer
+			var err error
+			if s.Resource().Group() == "networking.x-k8s.io" {
+				i, err = serviceApiInformers.ForResource(s.Resource().GroupVersionResource())
+			} else {
+				i, err = istioInformers.ForResource(s.Resource().GroupVersionResource())
+			}
+			ch, err := createCacheHandler(out, s, i)
 			if err != nil {
 				return nil, err
 			}

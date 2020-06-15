@@ -4,11 +4,11 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
 	"istio.io/client-go/pkg/informers/externalversions"
 
-	kubeSchema "k8s.io/apimachinery/pkg/runtime/schema"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"  // import GKE cluster authentication plugin
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc" // import OIDC cluster authentication plugin, e.g. for Tectonic
 
@@ -57,17 +57,7 @@ func (h *cacheHandler) onEvent(old interface{}, curr interface{}, event model.Ev
 	return nil
 }
 
-func createCacheHandler(cl *Client, schema collection.Schema,
-	informers externalversions.SharedInformerFactory) (*cacheHandler, error) {
-	gvr := kubeSchema.GroupVersionResource{
-		Group:    schema.Resource().Group(),
-		Version:  schema.Resource().Version(),
-		Resource: schema.Resource().Plural(),
-	}
-	i, err := informers.ForResource(gvr)
-	if err != nil {
-		return nil, err
-	}
+func createCacheHandler(cl *Client, schema collection.Schema, i informers.GenericInformer) (*cacheHandler, error) {
 	h := &cacheHandler{
 		client:   cl,
 		schema:   schema,

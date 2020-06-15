@@ -14,6 +14,7 @@ import (
 	extfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 
 	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
+	servicefake "sigs.k8s.io/service-apis/pkg/client/clientset/versioned/fake"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
@@ -25,6 +26,7 @@ import (
 func makeClient(t *testing.T, schemas collection.Schemas) model.ConfigStoreCache {
 	fakeClient := istiofake.NewSimpleClientset()
 	extFake := extfake.NewSimpleClientset()
+	sFake := servicefake.NewSimpleClientset()
 	for _, s := range schemas.All() {
 		extFake.ApiextensionsV1beta1().CustomResourceDefinitions().Create(context.TODO(), &v1beta1.CustomResourceDefinition{
 			ObjectMeta: metav1.ObjectMeta{
@@ -33,7 +35,7 @@ func makeClient(t *testing.T, schemas collection.Schemas) model.ConfigStoreCache
 		}, metav1.CreateOptions{})
 	}
 	stop := make(chan struct{})
-	config, err := New(fakeClient, extFake, &model.DisabledLedger{}, "", controller.Options{})
+	config, err := New(fakeClient, sFake, extFake, &model.DisabledLedger{}, "", controller.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,11 +90,11 @@ func TestClientNoCRDs(t *testing.T) {
 
 // CheckIstioConfigTypes validates that an empty store can do CRUD operators on all given types
 func TestClient(t *testing.T) {
-	store := makeClient(t, collections.Pilot)
+	store := makeClient(t, collections.PilotServiceApi)
 	configName := "name"
 	configNamespace := "namespace"
 	timeout := retry.Timeout(time.Millisecond * 200)
-	for _, c := range collections.Pilot.All() {
+	for _, c := range collections.PilotServiceApi.All() {
 		name := c.Resource().Kind()
 		t.Run(name, func(t *testing.T) {
 			r := c.Resource()
