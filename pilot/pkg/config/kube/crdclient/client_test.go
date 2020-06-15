@@ -1,25 +1,39 @@
 package crdclient
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
+
+	extfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 
 	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
+	"istio.io/istio/pkg/config/schema/collection"
 	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/test/util/retry"
 )
 
-func makeClient(t *testing.T) model.ConfigStoreCache {
+func makeClient(t *testing.T, schemas collection.Schemas) model.ConfigStoreCache {
 	fakeClient := istiofake.NewSimpleClientset()
+	extFake := extfake.NewSimpleClientset()
+	for _, s := range schemas.All() {
+		extFake.ApiextensionsV1beta1().CustomResourceDefinitions().Create(context.TODO(), &v1beta1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("%s.%s", s.Resource().Plural(), s.Resource().Group()),
+			},
+		}, metav1.CreateOptions{})
+	}
 	stop := make(chan struct{})
-	config, err := New(fakeClient, &model.DisabledLedger{}, "", controller.Options{})
+	config, err := New(fakeClient, extFake, &model.DisabledLedger{}, "", controller.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,9 +45,50 @@ func makeClient(t *testing.T) model.ConfigStoreCache {
 	return config
 }
 
+// Ensure that the client can run without CRDs present
+func TestClientNoCRDs(t *testing.T) {
+	schema := collection.NewSchemasBuilder().MustAdd(collections.IstioNetworkingV1Alpha3Sidecars).Build()
+	store := makeClient(t, schema)
+	retry.UntilSuccessOrFail(t, func() error {
+		if !store.HasSynced() {
+			return fmt.Errorf("store has not synced yet")
+		}
+		return nil
+	}, retry.Timeout(time.Second))
+	r := collections.IstioNetworkingV1Alpha3Virtualservices.Resource()
+	configMeta := model.ConfigMeta{
+		Name:      "name",
+		Namespace: "ns",
+		Type:      r.Kind(),
+		Group:     r.Group(),
+		Version:   r.Version(),
+	}
+	pb, err := r.NewProtoInstance()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Create(model.Config{
+		ConfigMeta: configMeta,
+		Spec:       pb,
+	}); err != nil {
+		t.Fatalf("Create => got %v", err)
+	}
+	retry.UntilSuccessOrFail(t, func() error {
+		l, err := store.List(r.GroupVersionKind(), "ns")
+		if err == nil {
+			return fmt.Errorf("expected error, but got none")
+		}
+		if len(l) != 0 {
+			return fmt.Errorf("expected no items returned for unknown CRD")
+		}
+		return nil
+	}, retry.Timeout(time.Second*5), retry.Converge(5))
+}
+
 // CheckIstioConfigTypes validates that an empty store can do CRUD operators on all given types
 func TestClient(t *testing.T) {
-	store := makeClient(t)
+	store := makeClient(t, collections.Pilot)
 	configName := "name"
 	configNamespace := "namespace"
 	timeout := retry.Timeout(time.Millisecond * 200)

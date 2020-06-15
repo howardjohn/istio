@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -59,9 +60,6 @@ var scope = log.RegisterScope("kube", "Kubernetes client messages", 0)
 // Client is a client for Istio CRDs, implementing config store cache
 // This is used for CRUD operators on Istio configuration, as well as handling of events on config changes
 type Client struct {
-	// Client to read CRDs. This is used to determine the set of support CRDs
-	crdClient *apiextensionsclient.Clientset
-
 	// schemas defines the set of schemas used by this client.
 	// Note: this must be a subset of the schemas defined in the codegen
 	schemas collection.Schemas
@@ -141,17 +139,20 @@ func NewForConfig(cfg *rest.Config, configLedger ledger.Ledger,
 		return nil, err
 	}
 
-	return New(ic, configLedger, revision, options)
+	crdClient, err := apiextensionsclient.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return New(ic, crdClient, configLedger, revision, options)
 }
 
-func New(ic versionedclient.Interface, configLedger ledger.Ledger,
+func New(ic versionedclient.Interface, crdClient apiextensionsclient.Interface, configLedger ledger.Ledger,
 	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
 
 	informers := externalversions.NewSharedInformerFactory(ic, options.ResyncPeriod)
 
 	out := &Client{
-		// TODO use CRD client
-		crdClient:    nil,
 		domainSuffix: options.DomainSuffix,
 		configLedger: configLedger,
 		schemas:      collections.Pilot,
@@ -160,13 +161,19 @@ func New(ic versionedclient.Interface, configLedger ledger.Ledger,
 		kinds:        map[resource.GroupVersionKind]*cacheHandler{},
 		ic:           ic,
 	}
-	// TODO known CRDs only
-	for _, r := range out.schemas.All() {
-		ch, err := createCacheHandler(out, r, informers)
-		if err != nil {
-			return nil, err
+	known := knownCRDs(crdClient)
+	for _, s := range out.schemas.All() {
+		// From the spec: "Its name MUST be in the format <.spec.name>.<.spec.group>."
+		name := fmt.Sprintf("%s.%s", s.Resource().Plural(), s.Resource().Group())
+		if _, f := known[name]; f {
+			ch, err := createCacheHandler(out, s, informers)
+			if err != nil {
+				return nil, err
+			}
+			out.kinds[s.Resource().GroupVersionKind()] = ch
+		} else {
+			log.Warnf("Skipping CRD %v as it is not present", s.Resource().Kind())
 		}
-		out.kinds[r.Resource().GroupVersionKind()] = ch
 	}
 
 	return out, nil
@@ -281,17 +288,30 @@ func (cl *Client) objectInRevision(o *model.Config) bool {
 	return configEnv == cl.revision
 }
 
-// KnownCRDs returns all CRDs present in the cluster
-func (cl *Client) KnownCRDs() (map[string]struct{}, error) {
-	res, err := cl.crdClient.ApiextensionsV1beta1().CustomResourceDefinitions().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return nil, err
+// knownCRDs returns all CRDs present in the cluster, with retries
+func knownCRDs(crdClient apiextensionsclient.Interface) map[string]struct{} {
+	delay := time.Second
+	maxDelay := time.Minute
+	var res *v1beta1.CustomResourceDefinitionList
+	for {
+		var err error
+		res, err = crdClient.ApiextensionsV1beta1().CustomResourceDefinitions().List(context.TODO(), metav1.ListOptions{})
+		if err == nil {
+			break
+		}
+		log.Errorf("failed to list CRDs: %v", err)
+		time.Sleep(delay)
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
 	}
+
 	mp := map[string]struct{}{}
 	for _, r := range res.Items {
 		mp[r.Name] = struct{}{}
 	}
-	return mp, nil
+	return mp
 }
 
 func TranslateObject(r runtime.Object, gvk resource.GroupVersionKind, domainSuffix string) *model.Config {
