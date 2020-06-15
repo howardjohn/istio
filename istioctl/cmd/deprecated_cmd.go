@@ -20,7 +20,6 @@ import (
 	"istio.io/istio/pilot/pkg/config/kube/crdclient"
 	"istio.io/istio/pilot/pkg/model"
 	controller2 "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
-	"istio.io/istio/pkg/config/schema/collections"
 	kubecfg "istio.io/istio/pkg/kube"
 )
 
@@ -35,5 +34,5 @@ func newConfigStore() (model.ConfigStore, error) {
 		return nil, err
 	}
 
-	return crdclient.NewForConfig(cfg, collections.Pilot, &model.DisabledLedger{}, "", controller2.Options{DomainSuffix: ""})
+	return crdclient.NewForConfig(cfg, &model.DisabledLedger{}, "", controller2.Options{DomainSuffix: ""})
 }

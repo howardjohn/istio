@@ -18,6 +18,8 @@ import (
 	"istio.io/istio/pkg/config/schema/collection"
 )
 
+// cacheHandler abstracts the logic of an informer with a set of handlers. Handlers can be added at runtime
+// and will be invoked on each informer event.
 type cacheHandler struct {
 	client   *Client
 	informer externalversions.GenericInformer
@@ -66,10 +68,6 @@ func createCacheHandler(cl *Client, schema collection.Schema,
 	if err != nil {
 		return nil, err
 	}
-	// TODO
-	//var stop chan struct{}
-	//go i.Informer().Run(stop)
-	//cache.WaitForCacheSync(stop, i.Informer().HasSynced)
 	h := &cacheHandler{
 		client:   cl,
 		schema:   schema,
@@ -77,7 +75,6 @@ func createCacheHandler(cl *Client, schema collection.Schema,
 	}
 	kind := schema.Resource().Kind()
 	i.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		// TODO: filtering functions to skip over un-referenced resources (perf)
 		AddFunc: func(obj interface{}) {
 			incrementEvent(kind, "add")
 			cl.tryLedgerPut(obj, kind)

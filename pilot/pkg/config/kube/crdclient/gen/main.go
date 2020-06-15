@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tool to generate pilot/pkg/config/kube/types.go
+// Tool to generate pilot/pkg/config/kube/crdclient/types.gen.go
 // Example run command:
-// go run pilot/pkg/config/kube/crd/codegen/types.go --template pilot/pkg/config/kube/crd/codegen/types.go.tmpl --output pilot/pkg/config/kube/crd/types.gen.go
+// REPO_ROOT=`pwd` go generate ./pilot/pkg/config/kube/crdclient/...
 package main
 
 import (

@@ -19,8 +19,7 @@ import (
 func makeClient(t *testing.T) model.ConfigStoreCache {
 	fakeClient := istiofake.NewSimpleClientset()
 	stop := make(chan struct{})
-	schemas := collections.Pilot
-	config, err := New(fakeClient, schemas, &model.DisabledLedger{}, "", controller.Options{})
+	config, err := New(fakeClient, &model.DisabledLedger{}, "", controller.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

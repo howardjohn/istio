@@ -12,8 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package controller provides an implementation of the config store and cache
+// Package crdclient provides an implementation of the config store and cache
 // using Kubernetes Custom Resources and the informer framework from Kubernetes
+//
+// This code relies heavily on code generation for performance reasons; to implement the
+// Istio store interface, we need to take dynamic inputs. Using the dynamic informers results in poor
+// performance, as the cache will store unstructured objects which need to be marshalled on each Get/List call.
+// Using istio/client-go directly will cache objects marshalled, allowing us to have cheap Get/List calls,
+// at the expense of some code gen.
 package crdclient
 
 import (
@@ -26,11 +32,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 
-	"istio.io/client-go/pkg/informers/externalversions"
-	"istio.io/pkg/monitoring"
-
 	"istio.io/api/label"
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
+	"istio.io/client-go/pkg/informers/externalversions"
 
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,25 +49,21 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	controller2 "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	"istio.io/istio/pkg/config/schema/collection"
+	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/config/schema/resource"
 	"istio.io/istio/pkg/queue"
 )
 
-func TranslateObject(r runtime.Object, gvk resource.GroupVersionKind, domainSuffix string) *model.Config {
-	translateFunc, f := translationMap[gvk]
-	if !f {
-		log.Errorf("unknown type %v", gvk)
-		return nil
-	}
-	c := translateFunc(r)
-	c.Domain = domainSuffix
-	return c
-}
+var scope = log.RegisterScope("kube", "Kubernetes client messages", 0)
 
-// Client is a basic REST client for CRDs implementing config store
+// Client is a client for Istio CRDs, implementing config store cache
+// This is used for CRUD operators on Istio configuration, as well as handling of events on config changes
 type Client struct {
+	// Client to read CRDs. This is used to determine the set of support CRDs
 	crdClient *apiextensionsclient.Clientset
 
+	// schemas defines the set of schemas used by this client.
+	// Note: this must be a subset of the schemas defined in the codegen
 	schemas collection.Schemas
 
 	// domainSuffix for the config metadata
@@ -74,33 +74,18 @@ type Client struct {
 
 	// revision for this control plane instance. We will only read configs that match this revision.
 	revision string
-	kinds    map[resource.GroupVersionKind]*cacheHandler
-	queue    queue.Instance
-	ic       versionedclient.Interface
+
+	// kinds keeps track of all cache handlers for known types
+	kinds map[resource.GroupVersionKind]*cacheHandler
+	queue queue.Instance
+
+	// The istio/client-go client we will use to access objects
+	ic versionedclient.Interface
 }
 
-func incrementEvent(kind, event string) {
-	k8sEvents.With(typeTag.Value(kind), eventTag.Value(event)).Increment()
-}
+var _ model.ConfigStoreCache = &Client{}
 
-func (cl *Client) tryLedgerPut(obj interface{}, kind string) {
-	iobj := obj.(metav1.Object)
-	key := model.Key(kind, iobj.GetName(), iobj.GetNamespace())
-	_, err := cl.configLedger.Put(key, iobj.GetResourceVersion())
-	if err != nil {
-		scope.Errorf("Failed to update %s in ledger, status will be out of date.", key)
-	}
-}
-
-func (cl *Client) tryLedgerDelete(obj interface{}, kind string) {
-	iobj := obj.(metav1.Object)
-	key := model.Key(kind, iobj.GetName(), iobj.GetNamespace())
-	err := cl.configLedger.Delete(key)
-	if err != nil {
-		scope.Errorf("Failed to delete %s in ledger, status will be out of date.", key)
-	}
-}
-
+// Validate we are ready to handle events. Until the informers are synced, we will block the queue
 func (cl *Client) checkReadyForEvents(curr interface{}) error {
 	if !cl.HasSynced() {
 		return errors.New("waiting till full synchronization")
@@ -121,6 +106,7 @@ func (cl *Client) RegisterEventHandler(kind resource.GroupVersionKind, handler f
 	h.handlers = append(h.handlers, handler)
 }
 
+// Start the queue and all informers. Callers should  wait for HasSynced() before depending on results.
 func (cl *Client) Run(stop <-chan struct{}) {
 	log.Infoa("Starting Pilot K8S CRD controller")
 
@@ -147,27 +133,18 @@ func (cl *Client) HasSynced() bool {
 	return true
 }
 
-var _ model.ConfigStoreCache = &Client{}
-
-var scope = log.RegisterScope("kube", "Kubernetes client messages", 0)
-
 // NewForConfig creates a client to the Kubernetes API using a rest config.
-func NewForConfig(cfg *rest.Config, schemas collection.Schemas, configLedger ledger.Ledger,
+func NewForConfig(cfg *rest.Config, configLedger ledger.Ledger,
 	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
 	ic, err := versionedclient.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	//crdClient, err := apiextensionsclient.NewForConfig(cfg)
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	return New(ic, schemas, configLedger, revision, options)
+	return New(ic, configLedger, revision, options)
 }
 
-func New(ic versionedclient.Interface, schemas collection.Schemas, configLedger ledger.Ledger,
+func New(ic versionedclient.Interface, configLedger ledger.Ledger,
 	revision string, options controller2.Options) (model.ConfigStoreCache, error) {
 
 	informers := externalversions.NewSharedInformerFactory(ic, options.ResyncPeriod)
@@ -177,14 +154,14 @@ func New(ic versionedclient.Interface, schemas collection.Schemas, configLedger 
 		crdClient:    nil,
 		domainSuffix: options.DomainSuffix,
 		configLedger: configLedger,
-		schemas:      schemas,
+		schemas:      collections.Pilot,
 		revision:     revision,
 		queue:        queue.NewQueue(1 * time.Second),
 		kinds:        map[resource.GroupVersionKind]*cacheHandler{},
 		ic:           ic,
 	}
 	// TODO known CRDs only
-	for _, r := range schemas.All() {
+	for _, r := range out.schemas.All() {
 		ch, err := createCacheHandler(out, r, informers)
 		if err != nil {
 			return nil, err
@@ -228,47 +205,6 @@ func (cl *Client) Get(typ resource.GroupVersionKind, name, namespace string) *mo
 
 	}
 	return cfg
-}
-
-var (
-	typeTag  = monitoring.MustCreateLabel("type")
-	eventTag = monitoring.MustCreateLabel("event")
-	nameTag  = monitoring.MustCreateLabel("name")
-
-	k8sEvents = monitoring.NewSum(
-		"pilot_k8s_cfg_events",
-		"Events from k8s config.",
-		monitoring.WithLabels(typeTag, eventTag),
-	)
-
-	k8sErrors = monitoring.NewGauge(
-		"pilot_k8s_object_errors",
-		"Errors converting k8s CRDs",
-		monitoring.WithLabels(nameTag),
-	)
-
-	k8sTotalErrors = monitoring.NewSum(
-		"pilot_total_k8s_object_errors",
-		"Total Errors converting k8s CRDs",
-	)
-)
-
-func handleValidationFailure(obj *model.Config, err error) {
-
-	key := obj.Namespace + "/" + obj.Name
-	log.Debugf("CRD validation failed: %s (%v): %v", key, obj.GroupVersionKind(), err)
-	k8sErrors.With(nameTag.Value(key)).Record(1)
-
-	k8sTotalErrors.Increment()
-}
-
-func getObjectMetadata(config model.Config) metav1.ObjectMeta {
-	return metav1.ObjectMeta{
-		Name:        config.Name,
-		Namespace:   config.Namespace,
-		Labels:      config.Labels,
-		Annotations: config.Annotations,
-	}
 }
 
 // Create implements store interface
@@ -335,23 +271,6 @@ func (cl *Client) List(kind resource.GroupVersionKind, namespace string) ([]mode
 	return out, err
 }
 
-func (cl *Client) Version() string {
-	return cl.configLedger.RootHash()
-}
-
-func (cl *Client) GetResourceAtVersion(version string, key string) (resourceVersion string, err error) {
-	return cl.configLedger.GetPreviousValue(version, key)
-}
-
-func (cl *Client) GetLedger() ledger.Ledger {
-	return cl.configLedger
-}
-
-func (cl *Client) SetLedger(l ledger.Ledger) error {
-	cl.configLedger = l
-	return nil
-}
-
 func (cl *Client) objectInRevision(o *model.Config) bool {
 	configEnv, f := o.Labels[label.IstioRev]
 	if !f {
@@ -373,4 +292,24 @@ func (cl *Client) KnownCRDs() (map[string]struct{}, error) {
 		mp[r.Name] = struct{}{}
 	}
 	return mp, nil
+}
+
+func TranslateObject(r runtime.Object, gvk resource.GroupVersionKind, domainSuffix string) *model.Config {
+	translateFunc, f := translationMap[gvk]
+	if !f {
+		log.Errorf("unknown type %v", gvk)
+		return nil
+	}
+	c := translateFunc(r)
+	c.Domain = domainSuffix
+	return c
+}
+
+func getObjectMetadata(config model.Config) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:        config.Name,
+		Namespace:   config.Namespace,
+		Labels:      config.Labels,
+		Annotations: config.Annotations,
+	}
 }
