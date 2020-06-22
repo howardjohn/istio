@@ -247,7 +247,7 @@ func convertTCP(in []*tcppb.Filter) []proto.Message {
 }
 
 func newAuthzPolicies(t *testing.T, policies []*model.Config) *model.AuthorizationPolicies {
-	store := model.MakeIstioStore(memory.Make(collections.Pilot))
+	store := model.MakeIstioStore(memory.Make(memory.ConfigOptions{Schemas: collections.Pilot}))
 	for _, p := range policies {
 		if _, err := store.Create(*p); err != nil {
 			t.Fatalf("newAuthzPolicies: %v", err)

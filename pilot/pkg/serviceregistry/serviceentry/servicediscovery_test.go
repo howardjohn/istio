@@ -112,7 +112,7 @@ type channelTerminal struct {
 }
 
 func initServiceDiscovery() (model.IstioConfigStore, *ServiceEntryStore, chan Event, func()) {
-	store := memory.Make(collections.Pilot)
+	store := memory.Make(memory.ConfigOptions{Schemas: collections.Pilot})
 	configController := memory.NewController(store)
 
 	stop := make(chan struct{})

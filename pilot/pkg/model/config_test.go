@@ -340,7 +340,7 @@ func TestMostSpecificHostMatch(t *testing.T) {
 }
 
 func TestAuthorizationPolicies(t *testing.T) {
-	store := model.MakeIstioStore(memory.Make(collections.Pilot))
+	store := model.MakeIstioStore(memory.Make(memory.ConfigOptions{Schemas: collections.Pilot}))
 	tests := []struct {
 		namespace  string
 		expectName map[string]bool

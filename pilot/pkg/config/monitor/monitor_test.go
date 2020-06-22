@@ -80,7 +80,7 @@ var updateConfigSet = []*model.Config{
 func TestMonitorForChange(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	store := memory.Make(collection.SchemasFor(collections.IstioNetworkingV1Alpha3Gateways))
+	store := memory.Make(memory.ConfigOptions{Schemas: collection.SchemasFor(collections.IstioNetworkingV1Alpha3Gateways)})
 
 	var (
 		callCount int
@@ -152,7 +152,7 @@ func TestMonitorForChange(t *testing.T) {
 func TestMonitorForError(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	store := memory.Make(collection.SchemasFor(collections.IstioNetworkingV1Alpha3Gateways))
+	store := memory.Make(memory.ConfigOptions{Schemas: collection.SchemasFor(collections.IstioNetworkingV1Alpha3Gateways)})
 
 	var (
 		callCount int

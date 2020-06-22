@@ -73,28 +73,46 @@ func createCacheHandler(cl *Client, schema collection.Schema, i informers.Generi
 	i.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			incrementEvent(kind, "add")
-			cl.tryLedgerPut(obj, kind)
-			cl.queue.Push(func() error {
-				return h.onEvent(nil, obj, model.EventAdd)
-			})
+			rt, ok := obj.(runtime.Object)
+			if !ok {
+				log.Errorf("failed to convert %v to a runtime.Object", rt)
+				return
+			}
+			_, err := cl.memory.Create(*TranslateObject(rt, h.schema.Resource().GroupVersionKind(), h.client.domainSuffix))
+			if err != nil {
+				// TODO better handling
+				log.Errorf("failed to create object %v", err)
+			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			cl.tryLedgerPut(cur, kind)
 			if !reflect.DeepEqual(old, cur) {
 				incrementEvent(kind, "update")
-				cl.queue.Push(func() error {
-					return h.onEvent(old, cur, model.EventUpdate)
-				})
+				rt, ok := cur.(runtime.Object)
+				if !ok {
+					log.Errorf("failed to convert %v to a runtime.Object", rt)
+					return
+				}
+				_, err := cl.memory.Update(*TranslateObject(rt, h.schema.Resource().GroupVersionKind(), h.client.domainSuffix))
+				if err != nil {
+					// TODO better handling
+					log.Errorf("failed to create object %v", err)
+				}
 			} else {
 				incrementEvent(kind, "updatesame")
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
 			incrementEvent(kind, "delete")
-			cl.tryLedgerDelete(obj, kind)
-			cl.queue.Push(func() error {
-				return h.onEvent(nil, obj, model.EventDelete)
-			})
+			rt, ok := obj.(runtime.Object)
+			if !ok {
+				log.Errorf("failed to convert %v to a runtime.Object", rt)
+				return
+			}
+			//_, err := cl.memory.Delete(h.schema.Resource().GroupVersionKind(), rt.)
+			//if err != nil {
+			//	TODO better handling
+				//log.Errorf("failed to create object %v", err)
+			//}
 		},
 	})
 	return h, nil

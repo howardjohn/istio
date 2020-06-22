@@ -172,5 +172,3 @@ require (
 	sigs.k8s.io/service-apis v0.0.0-20200519184137-2b66cd7216e9
 	sigs.k8s.io/yaml v1.2.0
 )
-
-replace sigs.k8s.io/service-apis => /home/howardjohn/go/src/sigs.k8s.io/service-apis

@@ -17,6 +17,7 @@ package memory
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -35,27 +36,35 @@ var (
 
 const ledgerLogf = "error tracking pilot config memory versions for distribution: %v"
 
-// Make creates an in-memory config store from a config schemas
-func Make(schemas collection.Schemas) model.ConfigStore {
-	return MakeWithLedger(schemas, ledger.Make(time.Minute))
+type ConfigOptions struct {
+	Schemas      collection.Schemas
+	Ledger       ledger.Ledger
+	SkipValidate bool
 }
 
-func MakeWithLedger(schemas collection.Schemas, configLedger ledger.Ledger) model.ConfigStore {
-	out := store{
-		schemas: schemas,
-		data:    make(map[resource.GroupVersionKind]map[string]*sync.Map),
-		ledger:  configLedger,
+// Make creates an in-memory config store from a config schemas
+func Make(opts ConfigOptions) model.ConfigStore {
+	l := opts.Ledger
+	if l == nil {
+		l = &model.DisabledLedger{}
 	}
-	for _, s := range schemas.All() {
+	out := store{
+		schemas:        opts.Schemas,
+		data:           make(map[resource.GroupVersionKind]map[string]*sync.Map),
+		ledger:         l,
+		skipValidation: opts.SkipValidate,
+	}
+	for _, s := range opts.Schemas.All() {
 		out.data[s.Resource().GroupVersionKind()] = make(map[string]*sync.Map)
 	}
 	return &out
 }
 
 type store struct {
-	schemas collection.Schemas
-	data    map[resource.GroupVersionKind]map[string]*sync.Map
-	ledger  ledger.Ledger
+	schemas        collection.Schemas
+	data           map[resource.GroupVersionKind]map[string]*sync.Map
+	ledger         ledger.Ledger
+	skipValidation bool
 }
 
 func (cr *store) GetResourceAtVersion(version string, key string) (resourceVersion string, err error) {
@@ -102,7 +111,7 @@ func (cr *store) Get(kind resource.GroupVersionKind, name, namespace string) *mo
 func (cr *store) List(kind resource.GroupVersionKind, namespace string) ([]model.Config, error) {
 	data, exists := cr.data[kind]
 	if !exists {
-		return nil, nil
+		return nil, fmt.Errorf("unsupported type %v", kind)
 	}
 	out := make([]model.Config, 0, len(cr.data[kind]))
 	if namespace == "" {
@@ -154,8 +163,10 @@ func (cr *store) Create(config model.Config) (string, error) {
 	if !ok {
 		return "", errors.New("unknown type")
 	}
-	if err := s.Resource().ValidateProto(config.Name, config.Namespace, config.Spec); err != nil {
-		return "", err
+	if !cr.skipValidation {
+		if err := s.Resource().ValidateProto(config.Name, config.Namespace, config.Spec); err != nil {
+			return "", err
+		}
 	}
 	ns, exists := cr.data[kind][config.Namespace]
 	if !exists {
@@ -163,25 +174,26 @@ func (cr *store) Create(config model.Config) (string, error) {
 		cr.data[kind][config.Namespace] = ns
 	}
 
-	_, exists = ns.Load(config.Name)
-
-	if !exists {
-		tnow := time.Now()
-		config.ResourceVersion = tnow.String()
-
-		// Set the creation timestamp, if not provided.
-		if config.CreationTimestamp.IsZero() {
-			config.CreationTimestamp = tnow
-		}
-
-		_, err := cr.ledger.Put(model.Key(kind.Kind, config.Namespace, config.Name), config.Version)
-		if err != nil {
-			log.Warnf(ledgerLogf, err)
-		}
-		ns.Store(config.Name, config)
-		return config.ResourceVersion, nil
+	if _, exists = ns.Load(config.Name); exists {
+		return "", errAlreadyExists
 	}
-	return "", errAlreadyExists
+
+	tnow := time.Now()
+	if config.ResourceVersion == "" {
+		config.ResourceVersion = tnow.String()
+	}
+
+	// Set the creation timestamp, if not provided.
+	if config.CreationTimestamp.IsZero() {
+		config.CreationTimestamp = tnow
+	}
+
+	_, err := cr.ledger.Put(model.Key(kind.Kind, config.Namespace, config.Name), config.Version)
+	if err != nil {
+		log.Warnf(ledgerLogf, err)
+	}
+	ns.Store(config.Name, config)
+	return config.ResourceVersion, nil
 }
 
 func (cr *store) Update(config model.Config) (string, error) {
@@ -190,8 +202,10 @@ func (cr *store) Update(config model.Config) (string, error) {
 	if !ok {
 		return "", errors.New("unknown type")
 	}
-	if err := s.Resource().ValidateProto(config.Name, config.Namespace, config.Spec); err != nil {
-		return "", err
+	if !cr.skipValidation {
+		if err := s.Resource().ValidateProto(config.Name, config.Namespace, config.Spec); err != nil {
+			return "", err
+		}
 	}
 
 	ns, exists := cr.data[kind][config.Namespace]
@@ -204,12 +218,13 @@ func (cr *store) Update(config model.Config) (string, error) {
 		return "", errNotFound
 	}
 
-	rev := time.Now().String()
-	config.ResourceVersion = rev
+	if config.ResourceVersion == "" {
+		config.ResourceVersion = time.Now().String()
+	}
 	_, err := cr.ledger.Put(model.Key(kind.Kind, config.Namespace, config.Name), config.Version)
 	if err != nil {
 		log.Warnf(ledgerLogf, err)
 	}
 	ns.Store(config.Name, config)
-	return rev, nil
+	return config.ResourceVersion, nil
 }

@@ -78,7 +78,7 @@ func TestAPIGen(t *testing.T) {
 		if err != nil {
 			t.Fatal("Error connecting ", err)
 		}
-		store := memory.Make(collections.Pilot)
+		store := memory.Make(memory.ConfigOptions{Schemas: collections.Pilot})
 
 		configController := memory.NewController(store)
 		adscConn.Store = model.MakeIstioStore(configController)

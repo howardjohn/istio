@@ -62,7 +62,7 @@ func SetupDiscoveryServer(t testing.TB, cfgs ...model.Config) *DiscoveryServer {
 		PushContext:     model.NewPushContext(),
 	}
 	s := NewDiscoveryServer(env, []string{})
-	store := memory.Make(collections.Pilot)
+	store := memory.Make(memory.ConfigOptions{Schemas: collections.Pilot})
 	configController := memory.NewController(store)
 	istioConfigStore := model.MakeIstioStore(configController)
 	serviceControllers := aggregate.NewController()

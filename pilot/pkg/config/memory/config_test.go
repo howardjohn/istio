@@ -23,11 +23,11 @@ import (
 )
 
 func TestStoreInvariant(t *testing.T) {
-	store := memory.Make(collections.Mocks)
+	store := memory.Make(memory.ConfigOptions{Schemas: collections.Mocks})
 	mock.CheckMapInvariant(store, t, "some-namespace", 10)
 }
 
 func TestIstioConfig(t *testing.T) {
-	store := memory.Make(collections.Pilot)
+	store := memory.Make(memory.ConfigOptions{Schemas: collections.Pilot})
 	mock.CheckIstioConfigTypes(store, "some-namespace", t)
 }

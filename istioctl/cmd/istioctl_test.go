@@ -97,7 +97,7 @@ func TestBadParse(t *testing.T) {
 func mockClientFactoryGenerator(configs []model.Config) func() (model.ConfigStore, error) {
 	outFactory := func() (model.ConfigStore, error) {
 		// Initialize memory based model.ConfigStore with configs
-		outConfig := memory.Make(collections.Pilot)
+		outConfig := memory.Make(memory.ConfigOptions{Schemas: collections.Pilot})
 		for _, config := range configs {
 			if _, err := outConfig.Create(config); err != nil {
 				return nil, err

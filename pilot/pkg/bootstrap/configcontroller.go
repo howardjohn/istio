@@ -76,7 +76,7 @@ func (s *Server) initConfigController(args *PilotArgs) error {
 			return err
 		}
 	} else if args.Config.FileDir != "" {
-		store := memory.Make(collections.Pilot)
+		store := memory.Make(memory.ConfigOptions{Schemas: collections.Pilot})
 		configController := memory.NewController(store)
 
 		err := s.makeFileMonitor(args.Config.FileDir, args.Config.ControllerOptions.DomainSuffix, configController)
@@ -102,7 +102,7 @@ func (s *Server) initConfigController(args *PilotArgs) error {
 	}
 
 	// Used for tests.
-	memStore := memory.Make(collections.Pilot)
+	memStore := memory.Make(memory.ConfigOptions{Schemas: collections.Pilot})
 	memConfigController := memory.NewController(memStore)
 	s.ConfigStores = append(s.ConfigStores, memConfigController)
 	s.EnvoyXdsServer.MemConfigController = memConfigController

@@ -9,12 +9,11 @@ import (
 
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/tools/cache"
 
 	extfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
-
-	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
-	servicefake "sigs.k8s.io/service-apis/pkg/client/clientset/versioned/fake"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
@@ -24,9 +23,9 @@ import (
 )
 
 func makeClient(t *testing.T, schemas collection.Schemas) model.ConfigStoreCache {
-	fakeClient := istiofake.NewSimpleClientset()
 	extFake := extfake.NewSimpleClientset()
-	sFake := servicefake.NewSimpleClientset()
+	scheme := runtime.NewScheme()
+	dynFake := dynamicfake.NewSimpleDynamicClient(scheme)
 	for _, s := range schemas.All() {
 		extFake.ApiextensionsV1beta1().CustomResourceDefinitions().Create(context.TODO(), &v1beta1.CustomResourceDefinition{
 			ObjectMeta: metav1.ObjectMeta{
@@ -35,7 +34,7 @@ func makeClient(t *testing.T, schemas collection.Schemas) model.ConfigStoreCache
 		}, metav1.CreateOptions{})
 	}
 	stop := make(chan struct{})
-	config, err := New(fakeClient, sFake, extFake, &model.DisabledLedger{}, "", controller.Options{})
+	config, err := New(dynFake, extFake, &model.DisabledLedger{}, "", controller.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,21 +90,24 @@ func TestClientNoCRDs(t *testing.T) {
 // CheckIstioConfigTypes validates that an empty store can do CRUD operators on all given types
 func TestClient(t *testing.T) {
 	store := makeClient(t, collections.PilotServiceApi)
-	configName := "name"
-	configNamespace := "namespace"
 	timeout := retry.Timeout(time.Millisecond * 200)
 	for _, c := range collections.PilotServiceApi.All() {
 		name := c.Resource().Kind()
+		configName := "name"
+		configNamespace := "namespace"
 		t.Run(name, func(t *testing.T) {
 			r := c.Resource()
-			configMeta := model.ConfigMeta{
-				Type:    r.Kind(),
-				Name:    configName,
-				Group:   r.Group(),
-				Version: r.Version(),
+			if r.IsClusterScoped() {
+				configNamespace = ""
 			}
-			if !r.IsClusterScoped() {
-				configMeta.Namespace = configNamespace
+			configMeta := model.ConfigMeta{
+				Type:              r.Kind(),
+				Name:              configName,
+				Namespace:         configNamespace,
+				Group:             r.Group(),
+				Version:           r.Version(),
+				ResourceVersion:   "123",
+				CreationTimestamp: time.Now(),
 			}
 
 			pb, err := r.NewProtoInstance()
