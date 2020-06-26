@@ -237,10 +237,11 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(env *model.Env
 		nameToServiceMap[svc.Hostname] = svc
 	}
 
+	virtualServiceByGateways := push.VirtualServicesByGateway(node, len(servers))
 	vHostDedupMap := make(map[host.Name]*route.VirtualHost)
 	for _, server := range servers {
 		gatewayName := merged.GatewayNameForServer[server]
-		virtualServices := push.VirtualServices(node, map[string]bool{gatewayName: true})
+		virtualServices := virtualServiceByGateways[gatewayName]
 		for _, virtualService := range virtualServices {
 			virtualServiceHosts := host.NewNames(virtualService.Spec.(*networking.VirtualService).Hosts)
 			serverHosts := host.NamesForNamespace(server.Hosts, virtualService.Namespace)
@@ -253,7 +254,7 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(env *model.Env
 				continue
 			}
 
-			routes, err := istio_route.BuildHTTPRoutesForVirtualService(node, push, virtualService, nameToServiceMap, port, map[string]bool{gatewayName: true})
+			routes, err := istio_route.BuildHTTPRoutesForVirtualService(node, push, *virtualService, nameToServiceMap, port, map[string]bool{gatewayName: true})
 			if err != nil {
 				log.Debugf("%s omitting routes for service %v due to error: %v", node.ID, virtualService, err)
 				continue

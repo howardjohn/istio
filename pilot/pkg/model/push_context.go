@@ -501,6 +501,41 @@ func (ps *PushContext) Services(proxy *Proxy) []*Service {
 	return out
 }
 
+
+func (ps *PushContext) VirtualServicesByGateway(proxy *Proxy, hint int) map[string][]*Config {
+	res := make(map[string][]*Config, hint)
+	configlists := [][]Config{}
+	// filter out virtual services not reachable
+	// First private virtual service
+	if proxy == nil {
+		for _, virtualSvcs := range ps.privateVirtualServicesByNamespace {
+			configlists = append(configlists, virtualSvcs)
+		}
+	} else {
+		configlists = append(configlists, ps.privateVirtualServicesByNamespace[proxy.ConfigNamespace])
+	}
+	configlists = append(configlists, ps.publicVirtualServices)
+
+	for _, configs := range configlists {
+		for _, cfg := range configs {
+			rule := cfg.Spec.(*networking.VirtualService)
+			if len(rule.Gateways) == 0 {
+				// This rule applies only to IstioMeshGateway
+				res[constants.IstioMeshGateway] = append(res[constants.IstioMeshGateway], &cfg)
+			} else {
+				for _, g := range rule.Gateways {
+					if g == constants.IstioMeshGateway {
+						res[constants.IstioMeshGateway] = append(res[constants.IstioMeshGateway], &cfg)
+					} else {
+						name := resolveGatewayName(g, cfg.ConfigMeta)
+						res[name] = append(res[name], &cfg)
+					}
+				}
+			}
+		}
+	}
+	return res
+}
 // VirtualServices lists all virtual services bound to the specified gateways
 // This replaces store.VirtualServices. Used only by the gateways
 // Sidecars use the egressListener.VirtualServices().
