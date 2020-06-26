@@ -630,7 +630,7 @@ func (s *DiscoveryServer) pushEds(push *model.PushContext, con *XdsConnection, v
 	pushStart := time.Now()
 	loadAssignments := make([]*xdsapi.ClusterLoadAssignment, 0)
 	endpoints := 0
-	empty := make([]string, 0)
+	empty := 0
 
 	// All clusters that this endpoint is watching. For 1.0 - it's typically all clusters in the mesh.
 	// For 1.1+Sidecar - it's the small set of explicitly imported clusters, using the isolated DestinationRules
@@ -680,7 +680,7 @@ func (s *DiscoveryServer) pushEds(push *model.PushContext, con *XdsConnection, v
 		}
 
 		if len(l.Endpoints) == 0 {
-			empty = append(empty, clusterName)
+			empty++
 		}
 		loadAssignments = append(loadAssignments, l)
 	}
