@@ -329,7 +329,7 @@ func (c *Controller) HasSynced() bool {
 }
 
 // AppendServiceHandler implements a service catalog operation
-func (c *Controller) AppendServiceHandler(f func(*model.Service, model.Event)) error {
+func (c *Controller) AppendServiceHandler(f func(hostname host.Name, namespace string)) error {
 	for _, r := range c.GetRegistries() {
 		if err := r.AppendServiceHandler(f); err != nil {
 			log.Infof("Fail to append service handler to adapter %s", r.Provider())

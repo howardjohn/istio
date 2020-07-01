@@ -27,6 +27,7 @@ import (
 
 	"github.com/yl2chen/cidranger"
 	v1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
@@ -169,15 +170,16 @@ type Controller struct {
 	// Used to watch node accessible from remote cluster.
 	// In multi-cluster(shared control plane multi-networks) scenario, ingress gateway service can be of nodePort type.
 	// With this, we can populate mesh's gateway address with the node ips.
-	filteredNodeInformer cache.SharedIndexInformer
-	pods                 *PodCache
-	metrics              model.Metrics
-	networksWatcher      mesh.NetworksWatcher
-	xdsUpdater           model.XDSUpdater
-	domainSuffix         string
-	clusterID            string
+	nodeInformer    cache.SharedIndexInformer
+	nodeLister listerv1.NodeLister
+	pods            *PodCache
+	metrics         model.Metrics
+	networksWatcher mesh.NetworksWatcher
+	xdsUpdater      model.XDSUpdater
+	domainSuffix    string
+	clusterID       string
 
-	serviceHandlers  []func(*model.Service, model.Event)
+	serviceHandlers  []func(hostname host.Name, namespace string)
 	instanceHandlers []func(*model.ServiceInstance, model.Event)
 
 	// This is only used for test
@@ -242,9 +244,10 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 	// This is for getting the pod to node mapping, so that we can get the pod's locality.
 	c.nodeMetadataInformer = kubeClient.MetadataInformer().ForResource(v1.SchemeGroupVersion.WithResource("nodes")).Informer()
 	// This is for getting the node IPs of a selected set of nodes
-	c.filteredNodeInformer = kubeClient.KubeInformer().Core().V1().Nodes().Informer()
+	c.nodeInformer = kubeClient.KubeInformer().Core().V1().Nodes().Informer()
+	c.nodeLister = kubeClient.KubeInformer().Core().V1().Nodes().Lister()
 	c.metadataClient = kubeClient.Metadata()
-	registerHandlers(c.filteredNodeInformer, c.queue, "Nodes", reflect.DeepEqual, c.onNodeEvent)
+	registerHandlers(c.nodeInformer, c.queue, "Nodes", reflect.DeepEqual, c.onNodeEvent)
 
 	c.pods = newPodCache(c, kubeClient.KubeInformer().Core().V1().Pods())
 	registerHandlers(c.pods.informer, c.queue, "Pods", reflect.DeepEqual, c.pods.onEvent)
@@ -267,36 +270,39 @@ func (c *Controller) checkReadyForEvents() error {
 	return nil
 }
 
-func (c *Controller) onServiceEvent(curr interface{}, event model.Event) error {
+func (c *Controller) onServiceEvent(key string, event model.Event) error {
 	if err := c.checkReadyForEvents(); err != nil {
 		return err
 	}
 
-	svc, ok := curr.(*v1.Service)
-	if !ok {
-		tombstone, ok := curr.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			log.Errorf("Couldn't get object from tombstone %#v", curr)
-			return nil
-		}
-		svc, ok = tombstone.Obj.(*v1.Service)
-		if !ok {
-			log.Errorf("Tombstone contained object that is not a service %#v", curr)
-			return nil
-		}
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return err
 	}
 
-	log.Debugf("Handle event %s for service %s in namespace %s", event, svc.Name, svc.Namespace)
+	log.Debugf("Handle event %s for service %s in namespace %s", event, name, namespace)
 
-	svcConv := kube.ConvertService(*svc, c.domainSuffix, c.clusterID)
+	hostname := kube.ServiceHostname(name, namespace, c.domainSuffix)
 	switch event {
 	case model.EventDelete:
 		c.Lock()
-		delete(c.servicesMap, svcConv.Hostname)
-		delete(c.nodeSelectorsForServices, svcConv.Hostname)
-		delete(c.externalNameSvcInstanceMap, svcConv.Hostname)
+		delete(c.servicesMap, hostname)
+		delete(c.nodeSelectorsForServices, hostname)
+		delete(c.externalNameSvcInstanceMap, hostname)
 		c.Unlock()
 	default:
+		svc, err := c.serviceLister.Services(namespace).Get(name)
+		if err != nil {
+			if !kerrors.IsNotFound(err) {
+				// Its a real error, return it - pretty sure this never happens in reality
+				return err
+			}
+			// If it is missing, then the Service was probably deleted. Skip this event, we will handle the delete event when we get
+			// the deletion.
+			// TODO: don't even handle events; use a deduping queue
+			return nil
+		}
+		svcConv := kube.ConvertService(*svc, c.domainSuffix, c.clusterID)
 		// instance conversion is only required when service is added/updated.
 		instances := kube.ExternalNameServiceInstances(*svc, svcConv)
 		if isNodePortGatewayService(svc) {
@@ -317,10 +323,10 @@ func (c *Controller) onServiceEvent(curr interface{}, event model.Event) error {
 		c.Unlock()
 	}
 
-	c.xdsUpdater.SvcUpdate(c.clusterID, string(svcConv.Hostname), svc.Namespace, event)
+	c.xdsUpdater.SvcUpdate(c.clusterID, string(hostname), namespace, event)
 	// Notify service handlers.
 	for _, f := range c.serviceHandlers {
-		f(svcConv, event)
+		f(hostname, namespace)
 	}
 
 	return nil
@@ -338,30 +344,34 @@ func getNodeSelectorsForService(svc v1.Service) labels.Instance {
 	return nil
 }
 
-func (c *Controller) onNodeEvent(obj interface{}, event model.Event) error {
+func (c *Controller) onNodeEvent(key string, event model.Event) error {
 	if err := c.checkReadyForEvents(); err != nil {
 		return err
 	}
-	node, ok := obj.(*v1.Node)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			log.Errorf("couldn't get object from tombstone %+v", obj)
-			return nil
-		}
-		node, ok = tombstone.Obj.(*v1.Node)
-		if !ok {
-			log.Errorf("tombstone contained object that is not a node %#v", obj)
-			return nil
-		}
+
+	_, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return err
 	}
+
 	var updatedNeeded bool
 	if event == model.EventDelete {
 		updatedNeeded = true
 		c.Lock()
-		delete(c.nodeInfoMap, node.Name)
+		delete(c.nodeInfoMap, name)
 		c.Unlock()
 	} else {
+		node, err := c.nodeLister.Get(name)
+		if err != nil {
+			if !kerrors.IsNotFound(err) {
+				// Its a real error, return it - pretty sure this never happens in reality
+				return err
+			}
+			// If it is missing, then the Node was probably deleted. Skip this event, we will handle the delete event when we get
+			// the deletion.
+			// TODO: don't even handle events; use a deduping queue
+			return nil
+		}
 		k8sNode := kubernetesNode{labels: node.Labels}
 		for _, address := range node.Status.Addresses {
 			if address.Type == v1.NodeExternalIP && address.Address != "" {
@@ -403,22 +413,30 @@ func isNodePortGatewayService(svc *v1.Service) bool {
 }
 
 func registerHandlers(informer cache.SharedIndexInformer, q queue.Instance, otype string,
-	equalsFunc func(old, cur interface{}) bool, handler func(interface{}, model.Event) error) {
+	equalsFunc func(old, cur interface{}) bool, handler func(string, model.Event) error) {
 
 	informer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			// TODO: filtering functions to skip over un-referenced resources (perf)
 			AddFunc: func(obj interface{}) {
 				incrementEvent(otype, "add")
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+				if err != nil {
+					log.Errorf("Couldn't get key for object: %v", err)
+				}
 				q.Push(func() error {
-					return handler(obj, model.EventAdd)
+					return handler(key, model.EventAdd)
 				})
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !equalsFunc(old, cur) {
 					incrementEvent(otype, "update")
+					key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cur)
+					if err != nil {
+						log.Errorf("Couldn't get key for object: %v", err)
+					}
 					q.Push(func() error {
-						return handler(cur, model.EventUpdate)
+						return handler(key, model.EventUpdate)
 					})
 				} else {
 					incrementEvent(otype, "updatesame")
@@ -426,8 +444,12 @@ func registerHandlers(informer cache.SharedIndexInformer, q queue.Instance, otyp
 			},
 			DeleteFunc: func(obj interface{}) {
 				incrementEvent(otype, "delete")
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+				if err != nil {
+					log.Errorf("Couldn't get key for object: %v", err)
+				}
 				q.Push(func() error {
-					return handler(obj, model.EventDelete)
+					return handler(key, model.EventDelete)
 				})
 			},
 		})
@@ -476,7 +498,7 @@ func (c *Controller) HasSynced() bool {
 		!c.endpoints.HasSynced() ||
 		!c.pods.informer.HasSynced() ||
 		!c.nodeMetadataInformer.HasSynced() ||
-		!c.filteredNodeInformer.HasSynced() {
+		!c.nodeInformer.HasSynced() {
 		return false
 	}
 	return true
@@ -495,7 +517,7 @@ func (c *Controller) Run(stop <-chan struct{}) {
 	}()
 
 	// To avoid endpoints without labels or ports, wait for sync.
-	cache.WaitForCacheSync(stop, c.nodeMetadataInformer.HasSynced, c.filteredNodeInformer.HasSynced,
+	cache.WaitForCacheSync(stop, c.nodeMetadataInformer.HasSynced, c.nodeInformer.HasSynced,
 		c.pods.informer.HasSynced,
 		c.serviceInformer.HasSynced)
 
@@ -1096,7 +1118,7 @@ func (c *Controller) GetIstioServiceAccounts(svc *model.Service, ports []int) []
 }
 
 // AppendServiceHandler implements a service catalog operation
-func (c *Controller) AppendServiceHandler(f func(*model.Service, model.Event)) error {
+func (c *Controller) AppendServiceHandler(f func(hostname host.Name, namespace string)) error {
 	c.serviceHandlers = append(c.serviceHandlers, f)
 	return nil
 }

@@ -209,9 +209,10 @@ func (c *Controller) HasSynced() bool {
 }
 
 // AppendServiceHandler implements a service catalog operation
-func (c *Controller) AppendServiceHandler(f func(*model.Service, model.Event)) error {
+func (c *Controller) AppendServiceHandler(f func(hostname host.Name, namespace string)) error {
 	c.monitor.AppendServiceHandler(func(instances []*api.CatalogService, event model.Event) error {
-		f(convertService(instances), event)
+		i := convertService(instances)
+		f(i.Hostname, i.Attributes.Namespace)
 		return nil
 	})
 	return nil

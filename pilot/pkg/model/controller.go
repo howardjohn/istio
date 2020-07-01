@@ -14,6 +14,8 @@
 
 package model
 
+import "istio.io/istio/pkg/config/host"
+
 // Controller defines an event controller loop.  Proxy agent registers itself
 // with the controller loop and receives notifications on changes to the
 // service topology or changes to the configuration artifacts.
@@ -30,7 +32,7 @@ package model
 // that all handlers must be appended before starting the controller.
 type Controller interface {
 	// AppendServiceHandler notifies about changes to the service catalog.
-	AppendServiceHandler(f func(*Service, Event)) error
+	AppendServiceHandler(f func(hostname host.Name, namespace string)) error
 
 	// AppendInstanceHandler notifies about changes to the service instances
 	// for a service.

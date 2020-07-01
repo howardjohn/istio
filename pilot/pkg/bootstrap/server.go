@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"istio.io/istio/pilot/pkg/status"
+	"istio.io/istio/pkg/config/host"
 
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -707,13 +708,13 @@ func (s *Server) waitForCacheSync(stop <-chan struct{}) bool {
 func (s *Server) initRegistryEventHandlers() error {
 	log.Info("initializing registry event handlers")
 	// Flush cached discovery responses whenever services configuration change.
-	serviceHandler := func(svc *model.Service, _ model.Event) {
+	serviceHandler := func(hostname host.Name, namespace string) {
 		pushReq := &model.PushRequest{
 			Full: true,
 			ConfigsUpdated: map[model.ConfigKey]struct{}{{
 				Kind:      gvk.ServiceEntry,
-				Name:      string(svc.Hostname),
-				Namespace: svc.Attributes.Namespace,
+				Name:      string(hostname),
+				Namespace: namespace,
 			}: {}},
 			Reason: []model.TriggerReason{model.ServiceUpdate},
 		}

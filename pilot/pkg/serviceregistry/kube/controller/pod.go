@@ -58,7 +58,7 @@ func newPodCache(c *Controller, informer coreinformers.PodInformer) *PodCache {
 }
 
 // onEvent updates the IP-based index (pc.podsByIP).
-func (pc *PodCache) onEvent(curr interface{}, ev model.Event) error {
+func (pc *PodCache) onEvent(key string, ev model.Event) error {
 	pc.Lock()
 	defer pc.Unlock()
 
