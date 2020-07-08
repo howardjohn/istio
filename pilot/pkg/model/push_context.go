@@ -63,6 +63,7 @@ type PushContext struct {
 	publicServices []*Service
 	// ServiceByHostnameAndNamespace has all services, indexed by hostname then namespace.
 	ServiceByHostnameAndNamespace map[host.Name]map[string]*Service `json:"-"`
+	ServiceByHostname             map[host.Name]*Service            `json:"-"`
 	// ServiceAccounts contains a map of hostname and port to service accounts.
 	ServiceAccounts map[host.Name]map[int][]string `json:"-"`
 
@@ -440,6 +441,7 @@ func NewPushContext() *PushContext {
 		gatewaysByNamespace:           map[string][]Config{},
 		allGateways:                   []Config{},
 		ServiceByHostnameAndNamespace: map[host.Name]map[string]*Service{},
+		ServiceByHostname:             map[host.Name]*Service{},
 		ProxyStatus:                   map[string]map[string]ProxyPushStatus{},
 		ServiceAccounts:               map[host.Name]map[int][]string{},
 		AuthnPolicies: processedAuthnPolicies{
@@ -820,6 +822,7 @@ func (ps *PushContext) updateContext(
 		ps.privateServicesByNamespace = oldPushContext.privateServicesByNamespace
 		ps.publicServices = oldPushContext.publicServices
 		ps.ServiceByHostnameAndNamespace = oldPushContext.ServiceByHostnameAndNamespace
+		ps.ServiceByHostname = oldPushContext.ServiceByHostname
 		ps.ServiceAccounts = oldPushContext.ServiceAccounts
 	}
 
@@ -917,6 +920,7 @@ func (ps *PushContext) initServiceRegistry(env *Environment) error {
 			ps.ServiceByHostnameAndNamespace[s.Hostname] = map[string]*Service{}
 		}
 		ps.ServiceByHostnameAndNamespace[s.Hostname][s.Attributes.Namespace] = s
+		ps.ServiceByHostname[s.Hostname] = s
 	}
 
 	ps.initServiceAccounts(env, allServices)
