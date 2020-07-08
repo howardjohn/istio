@@ -722,7 +722,7 @@ func getRouteOperation(in *route.Route, vsName string, port int) string {
 	if ps != nil {
 		switch ps.(type) {
 		case *route.RouteMatch_Prefix:
-			path = fmt.Sprintf("%s*", m.GetPrefix())
+			path = m.GetPrefix() + "*"
 		case *route.RouteMatch_Path:
 			path = m.GetPath()
 		case *route.RouteMatch_Regex:

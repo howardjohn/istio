@@ -461,13 +461,14 @@ func CloneLbEndpoint(endpoint *endpoint.LbEndpoint) *endpoint.LbEndpoint {
 // name.namespace of the config, the type, etc. Used by Mixer client
 // to generate attributes for policy and telemetry.
 func BuildConfigInfoMetadata(config model.ConfigMeta) *core.Metadata {
+	s := "/apis/" + config.Group + "/" + config.Version + "/namespaces/" + config.Namespace + "/" + config.Type + "/" + config.Name
 	return &core.Metadata{
 		FilterMetadata: map[string]*pstruct.Struct{
 			IstioMetadataKey: {
 				Fields: map[string]*pstruct.Value{
 					"config": {
 						Kind: &pstruct.Value_StringValue{
-							StringValue: fmt.Sprintf("/apis/%s/%s/namespaces/%s/%s/%s", config.Group, config.Version, config.Namespace, config.Type, config.Name),
+							StringValue: s,
 						},
 					},
 				},
