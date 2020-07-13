@@ -27,7 +27,7 @@ const rfc2822 = "Mon, 2 Jan 2006 15:04:05 -0700"
 // * mkdir -p /tmp/bench
 // * gsutil -m cp -r 'gs://istio-prow/benchmarks/*.txt' /tmp/bench
 // * git log --format="format:%H,%cD" --date-order > /tmp/bench/commits
-// * go run main.go --commit-dates=/tmp/commits /tmp/bench/*.txt
+// * go run main.go --commit-dates=/tmp/bench/commits /tmp/bench/*.txt
 func main() {
 	flag.Parse()
 
