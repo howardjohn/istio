@@ -1,4 +1,15 @@
 {
+  "hds_config": {
+    "api_type": "GRPC",
+    "grpc_services": [
+      {
+        "envoy_grpc": {
+          "cluster_name": "xds-grpc"
+        }
+      }
+    ],
+    "transport_api_version": "V3"
+  },
   "node": {
     "id": "{{ .nodeID }}",
     "cluster": "{{ .cluster }}",

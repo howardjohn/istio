@@ -21,6 +21,7 @@ import (
 
 	discoveryv2 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v2"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	health "github.com/envoyproxy/go-control-plane/envoy/service/health/v3"
 	"github.com/google/uuid"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -187,6 +188,7 @@ func (s *DiscoveryServer) Register(rpcs *grpc.Server) {
 	// Register v2 and v3 servers
 	discovery.RegisterAggregatedDiscoveryServiceServer(rpcs, s)
 	discoveryv2.RegisterAggregatedDiscoveryServiceServer(rpcs, s.createV2Adapter())
+	health.RegisterHealthDiscoveryServiceServer(rpcs, s)
 }
 
 func (s *DiscoveryServer) Start(stopCh <-chan struct{}) {

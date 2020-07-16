@@ -15,6 +15,7 @@
 package xds
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -23,13 +24,17 @@ import (
 
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	health "github.com/envoyproxy/go-control-plane/envoy/service/health/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	istiolog "istio.io/pkg/log"
 	"istio.io/pkg/monitoring"
@@ -321,6 +326,60 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream discovery.AggregatedD
 			}
 		}
 	}
+}
+
+// StreamAggregatedResources implements the ADS interface.
+func (s *DiscoveryServer) StreamHealthCheck(stream health.HealthDiscoveryService_StreamHealthCheckServer) error {
+	var node string
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		switch r := req.RequestType.(type) {
+		case *health.HealthCheckRequestOrEndpointHealthResponse_HealthCheckRequest:
+			node = r.HealthCheckRequest.Node.Id
+		}
+		adsLog.Errorf("howardjohn %v: %v", node, req)
+		stream.Send(&health.HealthCheckSpecifier{
+			ClusterHealthChecks: []*health.ClusterHealthCheck{
+				{
+					ClusterName: "foo",
+					HealthChecks: []*core.HealthCheck{
+						{
+							Timeout:            durationpb.New(time.Second),
+							Interval:           durationpb.New(time.Second),
+							UnhealthyThreshold: wrapperspb.UInt32(2),
+							HealthyThreshold:   wrapperspb.UInt32(2),
+							HealthChecker: &core.HealthCheck_HttpHealthCheck_{HttpHealthCheck: &core.HealthCheck_HttpHealthCheck{
+								Host: "localhost",
+								Path: "/debug",
+							}},
+						},
+					},
+					LocalityEndpoints: []*health.LocalityEndpoints{
+						{
+							Endpoints: []*endpoint.Endpoint{
+								{
+									Address: util.BuildAddress("127.0.0.1", 8080),
+									HealthCheckConfig: &endpoint.Endpoint_HealthCheckConfig{
+										PortValue: 8080,
+										Hostname:  "localhost",
+									},
+									Hostname: "localhost",
+								},
+							},
+						},
+					},
+				},
+			},
+			Interval: durationpb.New(time.Second * 2),
+		})
+	}
+}
+
+func (s *DiscoveryServer) FetchHealthCheck(ctx context.Context, response *health.HealthCheckRequestOrEndpointHealthResponse) (*health.HealthCheckSpecifier, error) {
+	panic("implement me")
 }
 
 // handleTypeURL records the type url received in an XDS response. If this conflicts with a previously sent type,
