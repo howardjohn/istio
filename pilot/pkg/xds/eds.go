@@ -15,15 +15,18 @@
 package xds
 
 import (
+	"hash/crc32"
 	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/wrappers"
-
 	networkingapi "istio.io/api/networking/v1alpha3"
 
 	"istio.io/istio/pilot/pkg/model"
@@ -157,6 +160,7 @@ func (s *DiscoveryServer) SvcUpdate(cluster, hostname string, namespace string, 
 func (s *DiscoveryServer) edsIncremental(version string, req *model.PushRequest) {
 	adsLog.Infof("XDS:EDSInc Pushing:%s Services:%v ConnectedEndpoints:%d",
 		version, model.ConfigNamesOfKind(req.ConfigsUpdated, gvk.ServiceEntry), s.adsClientCount())
+	clearCache(model.ConfigNamesOfKind(req.ConfigsUpdated, gvk.ServiceEntry))
 	s.startPush(req)
 }
 
@@ -355,16 +359,56 @@ func (s *DiscoveryServer) loadAssignmentsForClusterIsolated(proxy *model.Proxy, 
 	}
 }
 
-func (s *DiscoveryServer) generateEndpoints(clusterName string, proxy *model.Proxy, push *model.PushContext,
-	edsUpdatedServices map[string]struct{}) *endpoint.ClusterLoadAssignment {
-	if edsUpdatedServices != nil {
-		_, _, hostname, _ := model.ParseSubsetKey(clusterName)
-		if _, ok := edsUpdatedServices[string(hostname)]; !ok {
-			// Cluster was not updated, skip recomputing. This happens when we get an incremental update for a
-			// specific Hostname. On connect or for full push edsUpdatedServices will be empty.
-			return nil
-		}
+type EndpointParams struct {
+	clusterName     string
+	network         string
+	clusterId       string
+	locality        *core.Locality
+	destinationRule *model.Config
+	service         *model.Service
+}
+
+func (key EndpointParams) HashCode() uint32 {
+	var result uint32
+	result = 31*result + crc32.ChecksumIEEE([]byte(key.clusterName))
+	result = 31*result + crc32.ChecksumIEEE([]byte(key.network))
+	result = 31*result + crc32.ChecksumIEEE([]byte(key.clusterId))
+	result = 31*result + crc32.ChecksumIEEE([]byte(util.LocalityToString(key.locality)))
+	if key.destinationRule != nil {
+		result = 31*result + crc32.ChecksumIEEE([]byte(key.destinationRule.Name+"/"+key.destinationRule.Namespace))
 	}
+	if key.service != nil {
+		result = 31*result + crc32.ChecksumIEEE([]byte(string(key.service.Hostname)+"/"+key.service.Attributes.Namespace))
+	}
+	return result
+}
+
+func (key EndpointParams) DebugCode() string {
+	params := []string{key.clusterName, key.network, key.clusterId, util.LocalityToString(key.locality)}
+	if key.destinationRule != nil {
+		params = append(params, key.destinationRule.Name+"/"+key.destinationRule.Namespace)
+	}
+	if key.service != nil {
+		params = append(params, string(key.service.Hostname)+"/"+key.service.Attributes.Namespace)
+	}
+	return strings.Join(params, "~")
+}
+
+func createEndpointParams(clusterName string, proxy *model.Proxy, push *model.PushContext) EndpointParams {
+	key := EndpointParams{
+		clusterName: clusterName,
+		network:     proxy.Metadata.Network,
+		clusterId:   proxy.Metadata.ClusterID,
+		locality:    proxy.Locality,
+	}
+
+	_, _, hostname, _ := model.ParseSubsetKey(clusterName)
+	key.destinationRule = push.DestinationRule(proxy, &model.Service{Hostname: hostname})
+	key.service = push.ServiceForHostname(proxy, hostname)
+	return key
+}
+
+func (s *DiscoveryServer) generateEndpoints(clusterName string, proxy *model.Proxy, push *model.PushContext) *endpoint.ClusterLoadAssignment {
 
 	l := s.loadAssignmentsForClusterIsolated(proxy, push, clusterName)
 	if l == nil {
@@ -412,7 +456,9 @@ func (eds *EdsGenerator) Generate(proxy *model.Proxy, push *model.PushContext, w
 	// All clusters that this endpoint is watching. For 1.0 - it's typically all clusters in the mesh.
 	// For 1.1+Sidecar - it's the small set of explicitly imported clusters, using the isolated DestinationRules
 	for _, clusterName := range w.ResourceNames {
-		l := eds.Server.generateEndpoints(clusterName, proxy, push, edsUpdatedServices)
+		_ = edsUpdatedServices
+		// TODO
+		l := eds.Server.generateEndpoints(clusterName, proxy, push)
 		if l == nil {
 			continue
 		}
@@ -424,34 +470,84 @@ func (eds *EdsGenerator) Generate(proxy *model.Proxy, push *model.PushContext, w
 	return resp
 }
 
+var (
+	cache      = map[host.Name]map[uint32]*any.Any{}
+	cacheMutex = sync.RWMutex{}
+)
+
+func insertCache(key EndpointParams, value *any.Any) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	if _, f := cache[key.service.Hostname]; !f {
+		cache[key.service.Hostname] = map[uint32]*any.Any{}
+	}
+	cache[key.service.Hostname][key.HashCode()] = value
+}
+
+func getCache(key EndpointParams) (*any.Any, bool) {
+	cacheMutex.RLock()
+	defer cacheMutex.RUnlock()
+	k, f := cache[key.service.Hostname][key.HashCode()]
+	return k, f
+}
+
+func clearCache(edsUpdatedServices map[string]struct{}) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	for h := range edsUpdatedServices {
+		delete(cache, host.Name(h))
+	}
+}
+
 // pushEds is pushing EDS updates for a single connection. Called the first time
 // a client connects, for incremental updates and for full periodic updates.
 func (s *DiscoveryServer) pushEds(push *model.PushContext, con *Connection, version string, edsUpdatedServices map[string]struct{}) error {
 	pushStart := time.Now()
-	loadAssignments := make([]*endpoint.ClusterLoadAssignment, 0)
+	resources := make([]*any.Any, 0)
 	endpoints := 0
 	empty := 0
 
+	cached := 0
+	regenerated := 0
 	// All clusters that this endpoint is watching. For 1.0 - it's typically all clusters in the mesh.
 	// For 1.1+Sidecar - it's the small set of explicitly imported clusters, using the isolated DestinationRules
 	for _, clusterName := range con.Clusters() {
-
-		l := s.generateEndpoints(clusterName, con.node, push, edsUpdatedServices)
-		if l == nil {
-			continue
+		if edsUpdatedServices != nil {
+			_, _, hostname, _ := model.ParseSubsetKey(clusterName)
+			if _, ok := edsUpdatedServices[string(hostname)]; !ok {
+				// Cluster was not updated, skip recomputing. This happens when we get an incremental update for a
+				// specific Hostname. On connect or for full push edsUpdatedServices will be empty.
+				continue
+			}
 		}
+		params := createEndpointParams(clusterName, con.node, push)
+		if marshalledEndpoint, f := getCache(params); f {
+			resources = append(resources, marshalledEndpoint)
+			cached++
+			//adsLog.Errorf("howardjohn: For %v %v, using cache.", con.node.ID, clusterName)
+		} else {
+			regenerated++
+			//adsLog.Errorf("howardjohn: For %v %v, regenerate.\n%v -> %v", con.node.ID, clusterName, params.DebugCode(), params.HashCode())
+			l := s.generateEndpoints(clusterName, con.node, push)
+			if l == nil {
+				continue
+			}
 
-		for _, e := range l.Endpoints {
-			endpoints += len(e.LbEndpoints)
-		}
+			for _, e := range l.Endpoints {
+				endpoints += len(e.LbEndpoints)
+			}
 
-		if len(l.Endpoints) == 0 {
-			empty++
+			if len(l.Endpoints) == 0 {
+				empty++
+			}
+			resource := util.MessageToAny(l)
+			resource.TypeUrl = con.node.RequestedTypes.EDS
+			resources = append(resources, resource)
+			insertCache(params, resource)
 		}
-		loadAssignments = append(loadAssignments, l)
 	}
 
-	response := endpointDiscoveryResponse(loadAssignments, version, push.Version, con.node.RequestedTypes.EDS)
+	response := endpointDiscoveryResponse(resources, version, push.Version, con.node.RequestedTypes.EDS)
 	err := con.send(response)
 	edsPushTime.Record(time.Since(pushStart).Seconds())
 	if err != nil {
@@ -461,11 +557,11 @@ func (s *DiscoveryServer) pushEds(push *model.PushContext, con *Connection, vers
 	edsPushes.Increment()
 
 	if edsUpdatedServices == nil {
-		adsLog.Infof("EDS: PUSH for node:%s clusters:%d endpoints:%d empty:%v",
-			con.node.ID, len(con.Clusters()), endpoints, empty)
+		adsLog.Infof("EDS: PUSH for node:%s clusters:%d endpoints:%d empty:%v cached:%v/%v",
+			con.node.ID, len(con.Clusters()), endpoints, empty, cached, regenerated)
 	} else {
-		adsLog.Debugf("EDS: PUSH INC for node:%s clusters:%d endpoints:%d empty:%v",
-			con.node.ID, len(con.Clusters()), endpoints, empty)
+		adsLog.Infof("EDS: PUSH INC for node:%s clusters:%d endpoints:%d empty:%v cached:%v/%v",
+			con.node.ID, len(con.Clusters()), endpoints, empty, cached, regenerated)
 	}
 	return nil
 }
@@ -509,7 +605,7 @@ func getOutlierDetectionAndLoadBalancerSettings(push *model.PushContext, proxy *
 	return outlierDetectionEnabled, lbSettings
 }
 
-func endpointDiscoveryResponse(loadAssignments []*endpoint.ClusterLoadAssignment, version, noncePrefix, typeURL string) *discovery.DiscoveryResponse {
+func endpointDiscoveryResponse(loadAssignments []*any.Any, version, noncePrefix, typeURL string) *discovery.DiscoveryResponse {
 	out := &discovery.DiscoveryResponse{
 		TypeUrl: typeURL,
 		// Pilot does not really care for versioning. It always supplies what's currently
@@ -518,11 +614,7 @@ func endpointDiscoveryResponse(loadAssignments []*endpoint.ClusterLoadAssignment
 		// will begin seeing results it deems to be good.
 		VersionInfo: version,
 		Nonce:       nonce(noncePrefix),
-	}
-	for _, loadAssignment := range loadAssignments {
-		resource := util.MessageToAny(loadAssignment)
-		resource.TypeUrl = typeURL
-		out.Resources = append(out.Resources, resource)
+		Resources:   loadAssignments,
 	}
 
 	return out
