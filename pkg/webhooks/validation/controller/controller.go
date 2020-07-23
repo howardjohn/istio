@@ -27,7 +27,6 @@ import (
 	"strings"
 	"time"
 
-	multierror "github.com/hashicorp/go-multierror"
 	kubeApiAdmission "k8s.io/api/admissionregistration/v1"
 	kubeApiCore "k8s.io/api/core/v1"
 	kubeErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -49,7 +48,6 @@ import (
 	"istio.io/pkg/filewatcher"
 	"istio.io/pkg/log"
 
-	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/kube"
 )
@@ -76,24 +74,6 @@ type Options struct {
 
 	// RemoteWebhookConfig defines whether the webhook config is coming from remote cluster
 	RemoteWebhookConfig bool
-}
-
-// Validate the options that exposed to end users
-func (o Options) Validate() error {
-	var errs *multierror.Error
-	if o.WebhookConfigName == "" || !labels.IsDNS1123Label(o.WebhookConfigName) {
-		errs = multierror.Append(errs, fmt.Errorf("invalid webhook name: %q", o.WebhookConfigName)) // nolint: lll
-	}
-	if o.WatchedNamespace == "" || !labels.IsDNS1123Label(o.WatchedNamespace) {
-		errs = multierror.Append(errs, fmt.Errorf("invalid namespace: %q", o.WatchedNamespace)) // nolint: lll
-	}
-	if o.ServiceName == "" || !labels.IsDNS1123Label(o.ServiceName) {
-		errs = multierror.Append(errs, fmt.Errorf("invalid service name: %q", o.ServiceName))
-	}
-	if o.CAPath == "" {
-		errs = multierror.Append(errs, errors.New("CA cert file not specified"))
-	}
-	return errs.ErrorOrNil()
 }
 
 // String produces a stringified version of the arguments for debugging.

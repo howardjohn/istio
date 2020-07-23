@@ -95,7 +95,6 @@ const (
 
 // Constants used in environment variables
 const (
-	DisableRedirectionOnLocalLoopback = "DISABLE_REDIRECTION_ON_LOCAL_LOOPBACK"
 	EnvoyUser                         = "ENVOY_USER"
 )
 

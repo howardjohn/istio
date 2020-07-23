@@ -25,12 +25,6 @@ func Run(t *testing.T, fn func(ctx TestContext)) {
 	NewTest(t).Run(fn)
 }
 
-// NewContext creates a new test context and returns. It is up to the caller to close to context by calling
-// .Done() at the end of the test run.
-func NewContext(goTest *testing.T, labels ...label.Instance) TestContext {
-	return newRootContext(nil, goTest, labels...)
-}
-
 // newRootContext creates a new TestContext that has no parent. Delegates to the global runtime.
 func newRootContext(test *testImpl, goTest *testing.T, labels ...label.Instance) *testContext {
 	rtMu.Lock()

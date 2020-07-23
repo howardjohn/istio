@@ -15,14 +15,8 @@
 package model
 
 import (
-	"sync"
-
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	envoy_config_grpc_credential "github.com/envoyproxy/go-control-plane/envoy/config/grpc_credential/v3"
 	tls "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/any"
-
 	networking "istio.io/api/networking/v1alpha3"
 
 	"istio.io/istio/pilot/pkg/features"
@@ -329,60 +323,4 @@ func ApplyCustomSDSToServerCommonTLSContext(tlsContext *tls.CommonTlsContext, tl
 			},
 		}
 	}
-}
-
-// ConstructgRPCCallCredentials is used to construct SDS config which is only available from 1.1
-func ConstructgRPCCallCredentials(tokenFileName, headerKey string) []*core.GrpcService_GoogleGrpc_CallCredentials {
-	// If k8s sa jwt token file exists, envoy only handles plugin credentials.
-	config := &envoy_config_grpc_credential.FileBasedMetadataConfig{
-		SecretData: &core.DataSource{
-			Specifier: &core.DataSource_Filename{
-				Filename: tokenFileName,
-			},
-		},
-		HeaderKey: headerKey,
-	}
-
-	any := findOrMarshalFileBasedMetadataConfig(tokenFileName, headerKey, config)
-
-	return []*core.GrpcService_GoogleGrpc_CallCredentials{
-		{
-			CredentialSpecifier: &core.GrpcService_GoogleGrpc_CallCredentials_FromPlugin{
-				FromPlugin: &core.GrpcService_GoogleGrpc_CallCredentials_MetadataCredentialsFromPlugin{
-					Name: FileBasedMetadataPlugName,
-					ConfigType: &core.GrpcService_GoogleGrpc_CallCredentials_MetadataCredentialsFromPlugin_TypedConfig{
-						TypedConfig: any},
-				},
-			},
-		},
-	}
-}
-
-type fbMetadataAnyKey struct {
-	tokenFileName string
-	headerKey     string
-}
-
-var fileBasedMetadataConfigAnyMap sync.Map
-
-// findOrMarshalFileBasedMetadataConfig searches google.protobuf.Any in fileBasedMetadataConfigAnyMap
-// by tokenFileName and headerKey, and returns google.protobuf.Any proto if found. If not found,
-// it takes the fbMetadata and marshals it into google.protobuf.Any, and stores this new
-// google.protobuf.Any into fileBasedMetadataConfigAnyMap.
-// FileBasedMetadataConfig only supports non-deterministic marshaling. As each SDS config contains
-// marshaled FileBasedMetadataConfig, the SDS config would differ if marshaling FileBasedMetadataConfig
-// returns different result. Once SDS config differs, Envoy will create multiple SDS clients to fetch
-// same SDS resource. To solve this problem, we use findOrMarshalFileBasedMetadataConfig so that
-// FileBasedMetadataConfig is marshaled once, and is reused in all SDS configs.
-func findOrMarshalFileBasedMetadataConfig(tokenFileName, headerKey string, fbMetadata *envoy_config_grpc_credential.FileBasedMetadataConfig) *any.Any {
-	key := fbMetadataAnyKey{
-		tokenFileName: tokenFileName,
-		headerKey:     headerKey,
-	}
-	if v, found := fileBasedMetadataConfigAnyMap.Load(key); found {
-		return v.(*any.Any)
-	}
-	any, _ := ptypes.MarshalAny(fbMetadata)
-	fileBasedMetadataConfigAnyMap.Store(key, any)
-	return any
 }
