@@ -185,13 +185,17 @@ func (rc *Context) Run(testCases []TestCase) {
 
 						if c.Include(src, opts) {
 							expectSuccess := c.ExpectSuccess(src, opts)
-
-							subTestName := fmt.Sprintf("%s->%s://%s:%s%s",
+							testType := "positive"
+							if !expectSuccess {
+								testType = "negative"
+							}
+							subTestName := fmt.Sprintf("%s->%s://%s:%s%s_%s",
 								src.Config().Service,
 								opts.Scheme,
 								dest.Config().Service,
 								opts.PortName,
-								opts.Path)
+								opts.Path,
+								testType)
 
 							ctx.NewSubTest(subTestName).
 								RunParallel(func(ctx framework.TestContext) {
