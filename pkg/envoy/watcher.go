@@ -25,6 +25,7 @@ import (
 type Watcher interface {
 	// Run the watcher loop (blocking call)
 	Run(context.Context)
+	SendConfig(i byte)
 }
 
 type watcher struct {
@@ -40,13 +41,13 @@ func NewWatcher(updates func(interface{})) Watcher {
 
 func (w *watcher) Run(ctx context.Context) {
 	// kick start the proxy with partial state (in case there are no notifications coming)
-	w.SendConfig()
+	w.SendConfig('1')
 
 	<-ctx.Done()
 	log.Info("Watcher has successfully terminated")
 }
 
-func (w *watcher) SendConfig() {
+func (w *watcher) SendConfig(i byte) {
 	h := sha256.New()
-	w.updates(h.Sum(nil))
+	w.updates(h.Sum([]byte{i}))
 }

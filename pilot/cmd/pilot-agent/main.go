@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/gogo/protobuf/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -387,10 +388,26 @@ var (
 
 			agent := envoy.NewAgent(envoyProxy, drainDuration)
 
+
 			// Watcher is also kicking envoy start.
 			watcher := envoy.NewWatcher(agent.Restart)
 			go watcher.Run(ctx)
-
+			go func() {
+				f, err := fsnotify.NewWatcher()
+				if err != nil {
+					panic(err.Error())
+				}
+				if err := f.Add(proxyConfig.BinaryPath); err != nil {
+					panic(err.Error())
+				}
+				var cur byte = '2'
+				for {
+					e := <-f.Events
+					log.Errorf("howardjohn: got update: %v", e)
+					watcher.SendConfig(cur)
+					cur++
+				}
+			}()
 			// On SIGINT or SIGTERM, cancel the context, triggering a graceful shutdown
 			go cmd.WaitSignalFunc(cancel)
 
