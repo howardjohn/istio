@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package xds
+package model
 
 import (
 	"sync"
 
 	"github.com/golang/protobuf/ptypes/any"
 
-	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/util/sets"
 )
 
@@ -30,40 +29,40 @@ type CacheEntry interface {
 	Key() string
 	// DependentConfigs is config items that this cache key is dependent on.
 	// Whenever these configs change, we should invalidate this cache entry.
-	DependentConfigs() []model.ConfigKey
+	DependentConfigs() []ConfigKey
 	// Cacheable indicates whether this entry is valid for cache. For example
 	// for EDS to be cacheable, the Endpoint should have corresponding service.
 	Cacheable() bool
 }
 
-// Cache interface defines a store for caching XDS responses.
+// XdsCache interface defines a store for caching XDS responses.
 // All operations are thread safe.
-type Cache interface {
+type XdsCache interface {
 	// Add adds the given CacheEntry with the value to the cache.
 	Add(entry CacheEntry, value *any.Any)
 	// Get retrieves the cached value if it exists. The boolean indicates
 	// whether the entry exists in the cache.
 	Get(entry CacheEntry) (*any.Any, bool)
 	// Clear removes the cache entries that are dependent on the configs passed.
-	Clear(map[model.ConfigKey]struct{})
+	Clear(map[ConfigKey]struct{})
 	// ClearAll clears the entire cache.
 	ClearAll()
 	// Keys returns all currently configured keys. This is for testing/debug only
 	Keys() []string
 }
 
-// inMemoryCache is a simple implementation of Cache that uses in memory map.
+// inMemoryCache is a simple implementation of XdsCache that uses in memory map.
 type inMemoryCache struct {
 	store       map[string]*any.Any
-	configIndex map[model.ConfigKey]sets.Set
+	configIndex map[ConfigKey]sets.Set
 	mu          sync.RWMutex
 }
 
 // New returns an instance of a cache.
-func New() Cache {
+func NewCache() XdsCache {
 	return &inMemoryCache{
 		store:       map[string]*any.Any{},
-		configIndex: map[model.ConfigKey]sets.Set{},
+		configIndex: map[ConfigKey]sets.Set{},
 	}
 }
 
@@ -93,7 +92,7 @@ func (c *inMemoryCache) Get(entry CacheEntry) (*any.Any, bool) {
 	return k, f
 }
 
-func (c *inMemoryCache) Clear(configs map[model.ConfigKey]struct{}) {
+func (c *inMemoryCache) Clear(configs map[ConfigKey]struct{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for ckey := range configs {
@@ -109,7 +108,7 @@ func (c *inMemoryCache) ClearAll() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.store = map[string]*any.Any{}
-	c.configIndex = map[model.ConfigKey]sets.Set{}
+	c.configIndex = map[ConfigKey]sets.Set{}
 }
 
 func (c *inMemoryCache) Keys() []string {
@@ -125,7 +124,7 @@ func (c *inMemoryCache) Keys() []string {
 // DisabledCache is a cache that is always empty
 type DisabledCache struct{}
 
-var _ Cache = &DisabledCache{}
+var _ XdsCache = &DisabledCache{}
 
 func (d DisabledCache) Add(key CacheEntry, value *any.Any) {}
 
@@ -133,7 +132,7 @@ func (d DisabledCache) Get(CacheEntry) (*any.Any, bool) {
 	return nil, false
 }
 
-func (d DisabledCache) Clear(configsUpdated map[model.ConfigKey]struct{}) {}
+func (d DisabledCache) Clear(configsUpdated map[ConfigKey]struct{}) {}
 
 func (d DisabledCache) ClearAll() {}
 

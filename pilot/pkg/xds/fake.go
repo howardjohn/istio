@@ -28,6 +28,7 @@ import (
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -368,7 +369,14 @@ func (f *FakeDiscoveryServer) Listeners(p *model.Proxy) []*listener.Listener {
 }
 
 func (f *FakeDiscoveryServer) Clusters(p *model.Proxy) []*cluster.Cluster {
-	return f.Discovery.ConfigGenerator.BuildClusters(p, f.PushContext())
+	anys := f.Discovery.ConfigGenerator.BuildClusters(p, f.PushContext(), nil)
+	clusters := make([]*cluster.Cluster, 0, len(anys))
+	for _, a := range anys {
+		c := &cluster.Cluster{}
+		ptypes.UnmarshalAny(a, c)
+		clusters = append(clusters, c)
+	}
+	return clusters
 }
 
 func (f *FakeDiscoveryServer) Endpoints(p *model.Proxy) []*endpoint.ClusterLoadAssignment {

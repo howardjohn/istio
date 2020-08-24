@@ -21,6 +21,8 @@ import (
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/any"
 
 	xdsfilters "istio.io/istio/pilot/pkg/xds/filters"
 )
@@ -64,8 +66,14 @@ func validateInspector(t testing.TB, l *listener.Listener) {
 	}
 }
 
-func ValidateClusters(t testing.TB, ls []*cluster.Cluster) {
-	for _, l := range ls {
+func ValidateClusters(t testing.TB, ls []*any.Any) {
+	clusters := make([]*cluster.Cluster, 0, len(ls))
+	for _, a := range ls {
+		c := &cluster.Cluster{}
+		ptypes.UnmarshalAny(a, c)
+		clusters = append(clusters, c)
+	}
+	for _, l := range clusters {
 		ValidateCluster(t, l)
 	}
 }

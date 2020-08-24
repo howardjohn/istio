@@ -415,7 +415,7 @@ func buildTestClusters(c clusterTest) []*cluster.Cluster {
 	proxy.ServiceInstances, _ = serviceDiscovery.GetProxyServiceInstances(proxy)
 	proxy.DiscoverIPVersions()
 
-	clusters := configgen.BuildClusters(proxy, env.PushContext)
+	clusters := configgen.BuildClusters(proxy, env.PushContext, nil)
 	xdstest.ValidateClusters(c.t, clusters)
 	if len(env.PushContext.ProxyStatus[model.DuplicatedClusters.Name()]) > 0 {
 		c.t.Fatalf("duplicate clusters detected %#v", env.PushContext.ProxyStatus[model.DuplicatedClusters.Name()])
@@ -1506,7 +1506,7 @@ func TestBuildClustersDefaultCircuitBreakerThresholds(t *testing.T) {
 	env := newTestEnvironment(serviceDiscovery, testMesh, configStore)
 	proxy := &model.Proxy{Metadata: &model.NodeMetadata{}}
 
-	clusters := configgen.BuildClusters(proxy, env.PushContext)
+	clusters := configgen.BuildClusters(proxy, env.PushContext, nil)
 	g.Expect(len(clusters)).ShouldNot(Equal(0))
 	xdstest.ValidateClusters(t, clusters)
 	for _, c := range clusters {
@@ -1731,7 +1731,7 @@ func TestRedisProtocolWithPassThroughResolutionAtGateway(t *testing.T) {
 
 	env := newTestEnvironment(serviceDiscovery, testMesh, configStore)
 
-	clusters := configgen.BuildClusters(proxy, env.PushContext)
+	clusters := configgen.BuildClusters(proxy, env.PushContext, nil)
 	xdstest.ValidateClusters(t, clusters)
 	g.Expect(len(clusters)).ShouldNot(Equal(0))
 
@@ -1770,7 +1770,7 @@ func TestRedisProtocolClusterAtGateway(t *testing.T) {
 
 	env := newTestEnvironment(serviceDiscovery, testMesh, configStore)
 
-	clusters := configgen.BuildClusters(proxy, env.PushContext)
+	clusters := configgen.BuildClusters(proxy, env.PushContext, nil)
 	xdstest.ValidateClusters(t, clusters)
 	g.Expect(len(clusters)).ShouldNot(Equal(0))
 
@@ -3520,7 +3520,7 @@ func TestBuildStaticClusterWithNoEndPoint(t *testing.T) {
 	}
 	env := newTestEnvironment(serviceDiscovery, testMesh, configStore)
 	proxy.SetSidecarScope(env.PushContext)
-	clusters := cfg.BuildClusters(proxy, env.PushContext)
+	clusters := cfg.BuildClusters(proxy, env.PushContext, nil)
 	xdstest.ValidateClusters(t, clusters)
 
 	// Expect to ignore STRICT_DNS cluster without endpoints.
@@ -3710,7 +3710,7 @@ func TestEnvoyFilterPatching(t *testing.T) {
 			serviceDiscovery := memregistry.NewServiceDiscovery([]*model.Service{tt.svc})
 			env := newTestEnvironment(serviceDiscovery, testMesh, configStore)
 			proxy.SetSidecarScope(env.PushContext)
-			clusters := NewConfigGenerator([]plugin.Plugin{}).BuildClusters(proxy, env.PushContext)
+			clusters := NewConfigGenerator([]plugin.Plugin{}).BuildClusters(proxy, env.PushContext, nil)
 			clusterNames := xdstest.MapKeys(xdstest.ExtractClusters(clusters))
 			sort.Strings(tt.want)
 			if !cmp.Equal(clusterNames, tt.want) {

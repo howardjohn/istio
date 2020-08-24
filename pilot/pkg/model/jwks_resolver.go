@@ -43,11 +43,11 @@ const (
 	// OpenID Discovery web request timeout.
 	jwksHTTPTimeOutInSec = 5
 
-	// JwksURI Cache expiration time duration, individual cached JwksURI item will be removed
+	// JwksURI XdsCache expiration time duration, individual cached JwksURI item will be removed
 	// from cache after its duration expires.
 	jwksURICacheExpiration = time.Hour * 24
 
-	// JwksURI Cache eviction time duration, cache eviction is done on a periodic basis,
+	// JwksURI XdsCache eviction time duration, cache eviction is done on a periodic basis,
 	// jwksURICacheEviction specifies the frequency at which eviction activities take place.
 	jwksURICacheEviction = time.Minute * 30
 

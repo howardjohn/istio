@@ -139,7 +139,7 @@ func BenchmarkClusterGeneration(b *testing.B) {
 			b.ResetTimer()
 			var response *discovery.DiscoveryResponse
 			for n := 0; n < b.N; n++ {
-				c := s.Discovery.ConfigGenerator.BuildClusters(proxy, s.PushContext())
+				c := s.Discovery.ConfigGenerator.BuildClusters(proxy, s.PushContext(), nil)
 				if len(c) == 0 {
 					b.Fatal("Got no clusters!")
 				}
@@ -248,7 +248,7 @@ func setupTest(t testing.TB, config ConfigInput) (*FakeDiscoveryServer, *model.P
 var configCache = map[ConfigInput][]model.Config{}
 
 func getConfigsWithCache(t testing.TB, input ConfigInput) []model.Config {
-	// Config setup is slow for large tests. Cache this and return from cache.
+	// Config setup is slow for large tests. XdsCache this and return from cache.
 	// This improves even running a single test, as go will run the full test (including setup) at least twice.
 	if cached, f := configCache[input]; f {
 		return cached

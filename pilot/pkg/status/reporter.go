@@ -151,7 +151,7 @@ func (r *Reporter) buildReport() (DistributionReport, []Resource) {
 				scope.Errorf("Encountered error retrieving version %s of key %s from Store: %v", nonce, key, err)
 				continue
 			} else if nonce == r.store.Version() {
-				scope.Warnf("Cache appears to be missing latest version of %s", key)
+				scope.Warnf("XdsCache appears to be missing latest version of %s", key)
 			}
 			if out.InProgressResources[key] >= out.DataPlaneCount {
 				// if this resource is done reconciling, let's not worry about it anymore

@@ -17,16 +17,15 @@ package xds
 import (
 	"time"
 
-	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/golang/protobuf/ptypes/any"
 
 	"istio.io/istio/pilot/pkg/model"
-	"istio.io/istio/pilot/pkg/networking/util"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 )
 
 // clusters aggregate a DiscoveryResponse for pushing.
-func cdsDiscoveryResponse(response []*cluster.Cluster, noncePrefix string) *discovery.DiscoveryResponse {
+func cdsDiscoveryResponse(response []*any.Any, noncePrefix string) *discovery.DiscoveryResponse {
 	out := &discovery.DiscoveryResponse{
 		// All resources for CDS ought to be of the type Cluster
 		TypeUrl: v3.ClusterType,
@@ -37,10 +36,7 @@ func cdsDiscoveryResponse(response []*cluster.Cluster, noncePrefix string) *disc
 		// will begin seeing results it deems to be good.
 		VersionInfo: versionInfo(),
 		Nonce:       nonce(noncePrefix),
-	}
-
-	for _, c := range response {
-		out.Resources = append(out.Resources, util.MessageToAny(c))
+		Resources:   response,
 	}
 
 	return out
@@ -50,7 +46,7 @@ func (s *DiscoveryServer) pushCds(con *Connection, push *model.PushContext, vers
 	pushStart := time.Now()
 	defer func() { cdsPushTime.Record(time.Since(pushStart).Seconds()) }()
 
-	rawClusters := s.ConfigGenerator.BuildClusters(con.proxy, push)
+	rawClusters := s.ConfigGenerator.BuildClusters(con.proxy, push, s.cache)
 
 	response := cdsDiscoveryResponse(rawClusters, push.Version)
 	err := con.send(response)
