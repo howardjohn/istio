@@ -2098,12 +2098,23 @@ func buildListener(opts buildListenerOpts) *listener.Listener {
 		ListenerFilters: listenerFilters,
 		FilterChains:    filterChains,
 		DeprecatedV1:    deprecatedV1,
+		AccessLog: []*accesslog.AccessLog{{
+			Name:   wellknown.FileAccessLog,
+			//Filter: &accesslog.AccessLogFilter{FilterSpecifier: &accesslog.AccessLogFilter_ResponseFlagFilter{ResponseFlagFilter: &accesslog.ResponseFlagFilter{Flags: []string{"NR"}}}},
+			ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(&fileaccesslog.FileAccessLog{
+				Path: opts.push.Mesh.AccessLogFile,
+				AccessLogFormat: &fileaccesslog.FileAccessLog_Format{
+					Format: "[%START_TIME%] listener %RESPONSE_CODE% %RESPONSE_FLAGS% " +
+						"%DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS%\n",
+				},
+			})},
+		}},
 	}
 
 	if opts.proxy.Type != model.Router {
-		listener.ListenerFiltersTimeout = gogo.DurationToProtoDuration(opts.push.Mesh.ProtocolDetectionTimeout)
+		listener.ListenerFiltersTimeout = nil
 		if listener.ListenerFiltersTimeout != nil {
-			listener.ContinueOnListenerFiltersTimeout = true
+			//listener.ContinueOnListenerFiltersTimeout = true
 		}
 	}
 
