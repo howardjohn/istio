@@ -124,6 +124,7 @@ func (s *DiscoveryServer) receive(con *Connection, reqChannel chan *discovery.Di
 	firstReq := true
 	for {
 		req, err := con.stream.Recv()
+		adsLog.Debugf("RECV: %v %v", v3.GetShortType(req.TypeUrl), req.ResponseNonce)
 		if err != nil {
 			if isExpectedGRPCError(err) {
 				adsLog.Infof("ADS: %q %s terminated %v", con.PeerAddr, con.ConID, err)
@@ -155,6 +156,9 @@ func (s *DiscoveryServer) receive(con *Connection, reqChannel chan *discovery.Di
 			}()
 		}
 
+		if !s.shouldRespond(con, req) {
+			continue
+		}
 		select {
 		case reqChannel <- req:
 		case <-con.stream.Context().Done():
@@ -172,9 +176,9 @@ func (s *DiscoveryServer) processRequest(req *discovery.DiscoveryRequest, con *C
 		s.StatusReporter.RegisterEvent(con.ConID, req.TypeUrl, req.ResponseNonce)
 	}
 
-	if !s.shouldRespond(con, req) {
-		return nil
-	}
+	//if !s.shouldRespond(con, req) {
+	//	return nil
+	//}
 
 	push := s.globalPushContext()
 
@@ -307,6 +311,7 @@ func (s *DiscoveryServer) shouldRespond(con *Connection, request *discovery.Disc
 		con.proxy.Lock()
 		con.proxy.WatchedResources[request.TypeUrl] = &model.WatchedResource{TypeUrl: request.TypeUrl, ResourceNames: request.ResourceNames, LastRequest: request}
 		con.proxy.Unlock()
+		adsLog.Debugf("ADS:%s: INIT %s", stype, con.ConID)
 		return true
 	}
 
@@ -546,6 +551,8 @@ func (s *DiscoveryServer) pushConnection(con *Connection, pushEv *Event) error {
 	// Send pushes to all generators
 	// Each Generator is responsible for determining if the push event requires a push
 	for _, w := range getPushResources(con.proxy.WatchedResources) {
+		dur := con.SyncWait(w.TypeUrl)
+		adsLog.Infof("SYNC: %v took %v", v3.GetShortType(w.TypeUrl), dur)
 		err := s.pushXds(con, pushRequest.Push, s.Generators[w.TypeUrl], currentVersion, w, pushRequest)
 		if err != nil {
 			return err
@@ -770,6 +777,26 @@ func (conn *Connection) send(res *discovery.DiscoveryResponse) error {
 		}
 		return err
 	}
+}
+
+func (conn *Connection) SyncWait(typeUrl string) time.Duration {
+	if conn.proxy.WatchedResources == nil || conn.proxy.WatchedResources[typeUrl] == nil {
+		return 0
+	}
+	t0 := time.Now()
+	for time.Since(t0) < time.Second * 15 {
+		conn.proxy.RLock()
+		acked := conn.proxy.WatchedResources[typeUrl].NonceAcked
+		sent := conn.proxy.WatchedResources[typeUrl].NonceSent
+		conn.proxy.RUnlock()
+		if acked == sent {
+			return time.Since(t0)
+		}
+		adsLog.Debugf("SYNC: %v sent %v != acked %v", v3.GetShortType(typeUrl), sent, acked)
+		time.Sleep(time.Millisecond * 50)
+	}
+	adsLog.Errorf("nonce timeout for %v", typeUrl)
+	return time.Since(t0)
 }
 
 // nolint

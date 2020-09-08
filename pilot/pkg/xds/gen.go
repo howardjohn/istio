@@ -102,7 +102,7 @@ func (s *DiscoveryServer) pushXds(con *Connection, push *model.PushContext,
 
 	// Some types handle logs inside Generate, skip them here
 	if _, f := SkipLogTypes[w.TypeUrl]; !f {
-		adsLog.Infof("%s: PUSH for node:%s resources:%d", v3.GetShortType(w.TypeUrl), con.proxy.ID, len(cl))
+		adsLog.Infof("%s: PUSH for node:%s resources:%d nonce:%v", v3.GetShortType(w.TypeUrl), con.proxy.ID, len(cl), resp.Nonce)
 	}
 	return nil
 }
