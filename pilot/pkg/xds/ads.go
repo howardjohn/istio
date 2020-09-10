@@ -124,7 +124,6 @@ func (s *DiscoveryServer) receive(con *Connection, reqChannel chan *discovery.Di
 	firstReq := true
 	for {
 		req, err := con.stream.Recv()
-		adsLog.Debugf("RECV: %v %v", v3.GetShortType(req.TypeUrl), req.ResponseNonce)
 		if err != nil {
 			if isExpectedGRPCError(err) {
 				adsLog.Infof("ADS: %q %s terminated %v", con.PeerAddr, con.ConID, err)
@@ -135,6 +134,7 @@ func (s *DiscoveryServer) receive(con *Connection, reqChannel chan *discovery.Di
 			totalXDSInternalErrors.Increment()
 			return
 		}
+		adsLog.Debugf("RECV: %v %v", v3.GetShortType(req.TypeUrl), req.ResponseNonce)
 		// This should be only set for the first request. The node id may not be set - for example malicious clients.
 		if firstReq {
 			firstReq = false
