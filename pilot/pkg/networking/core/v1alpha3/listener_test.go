@@ -797,7 +797,7 @@ func testOutboundListenerConflict(t *testing.T, services ...*model.Service) {
 			}
 		}
 
-		verifyHTTPFilterChainMatch(t, listeners[0].FilterChains[1], model.TrafficDirectionOutbound, false)
+		verifyHTTPFilterChainMatch(t, listeners[0].FilterChains[1], model.TrafficDirectionOutbound, xdsfilters.RawBufferTransportProtocol)
 		verifyListenerFilters(t, listeners[0].ListenerFilters)
 
 		if !listeners[0].ContinueOnListenerFiltersTimeout || listeners[0].ListenerFiltersTimeout == nil {
@@ -814,14 +814,14 @@ func testOutboundListenerConflict(t *testing.T, services ...*model.Service) {
 			t.Fatalf("expect routes %s, found %s", expect, rds)
 		}
 	} else {
-		if len(listeners[0].FilterChains) != 2 {
-			t.Fatalf("expectd %d filter chains, found %d", 2, len(listeners[0].FilterChains))
+		if len(listeners[0].FilterChains) != 3 {
+			t.Fatalf("expectd %d filter chains, found %d", 3, len(listeners[0].FilterChains))
 		}
 
 		_ = getTCPFilterChain(t, listeners[0])
 		http := getHTTPFilterChain(t, listeners[0])
 
-		verifyHTTPFilterChainMatch(t, http, model.TrafficDirectionOutbound, false)
+		verifyHTTPFilterChainMatch(t, http, model.TrafficDirectionOutbound, xdsfilters.RawBufferTransportProtocol)
 		verifyListenerFilters(t, listeners[0].ListenerFilters)
 
 		if !listeners[0].ContinueOnListenerFiltersTimeout || listeners[0].ListenerFiltersTimeout == nil {
@@ -962,16 +962,12 @@ func verifyListenerFilters(t *testing.T, lfilters []*listener.ListenerFilter) {
 	}
 }
 
-func verifyHTTPFilterChainMatch(t *testing.T, fc *listener.FilterChain, direction model.TrafficDirection, isTLS bool) {
+func verifyHTTPFilterChainMatch(t *testing.T, fc *listener.FilterChain, direction model.TrafficDirection, transport string) {
 	t.Helper()
-	if isTLS {
+	if transport == xdsfilters.TLSTransportProtocol {
 		if direction == model.TrafficDirectionInbound &&
 			!reflect.DeepEqual(mtlsHTTPALPNs, fc.FilterChainMatch.ApplicationProtocols) {
 			t.Fatalf("expected %d application protocols, %v", len(mtlsHTTPALPNs), mtlsHTTPALPNs)
-		}
-
-		if fc.FilterChainMatch.TransportProtocol != "tls" {
-			t.Fatalf("exepct %q transport protocol, found %q", "tls", fc.FilterChainMatch.TransportProtocol)
 		}
 	} else {
 		if direction == model.TrafficDirectionInbound &&
@@ -979,10 +975,9 @@ func verifyHTTPFilterChainMatch(t *testing.T, fc *listener.FilterChain, directio
 			t.Fatalf("expected %d application protocols, %v got %v",
 				len(plaintextHTTPALPNs), plaintextHTTPALPNs, fc.FilterChainMatch.ApplicationProtocols)
 		}
-
-		if fc.FilterChainMatch.TransportProtocol != "" {
-			t.Fatalf("exepct %q transport protocol, found %q", "", fc.FilterChainMatch.TransportProtocol)
-		}
+	}
+	if fc.FilterChainMatch.TransportProtocol != transport {
+		t.Fatalf("exepct %q transport protocol, found %q", transport, fc.FilterChainMatch.TransportProtocol)
 	}
 
 	if direction == model.TrafficDirectionOutbound &&
@@ -1088,18 +1083,22 @@ func testOutboundListenerConfigWithSidecar(t *testing.T, services ...*model.Serv
 	}
 
 	l := findListenerByPort(listeners, 8080)
-	if len(l.FilterChains) != 2 {
-		t.Fatalf("expectd %d filter chains, found %d", 2, len(l.FilterChains))
+	if len(l.FilterChains) != 3 {
+		t.Fatalf("expectd %d filter chains, found %d", 3, len(l.FilterChains))
 	} else {
-		if !isHTTPFilterChain(l.FilterChains[1]) {
-			t.Fatalf("expected http filter chain, found %s", l.FilterChains[1].Filters[0].Name)
+		if !isHTTPFilterChain(l.FilterChains[2]) {
+			t.Fatalf("expected http filter chain, found %s", l.FilterChains[2].Filters[0].Name)
+		}
+
+		if !isTCPFilterChain(l.FilterChains[1]) {
+			t.Fatalf("expected tcp filter chain, found %s", l.FilterChains[1].Filters[0].Name)
 		}
 
 		if !isTCPFilterChain(l.FilterChains[0]) {
 			t.Fatalf("expected tcp filter chain, found %s", l.FilterChains[0].Filters[0].Name)
 		}
 
-		verifyHTTPFilterChainMatch(t, l.FilterChains[1], model.TrafficDirectionOutbound, false)
+		verifyHTTPFilterChainMatch(t, l.FilterChains[2], model.TrafficDirectionOutbound, xdsfilters.RawBufferTransportProtocol)
 		verifyListenerFilters(t, l.ListenerFilters)
 	}
 
@@ -1109,13 +1108,6 @@ func testOutboundListenerConfigWithSidecar(t *testing.T, services ...*model.Serv
 
 	if l := findListenerByPort(listeners, 9000); !isHTTPListener(l) {
 		t.Fatalf("expected HTTP listener on port 9000, found TCP\n%v", l)
-		hcm := &hcm.HttpConnectionManager{}
-		if err := getFilterConfig(l.FilterChains[1].Filters[0], hcm); err != nil {
-			t.Fatalf("failed to get HCM, config %v", hcm)
-		}
-		if !hasGrpcStatusFilter(hcm.HttpFilters) {
-			t.Fatalf("gRPC status filter is expected for gRPC ports")
-		}
 	}
 
 	l = findListenerByPort(listeners, 8888)
@@ -1131,7 +1123,7 @@ func testOutboundListenerConfigWithSidecar(t *testing.T, services ...*model.Serv
 		}
 	}
 
-	verifyHTTPFilterChainMatch(t, l.FilterChains[1], model.TrafficDirectionOutbound, false)
+	verifyHTTPFilterChainMatch(t, l.FilterChains[1], model.TrafficDirectionOutbound, "")
 	verifyListenerFilters(t, l.ListenerFilters)
 }
 
@@ -1853,7 +1845,7 @@ func TestOutboundListenerConfig_TCPFailThrough(t *testing.T) {
 		t.Fatalf("expectd %d filter chains, found %d", 2, len(listeners[0].FilterChains))
 	}
 
-	verifyHTTPFilterChainMatch(t, listeners[0].FilterChains[0], model.TrafficDirectionOutbound, false)
+	verifyHTTPFilterChainMatch(t, listeners[0].FilterChains[0], model.TrafficDirectionOutbound, xdsfilters.RawBufferTransportProtocol)
 	verifyPassThroughTCPFilterChain(t, listeners[0].FilterChains[1])
 	verifyListenerFilters(t, listeners[0].ListenerFilters)
 }
@@ -2026,8 +2018,8 @@ func verifyFilterChainMatch(t *testing.T, listener *listener.Listener) {
 		t.Fatalf("expectd %d filter chains, %d http filter chains and %d tcp filter chain", 5, 2, 3)
 	}
 
-	verifyHTTPFilterChainMatch(t, listener.FilterChains[0], model.TrafficDirectionInbound, true)
-	verifyHTTPFilterChainMatch(t, listener.FilterChains[1], model.TrafficDirectionInbound, false)
+	verifyHTTPFilterChainMatch(t, listener.FilterChains[0], model.TrafficDirectionInbound, xdsfilters.TLSTransportProtocol)
+	verifyHTTPFilterChainMatch(t, listener.FilterChains[1], model.TrafficDirectionInbound, xdsfilters.RawBufferTransportProtocol)
 }
 
 func getOldestService(services ...*model.Service) *model.Service {

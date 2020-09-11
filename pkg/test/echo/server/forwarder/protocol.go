@@ -122,6 +122,7 @@ func newProtocol(cfg Config) (protocol, error) {
 					TLSClientConfig: &tls.Config{
 						GetClientCertificate: getClientCertificate,
 						InsecureSkipVerify:   true,
+						NextProtos:           []string{"http/1.1"},
 					},
 					DialContext: httpDialContext,
 				},
@@ -134,6 +135,7 @@ func newProtocol(cfg Config) (protocol, error) {
 				TLSClientConfig: &tls.Config{
 					GetClientCertificate: getClientCertificate,
 					InsecureSkipVerify:   true,
+					NextProtos:           []string{"h2"},
 				},
 				DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
 					return tls.Dial(network, addr, cfg)

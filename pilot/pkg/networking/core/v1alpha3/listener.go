@@ -34,6 +34,7 @@ import (
 	tracing "github.com/envoyproxy/go-control-plane/envoy/type/tracing/v3"
 	xdstype "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/wrappers"
 
@@ -50,7 +51,7 @@ import (
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/protocol"
-	"istio.io/istio/pkg/proto"
+	protoutil "istio.io/istio/pkg/proto"
 	"istio.io/istio/pkg/util/gogo"
 	"istio.io/istio/pkg/util/protomarshal"
 	"istio.io/pkg/log"
@@ -257,7 +258,13 @@ var (
 	// by [0.0, 100.0]; if outside the range it is set to 100.0
 	pilotTraceSamplingEnv = getPilotRandomSamplingEnv()
 
-	emptyFilterChainMatch = &listener.FilterChainMatch{}
+	emptyFilterChainMatch    = &listener.FilterChainMatch{}
+	tlsEmptyFilterChainMatch = &listener.FilterChainMatch{
+		TransportProtocol: xdsfilters.TLSTransportProtocol,
+	}
+	rawBufferEmptyFilterChainMatch = &listener.FilterChainMatch{
+		TransportProtocol: xdsfilters.RawBufferTransportProtocol,
+	}
 )
 
 var (
@@ -471,7 +478,7 @@ func (configgen *ConfigGeneratorImpl) buildSidecarInboundHTTPListenerOptsForPort
 			// Append and forward client cert to backend.
 			ForwardClientCertDetails: hcm.HttpConnectionManager_APPEND_FORWARD,
 			SetCurrentClientCertDetails: &hcm.HttpConnectionManager_SetCurrentClientCertDetails{
-				Subject: proto.BoolTrue,
+				Subject: protoutil.BoolTrue,
 				Uri:     true,
 				Dns:     true,
 			},
@@ -959,7 +966,42 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundListeners(node *model.
 		configgen.appendListenerFallthroughRouteForCompleteListener(listener, node, push)
 	}
 	removeListenerFilterTimeout(tcpListeners)
+	normalizeTransportProtocol(tcpListeners)
 	return tcpListeners
+}
+
+// This code is really b
+func normalizeTransportProtocol(listeners []*listener.Listener) {
+	for _, l := range listeners {
+		found := false
+		for _, fc := range l.FilterChains {
+			if tp := fc.GetFilterChainMatch().GetTransportProtocol(); tp != "" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		transportProtocols := []string{xdsfilters.TLSTransportProtocol, xdsfilters.RawBufferTransportProtocol}
+		// We need to normalize this
+		got := []*listener.FilterChain{}
+		for _, fc := range l.FilterChains {
+			if fc.GetFilterChainMatch().GetTransportProtocol() != "" {
+				got = append(got, fc)
+				continue
+			}
+			for _, tp := range transportProtocols {
+				f := proto.Clone(fc).(*listener.FilterChain)
+				if f.FilterChainMatch == nil {
+					f.FilterChainMatch = &listener.FilterChainMatch{}
+				}
+				f.FilterChainMatch.TransportProtocol = tp
+				got = append(got, f)
+			}
+		}
+		l.FilterChains = got
+	}
 }
 
 func (configgen *ConfigGeneratorImpl) buildHTTPProxy(node *model.Proxy,
@@ -973,7 +1015,7 @@ func (configgen *ConfigGeneratorImpl) buildHTTPProxy(node *model.Proxy,
 	_, listenAddress := getActualWildcardAndLocalHost(node)
 
 	httpOpts := &core.Http1ProtocolOptions{
-		AllowAbsoluteUrl: proto.BoolTrue,
+		AllowAbsoluteUrl: protoutil.BoolTrue,
 	}
 	if features.HTTP10 || node.Metadata.HTTP10 == "1" {
 		httpOpts.AcceptHttp_10 = true
@@ -1329,6 +1371,7 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundListenerForPortOrUDS(n
 
 						// Support HTTP/1.0, HTTP/1.1 and HTTP/2
 						opt.match.ApplicationProtocols = append(opt.match.ApplicationProtocols, plaintextHTTPALPNs...)
+						opt.match.TransportProtocol = xdsfilters.RawBufferTransportProtocol
 					}
 
 					listenerOpts.needHTTPInspector = true
@@ -1649,11 +1692,11 @@ func buildHTTPConnectionManager(listenerOpts buildListenerOpts, httpOpts *httpLi
 	connectionManager.AccessLog = []*accesslog.AccessLog{}
 	connectionManager.HttpFilters = filters
 	connectionManager.StatPrefix = httpOpts.statPrefix
-	connectionManager.NormalizePath = proto.BoolTrue
+	connectionManager.NormalizePath = protoutil.BoolTrue
 	if httpOpts.useRemoteAddress {
-		connectionManager.UseRemoteAddress = proto.BoolTrue
+		connectionManager.UseRemoteAddress = protoutil.BoolTrue
 	} else {
-		connectionManager.UseRemoteAddress = proto.BoolFalse
+		connectionManager.UseRemoteAddress = protoutil.BoolFalse
 	}
 
 	// Allow websocket upgrades
@@ -1693,7 +1736,7 @@ func buildHTTPConnectionManager(listenerOpts buildListenerOpts, httpOpts *httpLi
 	if listenerOpts.push.Mesh.EnableTracing {
 		proxyConfig := listenerOpts.proxy.Metadata.ProxyConfigOrDefault(listenerOpts.push.Mesh.DefaultConfig)
 		connectionManager.Tracing = buildTracingConfig(proxyConfig)
-		connectionManager.GenerateRequestId = proto.BoolTrue
+		connectionManager.GenerateRequestId = protoutil.BoolTrue
 	}
 
 	return connectionManager
@@ -1925,7 +1968,7 @@ func buildListener(opts buildListenerOpts) *listener.Listener {
 	var deprecatedV1 *listener.Listener_DeprecatedV1
 	if !opts.bindToPort {
 		deprecatedV1 = &listener.Listener_DeprecatedV1{
-			BindToPort: proto.BoolFalse,
+			BindToPort: protoutil.BoolFalse,
 		}
 	}
 

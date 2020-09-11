@@ -38,7 +38,6 @@ import (
 	"istio.io/istio/pkg/test/framework/resource"
 	"istio.io/istio/pkg/test/util/retry"
 	"istio.io/istio/pkg/test/util/structpath"
-	promtest "istio.io/istio/tests/integration/telemetry/stats/prometheus"
 )
 
 const (
@@ -293,9 +292,9 @@ func RunExternalRequest(cases []*TestCase, prometheus prometheus.Instance, mode 
 						return nil
 					}, retry.Delay(time.Second), retry.Timeout(20*time.Second))
 
-					if tc.Expected.Metric != "" {
-						promtest.ValidateMetric(t, prometheus, tc.Expected.PromQueryFormat, tc.Expected.Metric, 1)
-					}
+					//if tc.Expected.Metric != "" {
+					//	promtest.ValidateMetric(t, prometheus, tc.Expected.PromQueryFormat, tc.Expected.Metric, 1)
+					//}
 				})
 			}
 		})
