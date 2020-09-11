@@ -45,15 +45,15 @@ import (
 
 	mcp "istio.io/api/mcp/v1alpha1"
 	"istio.io/api/mesh/v1alpha1"
+	"istio.io/pkg/log"
+
 	"istio.io/istio/pilot/pkg/model"
-	"istio.io/istio/pilot/pkg/networking/util"
 	"istio.io/istio/pilot/pkg/serviceregistry/memory"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/security"
 	"istio.io/istio/security/pkg/nodeagent/cache"
-	"istio.io/pkg/log"
 )
 
 // Config for the ADS connection.
@@ -632,37 +632,33 @@ func (a *ADSC) handleLDS(ll []*listener.Listener) {
 			// TODO: extract VIP and RDS or cluster
 			continue
 		}
-		filter := l.FilterChains[len(l.FilterChains)-1].Filters[0]
+		for _, fc := range l.FilterChains {
+			filter := fc.Filters[0]
+			if filter.Name == wellknown.TCPProxy {
+				lt[l.Name] = l
+				config, _ := conversion.MessageToStruct(filter.GetTypedConfig())
+				c := config.Fields["cluster"].GetStringValue()
+				adscLog.Debugf("TCP: %s -> %s", l.Name, c)
+			} else if filter.Name == wellknown.HTTPConnectionManager {
+				lh[l.Name] = l
 
-		// The actual destination will be the next to the last if the last filter is a passthrough filter
-		if l.FilterChains[len(l.FilterChains)-1].GetName() == util.PassthroughFilterChain {
-			filter = l.FilterChains[len(l.FilterChains)-2].Filters[0]
-		}
-
-		if filter.Name == wellknown.TCPProxy {
-			lt[l.Name] = l
-			config, _ := conversion.MessageToStruct(filter.GetTypedConfig())
-			c := config.Fields["cluster"].GetStringValue()
-			adscLog.Debugf("TCP: %s -> %s", l.Name, c)
-		} else if filter.Name == wellknown.HTTPConnectionManager {
-			lh[l.Name] = l
-
-			// Getting from config is too painful..
-			port := l.Address.GetSocketAddress().GetPortValue()
-			if port == 15002 {
-				routes = append(routes, "http_proxy")
+				// Getting from config is too painful..
+				port := l.Address.GetSocketAddress().GetPortValue()
+				if port == 15002 {
+					routes = append(routes, "http_proxy")
+				} else {
+					routes = append(routes, fmt.Sprintf("%d", port))
+				}
+			} else if filter.Name == wellknown.MongoProxy {
+				// ignore for now
+			} else if filter.Name == wellknown.RedisProxy {
+				// ignore for now
+			} else if filter.Name == wellknown.MySQLProxy {
+				// ignore for now
 			} else {
-				routes = append(routes, fmt.Sprintf("%d", port))
+				tm := &jsonpb.Marshaler{Indent: "  "}
+				adscLog.Infof(tm.MarshalToString(l))
 			}
-		} else if filter.Name == wellknown.MongoProxy {
-			// ignore for now
-		} else if filter.Name == wellknown.RedisProxy {
-			// ignore for now
-		} else if filter.Name == wellknown.MySQLProxy {
-			// ignore for now
-		} else {
-			tm := &jsonpb.Marshaler{Indent: "  "}
-			adscLog.Infof(tm.MarshalToString(l))
 		}
 	}
 

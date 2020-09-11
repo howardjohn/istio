@@ -970,7 +970,6 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundListeners(node *model.
 	return tcpListeners
 }
 
-// This code is really b
 func normalizeTransportProtocol(listeners []*listener.Listener) {
 	for _, l := range listeners {
 		found := false
