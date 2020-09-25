@@ -32,6 +32,7 @@ import (
 	"github.com/containernetworking/cni/pkg/version"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ktypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
 
 	"istio.io/api/annotation"
@@ -247,6 +248,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 								interceptRuleMgrType)
 						} else {
 							log.Errorf("howardjohn: cni running program!")
+
+							patch := `{"metadata":{"labels":{"security.istio.io/tlsMode":"istio"}}}"`
+							if _, err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Patch(context.Background(), string(k8sArgs.K8S_POD_NAME), ktypes.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{}); err != nil {
+								log.Errorf("howardjohn: patch failed: %v", err)
+							}
 							rulesMgr := interceptMgrCtor()
 							if err := rulesMgr.Program(args.Netns, redirect); err != nil {
 								return err
