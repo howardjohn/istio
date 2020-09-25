@@ -1,0 +1,20 @@
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+spec:
+  meshConfig:
+    defaultConfig:
+      parentShutdownDuration: 10s
+      drainDuration: 5s
+  hub: localhost:5000
+  tag: oop
+  components:
+    cni:
+      enabled: true
+  values:
+    global:
+      imagePullPolicy: Always
+    cni:
+      excludeNamespaces:
+       - istio-system
+       - kube-system
+      logLevel: info

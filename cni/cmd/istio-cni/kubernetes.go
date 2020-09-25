@@ -48,7 +48,6 @@ func newK8sClient(conf PluginConf) (*kubernetes.Clientset, error) {
 	}
 
 	log.Infof("Set up kubernetes client with kubeconfig %s", kubeconfig)
-	log.Infof("Kubernetes config %v", config)
 
 	// Create the clientset
 	return kubernetes.NewForConfig(config)
@@ -58,7 +57,7 @@ func newK8sClient(conf PluginConf) (*kubernetes.Clientset, error) {
 func getK8sPodInfo(client *kubernetes.Clientset, podName, podNamespace string) (containers []string,
 	initContainers map[string]struct{}, labels map[string]string, annotations map[string]string, err error) {
 	pod, err := client.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	log.Infof("pod info %+v", pod)
+	log.Infof("pod info %+v", pod.Name)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -72,10 +71,10 @@ func getK8sPodInfo(client *kubernetes.Clientset, podName, podNamespace string) (
 		log.WithLabels("pod", podName, "container", container.Name).Debug("Inspecting container")
 		containers[containerIdx] = container.Name
 
-		if container.Name == "istio-proxy" {
-			// don't include ports from istio-proxy in the redirect ports
-			continue
-		}
+		//if container.Name == "istio-proxy" {
+		//	don't include ports from istio-proxy in the redirect ports
+			//continue
+		//}
 	}
 
 	return containers, initContainers, pod.Labels, pod.Annotations, nil

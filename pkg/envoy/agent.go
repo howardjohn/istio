@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"istio.io/pkg/env"
 	"istio.io/pkg/log"
 )
 
@@ -69,6 +70,8 @@ var errAbort = errors.New("epoch aborted")
 
 const errOutOfMemory = "signal: killed"
 
+var initialEpoch = env.RegisterIntVar("INITIAL_EPOCH", -1, "")
+
 // NewAgent creates a new proxy agent for the proxy start-up and clean-up functions.
 func NewAgent(proxy Proxy, terminationDrainDuration time.Duration) Agent {
 	return &agent{
@@ -76,7 +79,7 @@ func NewAgent(proxy Proxy, terminationDrainDuration time.Duration) Agent {
 		statusCh:                 make(chan exitStatus),
 		activeEpochs:             map[int]chan error{},
 		terminationDrainDuration: terminationDrainDuration,
-		currentEpoch:             -1,
+		currentEpoch:             initialEpoch.Get(),
 	}
 }
 
