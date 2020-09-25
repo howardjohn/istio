@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/containernetworking/cni/pkg/skel"
@@ -131,6 +132,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 		log.Errorf("istio-cni cmdAdd parsing config %v", err)
 		return err
 	}
+	var podIp string
+	for _, ip := range conf.PrevResult.IPs {
+		podIp = ip.Address.IP.String()
+	}
 
 	var loggedPrevResult interface{}
 	if conf.PrevResult == nil {
@@ -224,6 +229,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 				//	log.Infof("Pod %s excluded due to not containing sidecar annotation", string(k8sArgs.K8S_POD_NAME))
 				//	excludePod = true
 				//}
+				if strings.HasSuffix(string(k8sArgs.K8S_POD_NAME), "-proxy") {
+					log.Errorf("howardjohn: exclude proxy pod %v", string(k8sArgs.K8S_POD_NAME))
+					excludePod = true
+				}
 				if !excludePod {
 					log.Errorf("howardjohn: cni 3")
 					log.Infof("cni setting up redirect")
@@ -245,6 +254,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 							pod, err := getPod(PodTemplate{
 								Name:    string(k8sArgs.K8S_POD_NAME),
 								Network: args.Netns,
+								PodIp:   podIp,
 							})
 							if err != nil {
 								log.Errorf("howardjohn: err creating pod spec: %v", err)
@@ -257,7 +267,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 								attempts := 0
 								for attempts < 10 {
 									attempts++
-									pod, err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Get(context.Background(), string(k8sArgs.K8S_POD_NAME) + "-proxy", metav1.GetOptions{})
+									pod, err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Get(context.Background(), string(k8sArgs.K8S_POD_NAME)+"-proxy", metav1.GetOptions{})
 									if err != nil {
 										log.Errorf("howardjohn: got err %v", err)
 									}
@@ -310,6 +320,7 @@ func getPod(t PodTemplate) (*v1.Pod, error) {
 
 type PodTemplate struct {
 	Name    string
+	PodIp   string
 	Network string
 }
 
@@ -318,8 +329,8 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: {{.Name}}-proxy
-spec:      
-  hostNetwork: true
+spec:
+  terminationGracePeriodSeconds: 2
   dnsPolicy: ClusterFirstWithHostNet
   containers:
   - command:
@@ -402,6 +413,17 @@ spec:
       requests:
         cpu: 100m
         memory: 128Mi
+    readinessProbe:
+      failureThreshold: 30
+      httpGet:
+        host: {{.PodIp}}
+        path: /healthz/ready
+        port: 15021
+        scheme: HTTP
+      initialDelaySeconds: 1
+      periodSeconds: 2
+      successThreshold: 1
+      timeoutSeconds: 1
     securityContext:
       privileged: true
       runAsGroup: 1337
@@ -474,7 +496,7 @@ func cmdDel(args *skel.CmdArgs) error {
 	}
 	log.Debugf("Created Kubernetes client: %v", client)
 	// Do your delete here
-	if err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Delete(context.Background(), string(k8sArgs.K8S_POD_NAME) + "-proxy", metav1.DeleteOptions{}); err != nil {
+	if err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Delete(context.Background(), string(k8sArgs.K8S_POD_NAME)+"-proxy", metav1.DeleteOptions{}); err != nil {
 		log.Errorf("howardjohn: failed to delete pod: %v", err)
 	}
 	return nil
