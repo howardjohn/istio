@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: noproxy
+spec:
+  selector:
+    matchLabels:
+      app: noproxy
+  template:
+    metadata:
+      labels:
+        app: noproxy
+    spec:
+      containers:
+      - name: noproxy
+        image: howardjohn/alpine-shell
+        args:
+        - /bin/sleep
+        - infinity
+        resources:
+          limits:
+            cpu: 500m
+            memory: 500M

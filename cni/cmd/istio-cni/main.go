@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -28,9 +29,14 @@ import (
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/cni/pkg/version"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	"istio.io/api/annotation"
 	"istio.io/pkg/log"
+
+	"istio.io/istio/pkg/test/util/tmpl"
 )
 
 var (
@@ -194,43 +200,79 @@ func cmdAdd(args *skel.CmdArgs) error {
 			}
 
 			log.Infof("Found containers %v", containers)
-			if len(containers) > 1 {
+			log.Errorf("howardjohn: cni")
+			if len(containers) >= 1 {
+				log.Errorf("howardjohn: cni 1")
 				log.WithLabels(
 					"ContainerID", args.ContainerID,
 					"netns", args.Netns,
 					"pod", string(k8sArgs.K8S_POD_NAME),
 					"Namespace", string(k8sArgs.K8S_POD_NAMESPACE),
 					"annotations", annotations).
-					Info("Checking annotations prior to redirect for Istio proxy")
+					Info("cni Checking annotations prior to redirect for Istio proxy")
 				if val, ok := annotations[injectAnnotationKey]; ok {
 					log.Infof("Pod %s contains inject annotation: %s", string(k8sArgs.K8S_POD_NAME), val)
 					if injectEnabled, err := strconv.ParseBool(val); err == nil {
 						if !injectEnabled {
-							log.Infof("Pod excluded due to inject-disabled annotation")
+							log.Infof("cni Pod excluded due to inject-disabled annotation")
 							excludePod = true
 						}
 					}
 				}
-				if _, ok := annotations[sidecarStatusKey]; !ok {
-					log.Infof("Pod %s excluded due to not containing sidecar annotation", string(k8sArgs.K8S_POD_NAME))
-					excludePod = true
-				}
+				log.Errorf("howardjohn: cni 2")
+				//if _, ok := annotations[sidecarStatusKey]; !ok {
+				//	log.Infof("Pod %s excluded due to not containing sidecar annotation", string(k8sArgs.K8S_POD_NAME))
+				//	excludePod = true
+				//}
 				if !excludePod {
-					log.Infof("setting up redirect")
+					log.Errorf("howardjohn: cni 3")
+					log.Infof("cni setting up redirect")
 					if redirect, redirErr := NewRedirect(annotations); redirErr != nil {
-						log.Errorf("Pod redirect failed due to bad params: %v", redirErr)
+						log.Errorf("cni Pod redirect failed due to bad params: %v", redirErr)
 					} else {
-						log.Infof("Redirect local ports: %v", redirect.includePorts)
+						log.Infof("cni Redirect local ports: %v", redirect.includePorts)
 						// Get the constructor for the configured type of InterceptRuleMgr
 						interceptMgrCtor := GetInterceptRuleMgrCtor(interceptRuleMgrType)
 						if interceptMgrCtor == nil {
 							log.Errorf("Pod redirect failed due to unavailable InterceptRuleMgr of type %s",
 								interceptRuleMgrType)
 						} else {
+							log.Errorf("howardjohn: cni running program!")
 							rulesMgr := interceptMgrCtor()
 							if err := rulesMgr.Program(args.Netns, redirect); err != nil {
 								return err
 							}
+							pod, err := getPod(PodTemplate{
+								Name:    string(k8sArgs.K8S_POD_NAME),
+								Network: args.Netns,
+							})
+							if err != nil {
+								log.Errorf("howardjohn: err creating pod spec: %v", err)
+							}
+							log.Errorf("howardjohn: created pod template %v with %v containers", pod.Name, len(pod.Spec.Containers))
+							if _, err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
+								log.Errorf("howardjohn: failed to create pod: %v", err)
+							}
+							func() {
+								attempts := 0
+								for attempts < 10 {
+									attempts++
+									pod, err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Get(context.Background(), string(k8sArgs.K8S_POD_NAME) + "-proxy", metav1.GetOptions{})
+									if err != nil {
+										log.Errorf("howardjohn: got err %v", err)
+									}
+									for _, c := range pod.Status.Conditions {
+										if c.Type == v1.PodReady && c.Status == v1.ConditionTrue {
+											log.Errorf("howardjohn: pod is ready!")
+											return
+										}
+									}
+									log.Errorf("howardjohn: pod not ready")
+									time.Sleep(time.Second)
+								}
+								log.Errorf("howardjohn: timed out waiting for pod ready")
+							}()
+
 						}
 					}
 				}
@@ -254,6 +296,158 @@ func cmdAdd(args *skel.CmdArgs) error {
 	return types.PrintResult(result, conf.CNIVersion)
 }
 
+func getPod(t PodTemplate) (*v1.Pod, error) {
+	pyaml, err := tmpl.Evaluate(podTemplate, t)
+	if err != nil {
+		return nil, err
+	}
+	pod := &v1.Pod{}
+	if err := yaml.Unmarshal([]byte(pyaml), pod); err != nil {
+		return nil, err
+	}
+	return pod, nil
+}
+
+type PodTemplate struct {
+	Name    string
+	Network string
+}
+
+var podTemplate = `
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{.Name}}-proxy
+spec:      
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+  containers:
+  - command:
+    - nsenter
+    - --net=/net
+    - pilot-agent
+    - proxy
+    - sidecar
+    - --domain
+    - $(POD_NAMESPACE).svc.cluster.local
+    - --serviceCluster
+    - proxy.$(POD_NAMESPACE)
+    - --proxyLogLevel=warning
+    - --proxyComponentLogLevel=misc:error
+    - --trust-domain=cluster.local
+    - --concurrency
+    - "2"
+    env:
+    - name: JWT_POLICY
+      value: third-party-jwt
+    - name: PILOT_CERT_PROVIDER
+      value: istiod
+    - name: CA_ADDR
+      value: istiod.istio-system.svc:15012
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: POD_NAMESPACE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: INSTANCE_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+    - name: SERVICE_ACCOUNT
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.serviceAccountName
+    - name: HOST_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.hostIP
+    - name: CANONICAL_SERVICE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['service.istio.io/canonical-name']
+    - name: CANONICAL_REVISION
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['service.istio.io/canonical-revision']
+    - name: PROXY_CONFIG
+      value: |
+        {"proxyMetadata":{"DNS_AGENT":""},"meshId":"cluster.local"}
+    - name: ISTIO_META_POD_PORTS
+      value: |-
+        [
+        ]
+    - name: ISTIO_META_APP_CONTAINERS
+      value: proxy
+    - name: ISTIO_META_CLUSTER_ID
+      value: Kubernetes
+    - name: ISTIO_META_INTERCEPTION_MODE
+      value: REDIRECT
+    - name: ISTIO_META_WORKLOAD_NAME
+      value: proxy
+    - name: ISTIO_META_OWNER
+      value: kubernetes://apis/apps/v1/namespaces/default/deployments/proxy
+    - name: ISTIO_META_MESH_ID
+      value: cluster.local
+    - name: DNS_AGENT
+    image: gcr.io/istio-testing/proxyv2:latest
+    imagePullPolicy: Always
+    name: istio-proxy
+    resources:
+      limits:
+        cpu: "2"
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    securityContext:
+      privileged: true
+      runAsGroup: 1337
+    volumeMounts:
+    - mountPath: /var/run/secrets/istio
+      name: istiod-ca-cert
+    - mountPath: /var/lib/istio/data
+      name: istio-data
+    - mountPath: /etc/istio/proxy
+      name: istio-envoy
+    - mountPath: /var/run/secrets/tokens
+      name: istio-token
+    - mountPath: /etc/istio/pod
+      name: istio-podinfo
+    - mountPath: /net
+      name: net
+  volumes:
+  - name: net
+    hostPath:
+      path: {{.Network}}
+  - emptyDir:
+      medium: Memory
+    name: istio-envoy
+  - emptyDir: {}
+    name: istio-data
+  - downwardAPI:
+      items:
+      - fieldRef:
+          fieldPath: metadata.labels
+        path: labels
+      - fieldRef:
+          fieldPath: metadata.annotations
+        path: annotations
+    name: istio-podinfo
+  - name: istio-token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: istio-ca
+          expirationSeconds: 43200
+          path: istio-token
+  - configMap:
+      name: istio-ca-root-cert
+    name: istiod-ca-cert
+`
+
 func cmdGet(args *skel.CmdArgs) error {
 	log.Info("cmdGet not implemented")
 	// TODO: implement
@@ -268,9 +462,21 @@ func cmdDel(args *skel.CmdArgs) error {
 		return err
 	}
 	_ = conf
-
+	k8sArgs := K8sArgs{}
+	if err := types.LoadArgs(args.Args, &k8sArgs); err != nil {
+		return err
+	}
+	log.Infof("Getting identifiers with arguments: %s", args.Args)
+	log.Infof("Loaded k8s arguments: %v", k8sArgs)
+	client, err := newKubeClient(*conf)
+	if err != nil {
+		return err
+	}
+	log.Debugf("Created Kubernetes client: %v", client)
 	// Do your delete here
-
+	if err := client.CoreV1().Pods(string(k8sArgs.K8S_POD_NAMESPACE)).Delete(context.Background(), string(k8sArgs.K8S_POD_NAME) + "-proxy", metav1.DeleteOptions{}); err != nil {
+		log.Errorf("howardjohn: failed to delete pod: %v", err)
+	}
 	return nil
 }
 
