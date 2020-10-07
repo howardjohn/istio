@@ -110,6 +110,9 @@
           "suffix": "{{$s}}"
           },
           {{- end }}
+          {
+            "suffix": "ssl_context_update_by_sds"
+          },
           {{- range $a, $s := .inclusionRegexps }}
           {
           "safe_regex": {"google_re2":{}, "regex":"{{js $s}}"}
@@ -190,6 +193,73 @@
   },
   "static_resources": {
     "clusters": [
+      {
+        "name": "prewarm",
+        "type": "STATIC",
+        "connect_timeout": "0.250s",
+        "lb_policy": "ROUND_ROBIN",
+        "transport_socket": {
+         "name": "envoy.transport_sockets.tls",
+         "typed_config": {
+          "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
+          "common_tls_context": {
+           "alpn_protocols": [
+            "istio-peer-exchange",
+            "istio",
+            "h2"
+           ],
+           "tls_certificate_sds_secret_configs": [
+            {
+             "name": "default",
+             "sds_config": {
+              "api_config_source": {
+               "api_type": "GRPC",
+               "grpc_services": [
+                {
+                 "envoy_grpc": {
+                  "cluster_name": "sds-grpc"
+                 }
+                }
+               ],
+               "transport_api_version": "V3"
+              },
+              "initial_fetch_timeout": "0s",
+              "resource_api_version": "V3"
+             }
+            }
+           ],
+           "combined_validation_context": {
+            "default_validation_context": {
+             "match_subject_alt_names": [
+              {
+               "exact": "spiffe://cluster.local/ns/istio-system/sa/istiod-service-account"
+              }
+             ]
+            },
+            "validation_context_sds_secret_config": {
+             "name": "ROOTCA",
+             "sds_config": {
+              "api_config_source": {
+               "api_type": "GRPC",
+               "grpc_services": [
+                {
+                 "envoy_grpc": {
+                  "cluster_name": "sds-grpc"
+                 }
+                }
+               ],
+               "transport_api_version": "V3"
+              },
+              "initial_fetch_timeout": "0s",
+              "resource_api_version": "V3"
+             }
+            }
+           }
+          },
+          "sni": "outbound_.15010_._.istiod.istio-system.svc.cluster.local"
+         }
+        }
+      },
       {
         "name": "prometheus_stats",
         "type": "STATIC",
