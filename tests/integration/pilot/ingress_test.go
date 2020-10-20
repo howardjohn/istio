@@ -16,13 +16,17 @@
 package pilot
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/test/framework"
 	"istio.io/istio/pkg/test/framework/components/echo"
+	"istio.io/istio/pkg/test/framework/components/environment/kube"
 	"istio.io/istio/pkg/test/util/retry"
 	ingressutil "istio.io/istio/tests/integration/security/sds_ingress/util"
 )
@@ -251,6 +255,24 @@ spec:
 					},
 				},
 			}
+			t.Run("status", func(t *testing.T) {
+				if !ctx.Environment().(*kube.Environment).Settings().LoadBalancerSupported {
+					t.Skip("status not supported without load balancer")
+				}
+				ip := apps.Ingress.HTTPAddress().IP.String()
+				retry.UntilSuccessOrFail(t, func() error {
+					ing, err := ctx.Clusters().Default().NetworkingV1beta1().Ingresses(apps.Namespace.Name()).Get(context.Background(), "istio-test", metav1.GetOptions{})
+					if err != nil {
+						return err
+					}
+					if len(ing.Status.LoadBalancer.Ingress) != 1 || ing.Status.LoadBalancer.Ingress[0].IP != ip {
+						return fmt.Errorf("unexpected ingress status, got %+v want %v", ing.Status.LoadBalancer, ip)
+					}
+					return nil
+				})
+
+			})
+
 			for _, c := range cases {
 				c := c
 				ctx.NewSubTest(c.name).Run(func(ctx framework.TestContext) {
