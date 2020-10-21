@@ -25,11 +25,12 @@ import (
 	"istio.io/istio/istioctl/pkg/util/configdump"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/xds"
+	"istio.io/istio/pilot/pkg/xds/test"
 )
 
 func TestSyncz(t *testing.T) {
 	t.Run("return the sent and ack status of adsClient connections", func(t *testing.T) {
-		s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+		s := test.NewFakeDiscoveryServer(t, test.FakeOptions{})
 		adscon := s.ConnectADS()
 
 		// Need to send two of each so that the second sends an Ack that is picked up
@@ -72,7 +73,7 @@ func TestSyncz(t *testing.T) {
 		verifySyncStatus(t, s.Discovery, node.ID, true, true)
 	})
 	t.Run("sync status not set when Nackd", func(t *testing.T) {
-		s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+		s := test.NewFakeDiscoveryServer(t, test.FakeOptions{})
 		adscon := s.ConnectADS()
 
 		if err := sendEDSReq([]string{"outbound|9080||app2.default.svc.cluster.local"}, sidecarID(app3Ip, "syncApp2"), "", "", adscon); err != nil {
@@ -201,7 +202,7 @@ func TestConfigDump(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+			s := test.NewFakeDiscoveryServer(t, test.FakeOptions{})
 			adscon := s.ConnectADS()
 			if err := sendCDSReq(sidecarID(app3Ip, "dumpApp"), adscon); err != nil {
 				t.Fatal(err)
@@ -265,7 +266,7 @@ func getConfigDump(t *testing.T, s *xds.DiscoveryServer, proxyID string, wantCod
 }
 
 func TestDebugHandlers(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test.NewFakeDiscoveryServer(t, test.FakeOptions{})
 	req, err := http.NewRequest("GET", "/debug", nil)
 	if err != nil {
 		t.Fatal(err)

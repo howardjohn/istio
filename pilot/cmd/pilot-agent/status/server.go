@@ -37,14 +37,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	"go.opencensus.io/stats/view"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"istio.io/pkg/env"
+	"istio.io/pkg/log"
 
 	"istio.io/istio/pilot/cmd/pilot-agent/metrics"
 	"istio.io/istio/pilot/cmd/pilot-agent/status/ready"
 	"istio.io/istio/pilot/pkg/model"
-	"istio.io/pkg/env"
-	"istio.io/pkg/log"
 )
 
 const (
@@ -74,9 +74,31 @@ var (
 // container "hello-world".
 type KubeAppProbers map[string]*Prober
 
+// HTTPGetAction describes an action based on HTTP Get requests.
+type HTTPGetAction struct {
+	// Path to access on the HTTP server.
+	// +optional
+	Path string `json:"path,omitempty" protobuf:"bytes,1,opt,name=path"`
+	// Name or number of the port to access on the container.
+	// Number must be in the range 1 to 65535.
+	// Name must be an IANA_SVC_NAME.
+	Port intstr.IntOrString `json:"port" protobuf:"bytes,2,opt,name=port"`
+	// Host name to connect to, defaults to the pod IP. You probably want to set
+	// "Host" in httpHeaders instead.
+	// +optional
+	Host string `json:"host,omitempty" protobuf:"bytes,3,opt,name=host"`
+	// Scheme to use for connecting to the host.
+	// Defaults to HTTP.
+	// +optional
+	Scheme string `json:"scheme,omitempty" protobuf:"bytes,4,opt,name=scheme,casttype=URIScheme"`
+	// Custom headers to set in the request. HTTP allows repeated headers.
+	// +optional
+	HTTPHeaders []map[string]string `json:"httpHeaders,omitempty" protobuf:"bytes,5,rep,name=httpHeaders"`
+}
+
 // Prober represents a single container prober
 type Prober struct {
-	HTTPGet        *corev1.HTTPGetAction `json:"httpGet"`
+	HTTPGet        *HTTPGetAction `json:"httpGet"`
 	TimeoutSeconds int32                 `json:"timeoutSeconds,omitempty"`
 }
 
@@ -432,7 +454,7 @@ func (s *Server) handleAppProbe(w http.ResponseWriter, req *http.Request) {
 		proberPath = "/" + proberPath
 	}
 	var url string
-	if prober.HTTPGet.Scheme == corev1.URISchemeHTTPS {
+	if prober.HTTPGet.Scheme == "https" {
 		url = fmt.Sprintf("https://localhost:%v%s", prober.HTTPGet.Port.IntValue(), proberPath)
 	} else {
 		url = fmt.Sprintf("http://localhost:%v%s", prober.HTTPGet.Port.IntValue(), proberPath)
@@ -449,15 +471,6 @@ func (s *Server) handleAppProbe(w http.ResponseWriter, req *http.Request) {
 		newValues := make([]string, len(values))
 		copy(newValues, values)
 		appReq.Header[name] = newValues
-	}
-
-	for _, h := range prober.HTTPGet.HTTPHeaders {
-		if h.Name == "Host" || h.Name == ":authority" {
-			// Probe has specific host header override; honor it
-			appReq.Host = h.Value
-		} else {
-			appReq.Header.Add(h.Name, h.Value)
-		}
 	}
 
 	// Send the request.

@@ -29,7 +29,7 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pilot/pkg/serviceregistry/memory"
-	"istio.io/istio/pilot/pkg/xds"
+	"istio.io/istio/pilot/pkg/xds/test"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/istio/pkg/adsc"
 	"istio.io/istio/pkg/config/labels"
@@ -39,7 +39,7 @@ import (
 
 // TestLDS using isolated namespaces
 func TestLDSIsolated(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{ConfigString: mustReadfolder(t, "tests/testdata/config")})
+	s := test.NewFakeDiscoveryServer(t, test.FakeOptions{ConfigString: mustReadfolder(t, "tests/testdata/config")})
 
 	// Sidecar in 'none' mode
 	t.Run("sidecar_none", func(t *testing.T) {
@@ -247,7 +247,7 @@ func TestLDSWithIngressGateway(t *testing.T) {
 // TestLDS is running LDS tests.
 func TestLDS(t *testing.T) {
 	t.Run("sidecar", func(t *testing.T) {
-		s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+		s := test.NewFakeDiscoveryServer(t, test.FakeOptions{})
 		adscon := s.ConnectADS()
 		err := sendLDSReq(sidecarID(app3Ip, "app3"), adscon)
 		if err != nil {
@@ -266,7 +266,7 @@ func TestLDS(t *testing.T) {
 
 	// 'router' or 'gateway' type of listener
 	t.Run("gateway", func(t *testing.T) {
-		s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{ConfigString: mustReadfolder(t, "tests/testdata/config")})
+		s := test.NewFakeDiscoveryServer(t, test.FakeOptions{ConfigString: mustReadfolder(t, "tests/testdata/config")})
 
 		adscon := s.ConnectADS()
 		err := sendLDSReqWithLabels(gatewayID(gatewayIP), adscon, map[string]string{"version": "v2", "app": "my-gateway-controller"})

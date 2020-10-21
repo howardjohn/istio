@@ -26,9 +26,11 @@ import (
 
 	mesh "istio.io/api/mesh/v1alpha1"
 	networking "istio.io/api/networking/v1alpha3"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/util/sets"
 	"istio.io/istio/pilot/pkg/xds"
+	test2 "istio.io/istio/pilot/pkg/xds/test"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/istio/pilot/test/xdstest"
 	"istio.io/istio/pkg/adsc"
@@ -167,7 +169,7 @@ func testAdscTLS(t *testing.T, creds security.SecretManager) {
 }
 
 func TestInternalEvents(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 
 	ads := s.Connect(
 		&model.Proxy{
@@ -206,7 +208,7 @@ func TestInternalEvents(t *testing.T) {
 }
 
 func TestAdsReconnectAfterRestart(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 	err := sendEDSReq([]string{"fake-cluster"}, sidecarID(app3Ip, "app3"), "", "", adscon)
 	if err != nil {
@@ -245,7 +247,7 @@ func TestAdsReconnectAfterRestart(t *testing.T) {
 }
 
 func TestAdsUnsubscribe(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 	err := sendEDSReq([]string{"fake-cluster"}, sidecarID(app3Ip, "app3"), "", "", adscon)
 	if err != nil {
@@ -276,7 +278,7 @@ func TestAdsUnsubscribe(t *testing.T) {
 
 // Regression for envoy restart and overlapping connections
 func TestAdsReconnectWithNonce(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 	err := sendEDSReq([]string{"fake-cluster"}, sidecarID(app3Ip, "app3"), "", "", adscon)
 	if err != nil {
@@ -311,7 +313,7 @@ func TestAdsReconnectWithNonce(t *testing.T) {
 
 // Regression for envoy restart and overlapping connections
 func TestAdsReconnect(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 	err := sendCDSReq(sidecarID(app3Ip, "app3"), adscon)
 	if err != nil {
@@ -349,7 +351,7 @@ func TestAdsReconnect(t *testing.T) {
 }
 
 func TestAdsClusterUpdate(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 
 	version := ""
@@ -390,7 +392,7 @@ func TestAdsClusterUpdate(t *testing.T) {
 
 // nolint: lll
 func TestAdsPushScoping(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 
 	const (
 		svcSuffix = ".testPushScoping.com"
@@ -794,7 +796,7 @@ func TestAdsPushScoping(t *testing.T) {
 }
 
 func TestAdsUpdate(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 
 	s.Discovery.MemRegistry.AddService("adsupdate.default.svc.cluster.local", &model.Service{
@@ -899,7 +901,7 @@ func expectNonEmptyResource(t test.Failer, c chan *discovery.DiscoveryResponse) 
 }
 
 func TestEnvoyRDSProtocolError(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 	responses := make(chan *discovery.DiscoveryResponse)
 	go adsReceiveChannel(adscon, responses)
@@ -928,7 +930,7 @@ func TestEnvoyRDSProtocolError(t *testing.T) {
 }
 
 func TestEnvoyRDSUpdatedRouteRequest(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{})
 	adscon := s.ConnectADS()
 
 	err := sendRDSReq(gatewayID(gatewayIP), []string{routeA}, "", "", adscon)
@@ -1077,7 +1079,7 @@ func TestXdsCache(t *testing.T) {
 		}
 	}
 
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{
+	s := test2.NewFakeDiscoveryServer(t, test2.FakeOptions{
 		Configs: []config.Config{
 			makeEndpoint([]*networking.WorkloadEntry{
 				{Address: "1.2.3.4", Locality: "region/zone"},

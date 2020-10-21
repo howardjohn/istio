@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package xds
+package test
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
+
 	"istio.io/istio/pilot/pkg/config/kube/ingress"
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
@@ -36,8 +37,8 @@ import (
 	kubesecrets "istio.io/istio/pilot/pkg/secrets/kube"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	kube "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
+	"istio.io/istio/pilot/pkg/xds"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
-	"istio.io/istio/pilot/test/xdstest"
 	"istio.io/istio/pkg/adsc"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/mesh"
@@ -70,7 +71,7 @@ type FakeOptions struct {
 type FakeDiscoveryServer struct {
 	*v1alpha3.ConfigGenTest
 	t            test.Failer
-	Discovery    *DiscoveryServer
+	Discovery    *xds.DiscoveryServer
 	Listener     *bufconn.Listener
 	kubeClient   kubelib.Client
 	KubeRegistry *kube.FakeController
@@ -89,7 +90,7 @@ func NewFakeDiscoveryServer(t test.Failer, opts FakeOptions) *FakeDiscoveryServe
 	}
 
 	// Init with a dummy environment, since we have a circular dependency with the env creation.
-	s := NewDiscoveryServer(&model.Environment{PushContext: model.NewPushContext()}, []string{plugin.Authn, plugin.Authz}, "pilot-123")
+	s := xds.NewDiscoveryServer(&model.Environment{PushContext: model.NewPushContext()}, []string{plugin.Authn, plugin.Authz}, "pilot-123")
 
 	serviceHandler := func(svc *model.Service, _ model.Event) {
 		pushReq := &model.PushRequest{
@@ -130,7 +131,7 @@ func NewFakeDiscoveryServer(t test.Failer, opts FakeOptions) *FakeDiscoveryServe
 	}
 
 	sc := kubesecrets.NewMulticluster(defaultKubeClient, "", "")
-	s.Generators[v3.SecretType] = NewSecretGen(sc, &model.DisabledCache{})
+	s.Generators[v3.SecretType] = xds.NewSecretGen(sc, &model.DisabledCache{})
 	defaultKubeClient.RunAndWait(stop)
 
 	ingr := ingress.NewController(defaultKubeClient, mesh.NewFixedWatcher(m), kube.Options{
@@ -145,20 +146,20 @@ func NewFakeDiscoveryServer(t test.Failer, opts FakeOptions) *FakeDiscoveryServe
 		MeshConfig:          opts.MeshConfig,
 		NetworksWatcher:     opts.NetworksWatcher,
 		ServiceRegistries:   registries,
-		PushContextLock:     &s.updateMutex,
+		//PushContextLock:     &s.updateMutex,
 		ConfigStoreCaches:   []model.ConfigStoreCache{ingr},
 		SkipRun:             true,
 	})
 	if err := cg.ServiceEntryRegistry.AppendServiceHandler(serviceHandler); err != nil {
 		t.Fatal(err)
 	}
-	s.updateMutex.Lock()
+	//s.updateMutex.Lock()
 	s.Env = cg.Env()
 	// Disable debounce to reduce test times
-	s.debounceOptions.debounceAfter = 0
+	//s.debounceOptions.debounceAfter = 0
 	s.MemRegistry = cg.MemRegistry
 	s.MemRegistry.EDSUpdater = s
-	s.updateMutex.Unlock()
+	//s.updateMutex.Unlock()
 
 	// Setup config handlers
 	// TODO code re-use from server.go
@@ -248,8 +249,8 @@ func (f *FakeDiscoveryServer) KubeClient() kubelib.Client {
 }
 
 func (f *FakeDiscoveryServer) PushContext() *model.PushContext {
-	f.Discovery.updateMutex.RLock()
-	defer f.Discovery.updateMutex.RUnlock()
+	//f.Discovery.updateMutex.RLock()
+	//defer f.Discovery.updateMutex.RUnlock()
 	return f.Env().PushContext
 }
 
@@ -318,20 +319,20 @@ func (f *FakeDiscoveryServer) Connect(p *model.Proxy, watch []string, wait []str
 
 func (f *FakeDiscoveryServer) Endpoints(p *model.Proxy) []*endpoint.ClusterLoadAssignment {
 	loadAssignments := make([]*endpoint.ClusterLoadAssignment, 0)
-	for _, c := range xdstest.ExtractEdsClusterNames(f.Clusters(p)) {
-		loadAssignments = append(loadAssignments, f.Discovery.generateEndpoints(NewEndpointBuilder(c, p, f.PushContext())))
-	}
+	//for _, c := range xdstest.ExtractEdsClusterNames(f.Clusters(p)) {
+		//loadAssignments = append(loadAssignments, f.Discovery.generateEndpoints(xds.NewEndpointBuilder(c, p, f.PushContext())))
+	//}
 	return loadAssignments
 }
 
 func (f *FakeDiscoveryServer) refreshPushContext() {
-	_, err := f.Discovery.initPushContext(&model.PushRequest{
-		Full:   true,
-		Reason: []model.TriggerReason{model.GlobalUpdate},
-	}, nil)
-	if err != nil {
-		f.t.Fatal(err)
-	}
+	//_, err := f.Discovery.initPushContext(&model.PushRequest{
+	//	Full:   true,
+	//	Reason: []model.TriggerReason{model.GlobalUpdate},
+	//}, nil)
+	//if err != nil {
+	//	f.t.Fatal(err)
+	//}
 }
 
 func getKubernetesObjects(t test.Failer, opts FakeOptions) map[string][]runtime.Object {

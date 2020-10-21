@@ -16,7 +16,7 @@ package xds_test
 import (
 	"testing"
 
-	"istio.io/istio/pilot/pkg/xds"
+	"istio.io/istio/pilot/pkg/xds/test"
 )
 
 // TestRDS is running RDSv2 tests.
@@ -45,7 +45,7 @@ func TestRDS(t *testing.T) {
 		},
 	}
 
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test.NewFakeDiscoveryServer(t, test.FakeOptions{})
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			adscon := s.ConnectADS()

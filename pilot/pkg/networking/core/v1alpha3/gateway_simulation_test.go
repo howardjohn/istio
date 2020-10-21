@@ -17,12 +17,13 @@ package v1alpha3_test
 import (
 	"testing"
 
+	"istio.io/pkg/env"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/simulation"
-	"istio.io/istio/pilot/pkg/xds"
+	"istio.io/istio/pilot/pkg/xds/test"
 	"istio.io/istio/pilot/test/xdstest"
 	"istio.io/istio/pkg/test/util/tmpl"
-	"istio.io/pkg/env"
 )
 
 func TestHTTPGateway(t *testing.T) {
@@ -597,16 +598,16 @@ func runGatewayTest(t *testing.T, cases ...simulationTest) {
 				Metadata: &model.NodeMetadata{Labels: map[string]string{"istio": "ingressgateway"}},
 				Type:     model.Router,
 			}
-			runSimulationTest(t, proxy, xds.FakeOptions{}, tt)
+			runSimulationTest(t, proxy, test.FakeOptions{}, tt)
 		})
 	}
 }
 
-func runSimulationTest(t *testing.T, proxy *model.Proxy, o xds.FakeOptions, tt simulationTest) {
+func runSimulationTest(t *testing.T, proxy *model.Proxy, o test.FakeOptions, tt simulationTest) {
 	runTest := func(t *testing.T) {
 		o.ConfigString = tt.config
 		o.KubernetesObjectString = tt.kubeConfig
-		s := xds.NewFakeDiscoveryServer(t, o)
+		s := test.NewFakeDiscoveryServer(t, o)
 		sim := simulation.NewSimulation(t, s, s.SetupProxy(proxy))
 		sim.RunExpectations(tt.calls)
 		if t.Failed() && debugMode {

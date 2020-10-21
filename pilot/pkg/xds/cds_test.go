@@ -16,12 +16,12 @@ package xds_test
 import (
 	"testing"
 
-	"istio.io/istio/pilot/pkg/xds"
+	"istio.io/istio/pilot/pkg/xds/test"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 )
 
 func TestCDS(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	s := test.NewFakeDiscoveryServer(t, test.FakeOptions{})
 	adscon := s.ConnectADS()
 
 	err := sendCDSReq(sidecarID(app3Ip, "app3"), adscon)

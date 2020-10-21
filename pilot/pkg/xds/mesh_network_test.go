@@ -28,9 +28,11 @@ import (
 	"istio.io/api/label"
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	networking "istio.io/api/networking/v1alpha3"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
+	"istio.io/istio/pilot/pkg/xds/test"
 	"istio.io/istio/pilot/test/xdstest"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/labels"
@@ -213,7 +215,7 @@ func runMeshNetworkingTest(t *testing.T, tt meshNetworkingTest) {
 		}
 		configObjects = append(configObjects, w.configs()...)
 	}
-	s := NewFakeDiscoveryServer(t, FakeOptions{
+	s := test.NewFakeDiscoveryServer(t, test.FakeOptions{
 		KubernetesObjectsByCluster: kubeObjects,
 		Configs:                    configObjects,
 		NetworksWatcher:            mesh.NewFixedNetworksWatcher(tt.meshNetworkConfig),
@@ -313,7 +315,7 @@ func (w *workload) configs() []config.Config {
 	return nil
 }
 
-func (w *workload) setupProxy(s *FakeDiscoveryServer) *model.Proxy {
+func (w *workload) setupProxy(s *test.FakeDiscoveryServer) *model.Proxy {
 	if w.proxy == nil {
 		p := &model.Proxy{
 			ID: strings.Join([]string{w.name, w.namespace}, "."),

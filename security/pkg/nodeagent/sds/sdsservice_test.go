@@ -133,7 +133,7 @@ func TestStreamSecretsForFileMountedsWorkloadSds(t *testing.T) {
 	wst := &mockSecretStore{
 		checkToken: false,
 	}
-	server, err := NewServer(&arg, wst, nil)
+	server, err := NewServer(&arg, wst)
 	defer server.Stop()
 	if err != nil {
 		t.Fatalf("failed to start grpc server for sds: %v", err)
@@ -236,7 +236,7 @@ func testHelper(t *testing.T, arg ca2.Options, cb secretCallback, testInvalidRes
 		gst = nil
 	}
 
-	server, err := NewServer(&arg, wst, gst)
+	server, err := NewServer(&arg, wst)
 	defer server.Stop()
 	if err != nil {
 		t.Fatalf("failed to start grpc server for sds: %v", err)
@@ -276,7 +276,7 @@ func testCredentialFetcherHelper(t *testing.T, arg ca2.Options, cb secretCallbac
 		wst = nil
 	}
 
-	server, err := NewServer(&arg, wst, nil)
+	server, err := NewServer(&arg, wst)
 	defer server.Stop()
 	if err != nil {
 		t.Fatalf("failed to start grpc server for sds: %v", err)
@@ -432,7 +432,7 @@ func createSDSServer(t *testing.T, socket string) (*Server, *mockSecretStore) {
 	st := &mockSecretStore{
 		checkToken: false,
 	}
-	server, err := NewServer(&arg, st, nil)
+	server, err := NewServer(&arg, st)
 	if err != nil {
 		t.Fatalf("failed to start grpc server for sds: %v", err)
 	}
@@ -1191,7 +1191,7 @@ func TestDebugEndpoints(t *testing.T) {
 		sdsClients = map[cache.ConnKey]*sdsConnection{}
 		sdsClientsMutex.Unlock()
 
-		server, err := NewServer(&arg, st, nil)
+		server, err := NewServer(&arg, st)
 		if err != nil {
 			t.Fatalf("failed to start grpc server for sds: %v", err)
 		}

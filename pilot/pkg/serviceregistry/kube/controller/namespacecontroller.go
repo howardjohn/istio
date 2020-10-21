@@ -24,10 +24,11 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	"istio.io/pkg/log"
+
 	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/queue"
-	certutil "istio.io/istio/security/pkg/util"
-	"istio.io/pkg/log"
+	"istio.io/istio/security/pkg/k8s/chiron"
 )
 
 const (
@@ -134,7 +135,7 @@ func (nc *NamespaceController) insertDataForNamespace(ns string) error {
 		Namespace: ns,
 		Labels:    configMapLabel,
 	}
-	return certutil.InsertDataToConfigMap(nc.client, meta, nc.getData())
+	return chiron.InsertDataToConfigMap(nc.client, meta, nc.getData())
 }
 
 // On namespace change, update the config map.
@@ -148,7 +149,7 @@ func (nc *NamespaceController) namespaceChange(ns *v1.Namespace) error {
 
 // When a config map is changed, merge the data into the configmap
 func (nc *NamespaceController) configMapChange(cm *v1.ConfigMap) error {
-	if err := certutil.UpdateDataInConfigMap(nc.client, cm.DeepCopy(), nc.getData()); err != nil {
+	if err := chiron.UpdateDataInConfigMap(nc.client, cm.DeepCopy(), nc.getData()); err != nil {
 		return fmt.Errorf("error when inserting CA cert to configmap %v: %v", cm.Name, err)
 	}
 	return nil

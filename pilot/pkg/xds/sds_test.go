@@ -28,6 +28,7 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	kubesecrets "istio.io/istio/pilot/pkg/secrets/kube"
 	authnmodel "istio.io/istio/pilot/pkg/security/model"
+	"istio.io/istio/pilot/pkg/xds/test"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/istio/pilot/test/xdstest"
 	"istio.io/istio/pkg/config/schema/gvk"
@@ -308,7 +309,7 @@ func TestGenerate(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			s := NewFakeDiscoveryServer(t, FakeOptions{
+			s := test.NewFakeDiscoveryServer(t, test.FakeOptions{
 				KubernetesObjects: []runtime.Object{genericCert, genericMtlsCert, genericMtlsCertSplit, genericMtlsCertSplitCa},
 			})
 			cc := s.KubeClient().Kube().(*fake.Clientset)

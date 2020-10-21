@@ -15,19 +15,13 @@
 package mesh
 
 import (
-	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	"github.com/davecgh/go-spew/spew"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/cache"
-
 	meshconfig "istio.io/api/mesh/v1alpha1"
-	"istio.io/istio/pkg/kube"
-	"istio.io/istio/pkg/kube/configmapwatcher"
 	"istio.io/pkg/filewatcher"
 	"istio.io/pkg/log"
 )
@@ -86,26 +80,6 @@ func NewFileWatcher(fileWatcher filewatcher.FileWatcher, filename string) (Watch
 	return w, nil
 }
 
-// NewConfigMapWatcher creates a new Watcher for changes to the given ConfigMap.
-func NewConfigMapWatcher(client kube.Client, namespace, name, key string) Watcher {
-	defaultMesh := DefaultMeshConfig()
-	w := &watcher{mesh: &defaultMesh}
-	c := configmapwatcher.NewController(client, namespace, name, func(cm *v1.ConfigMap) {
-		meshConfig, err := readConfigMap(cm, key)
-		if err != nil {
-			// Keep the last known config in case there's a misconfiguration issue.
-			log.Warnf("failed to read mesh config from ConfigMap: %v", err)
-			return
-		}
-		w.handleMeshConfig(meshConfig)
-	})
-
-	stop := make(chan struct{})
-	go c.Run(stop)
-	// Ensure the ConfigMap is initially loaded if present.
-	cache.WaitForCacheSync(stop, c.HasSynced)
-	return w
-}
 
 // Mesh returns the latest mesh config.
 func (w *watcher) Mesh() *meshconfig.MeshConfig {
@@ -138,25 +112,4 @@ func (w *watcher) handleMeshConfig(meshConfig *meshconfig.MeshConfig) {
 	for _, h := range handlers {
 		h()
 	}
-}
-
-func readConfigMap(cm *v1.ConfigMap, key string) (*meshconfig.MeshConfig, error) {
-	if cm == nil {
-		log.Info("no ConfigMap found, using default mesh config")
-		defaultMesh := DefaultMeshConfig()
-		return &defaultMesh, nil
-	}
-
-	cfgYaml, exists := cm.Data[key]
-	if !exists {
-		return nil, fmt.Errorf("missing ConfigMap key %q", key)
-	}
-
-	meshConfig, err := ApplyMeshConfigDefaults(cfgYaml)
-	if err != nil {
-		return nil, fmt.Errorf("failed reading mesh config: %v. YAML:\n%s", err, cfgYaml)
-	}
-
-	log.Info("Loaded mesh config from Kubernetes API server.")
-	return meshConfig, nil
 }

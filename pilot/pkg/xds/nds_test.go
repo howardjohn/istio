@@ -21,12 +21,12 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	nds "istio.io/istio/pilot/pkg/proto"
-	"istio.io/istio/pilot/pkg/xds"
+	"istio.io/istio/pilot/pkg/xds/test"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 )
 
 func TestNDS(t *testing.T) {
-	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{
+	s := test.NewFakeDiscoveryServer(t, test.FakeOptions{
 		ConfigString: mustReadFile(t, "./testdata/nds-se.yaml"),
 	})
 

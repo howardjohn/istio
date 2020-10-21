@@ -26,6 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	ktesting "k8s.io/client-go/testing"
+
+	"istio.io/istio/security/pkg/k8s/chiron"
 )
 
 const (
@@ -86,7 +88,7 @@ func TestUpdateDataInConfigMap(t *testing.T) {
 				}
 			}
 			client.ClearActions()
-			err := UpdateDataInConfigMap(client.CoreV1(), tc.existingConfigMap, testData)
+			err := chiron.UpdateDataInConfigMap(client.CoreV1(), tc.existingConfigMap, testData)
 			if err != nil && err.Error() != tc.expectedErr {
 				t.Errorf("actual error (%s) different from expected error (%s).", err.Error(), tc.expectedErr)
 			}
@@ -172,7 +174,7 @@ func TestInsertDataToConfigMap(t *testing.T) {
 				}
 			}
 			client.ClearActions()
-			err := InsertDataToConfigMap(client.CoreV1(), tc.meta, tc.data)
+			err := chiron.InsertDataToConfigMap(client.CoreV1(), tc.meta, tc.data)
 			if err != nil && err.Error() != tc.expectedErr {
 				t.Errorf("actual error (%s) different from expected error (%s).", err.Error(), tc.expectedErr)
 			}

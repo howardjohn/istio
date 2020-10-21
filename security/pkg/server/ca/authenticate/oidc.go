@@ -17,7 +17,6 @@ package authenticate
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/coreos/go-oidc"
 )
@@ -52,33 +51,7 @@ func NewJwtAuthenticator(iss string, trustDomain, audience string) (*JwtAuthenti
 
 // Authenticate - based on the old OIDC authenticator for mesh expansion.
 func (j *JwtAuthenticator) Authenticate(ctx context.Context) (*Caller, error) {
-	bearerToken, err := extractBearerToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("ID token extraction error: %v", err)
-	}
-
-	idToken, err := j.verifier.Verify(context.Background(), bearerToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify the ID token (error %v)", err)
-	}
-
-	// for GCP-issued JWT, the service account is in the "email" field
-	sa := &JwtPayload{}
-
-	if err := idToken.Claims(&sa); err != nil {
-		return nil, fmt.Errorf("failed to extract email field from ID token: %v", err)
-	}
-	if !strings.HasPrefix(sa.Sub, "system:serviceaccount") {
-		return nil, fmt.Errorf("invalid sub %v", sa.Sub)
-	}
-	parts := strings.Split(sa.Sub, ":")
-	ns := parts[2]
-	ksa := parts[3]
-
-	return &Caller{
-		AuthSource: AuthSourceIDToken,
-		Identities: []string{fmt.Sprintf(identityTemplate, j.trustDomain, ns, ksa)},
-	}, nil
+	return nil, nil
 }
 
 type JwtPayload struct {
