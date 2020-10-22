@@ -461,7 +461,6 @@ func extractAttributesMetadata(envVars []string, plat platform.Environment, meta
 	meta.ExchangeKeys = []string{}
 	meta.ExchangeKeys = append(meta.ExchangeKeys, metadataExchangeKeys...)
 	meta.ExchangeKeys = append(meta.ExchangeKeys, additionalMetaExchangeKeys...)
-
 }
 
 // getNodeMetaData function uses an environment variable contract
@@ -493,7 +492,12 @@ func getNodeMetaData(envs []string, plat platform.Environment, nodeIPs []string,
 		return nil, nil, err
 	}
 	extractAttributesMetadata(envs, plat, meta)
-
+	// TODO default to trust domain
+	// TODO remove from deployments
+	// TODO remove from configmap
+	if pc.MeshId != "" {
+		meta.MeshID = pc.MeshId
+	}
 	// Support multiple network interfaces, removing duplicates.
 	meta.InstanceIPs = nodeIPs
 
