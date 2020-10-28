@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	multierror "github.com/hashicorp/go-multierror"
+	"go.uber.org/atomic"
 	kubeApiAdmissionv1 "k8s.io/api/admission/v1"
 	kubeApiAdmissionv1beta1 "k8s.io/api/admission/v1beta1"
 	kubeApiApps "k8s.io/api/apps/v1beta1"
@@ -102,6 +103,8 @@ type Webhook struct {
 	// pilot
 	schemas      collection.Schemas
 	domainSuffix string
+
+	initialRequest *atomic.Bool
 }
 
 // New creates a new instance of the admission webhook server.
@@ -111,7 +114,8 @@ func New(p Options) (*Webhook, error) {
 		return nil, errors.New("expected mux to be passed, but was not passed")
 	}
 	wh := &Webhook{
-		schemas: p.Schemas,
+		schemas:        p.Schemas,
+		initialRequest: atomic.NewBool(false),
 	}
 
 	p.Mux.HandleFunc("/validate", wh.serveValidate)
@@ -119,6 +123,10 @@ func New(p Options) (*Webhook, error) {
 	p.Mux.HandleFunc("/admitpilot", wh.serveAdmitPilot)
 
 	return wh, nil
+}
+
+func (wh *Webhook) Initialize() bool {
+	return wh.initialRequest.Load()
 }
 
 //Stop the server
@@ -207,10 +215,14 @@ func serve(w http.ResponseWriter, r *http.Request, admit admitFunc) {
 }
 
 func (wh *Webhook) serveAdmitPilot(w http.ResponseWriter, r *http.Request) {
+	log.Errorf("howardjohn: got initial request")
+	wh.initialRequest.Store(true)
 	serve(w, r, wh.admitPilot)
 }
 
 func (wh *Webhook) serveValidate(w http.ResponseWriter, r *http.Request) {
+	log.Errorf("howardjohn: got initial request")
+	wh.initialRequest.Store(true)
 	serve(w, r, wh.validate)
 }
 

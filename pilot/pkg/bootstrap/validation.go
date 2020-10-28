@@ -77,6 +77,7 @@ func (s *Server) initConfigValidation(args *PilotArgs) error {
 			CAPath:            caBundlePath,
 			WebhookConfigName: webhookConfigName,
 			ServiceName:       "istiod",
+			Initialized:       whServer.Initialize,
 		}
 		s.addTerminatingStartFunc(func(stop <-chan struct{}) error {
 			leaderelection.

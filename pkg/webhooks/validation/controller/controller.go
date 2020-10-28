@@ -46,6 +46,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
+	networkingv1alpha3 "istio.io/api/networking/v1alpha3"
+	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/kube"
@@ -75,6 +77,8 @@ type Options struct {
 
 	// RemoteWebhookConfig defines whether the webhook config is coming from remote cluster
 	RemoteWebhookConfig bool
+
+	Initialized func() bool
 }
 
 // Validate the options that exposed to end users
@@ -124,6 +128,7 @@ type Controller struct {
 	// unittest hooks
 	readFile      readFileFunc
 	reconcileDone func()
+	initialized   func() bool
 }
 
 const QuitSignal = "unblock client on queue.Get return and exit the current go routine"
@@ -245,6 +250,7 @@ func newController(
 		fw:                       caFileWatcher,
 		readFile:                 readFile,
 		reconcileDone:            reconcileDone,
+		initialized:              o.Initialized,
 	}
 
 	c.webhookInformer = client.KubeInformer().Admissionregistration().V1beta1().ValidatingWebhookConfigurations()
@@ -384,24 +390,33 @@ const (
 
 // Confirm invalid configuration is successfully rejected before switching to FAIL-CLOSE.
 func (c *Controller) isDryRunOfInvalidConfigRejected() (rejected bool, reason string) {
-	invalid := &unstructured.Unstructured{}
-	invalid.SetGroupVersionKind(istioGatewayGVK.GroupVersion().WithKind("Gateway"))
-	invalid.SetName("invalid-gateway")
-	invalid.SetNamespace(c.o.WatchedNamespace)
-	invalid.Object["spec"] = map[string]interface{}{} // gateway must have at least one server
+	gateway := &unstructured.Unstructured{}
+	gateway.SetGroupVersionKind(istioGatewayGVK.GroupVersion().WithKind("Gateway"))
+	gateway.SetName("valid-gateway")
+	gateway.SetNamespace(c.o.WatchedNamespace)
+	cfg, err := config.ToMap(networkingv1alpha3.Gateway{
+		Servers: []*networkingv1alpha3.Server{{
+			Port: &networkingv1alpha3.Port{
+				Number:   1,
+				Protocol: "TCP",
+				Name:     "fake-validation",
+			},
+			Hosts: []string{"fake.validation"},
+		},
+		}})
+	if err != nil {
+		return false, err.Error()
+	}
+	gateway.Object["spec"] = cfg
 
 	createOptions := kubeApiMeta.CreateOptions{DryRun: []string{kubeApiMeta.DryRunAll}}
-	_, err := c.dynamicResourceInterface.Create(context.TODO(), invalid, createOptions)
+	_, err = c.dynamicResourceInterface.Create(context.TODO(), gateway, createOptions)
 	if kubeErrors.IsAlreadyExists(err) {
 		updateOptions := kubeApiMeta.UpdateOptions{DryRun: []string{kubeApiMeta.DryRunAll}}
-		_, err = c.dynamicResourceInterface.Update(context.TODO(), invalid, updateOptions)
+		_, err = c.dynamicResourceInterface.Update(context.TODO(), gateway, updateOptions)
 	}
 	if err == nil {
-		return false, "dummy invalid config not rejected"
-	}
-	// We expect to get deniedRequestMessageFragment (the config was rejected, as expected)
-	if strings.Contains(err.Error(), deniedRequestMessageFragment) {
-		return true, ""
+		return false, "dummy gateway config not rejected"
 	}
 	// If the CRD does not exist, we will get this error. This is to handle when Pilot is run
 	// without CRDs - in this case, this check will not be possible.
@@ -409,7 +424,10 @@ func (c *Controller) isDryRunOfInvalidConfigRejected() (rejected bool, reason st
 		log.Warnf("missing Gateway CRD, cannot perform validation check. Assuming validation is ready")
 		return true, ""
 	}
-	return false, fmt.Sprintf("dummy invalid rejected for the wrong reason: %v", err)
+	if c.initialized() {
+		return true, ""
+	}
+	return false, fmt.Sprintf("did not recieve a validation request")
 }
 
 func (c *Controller) updateValidatingWebhookConfiguration(caBundle []byte, failurePolicy kubeApiAdmission.FailurePolicyType) error {
