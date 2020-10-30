@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	tlsv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
 	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
@@ -35,7 +36,6 @@ import (
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	thrift_ratelimit "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/thrift_proxy/filters/ratelimit/v3"
 	thrift "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/thrift_proxy/v3"
-	auth "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	tracing "github.com/envoyproxy/go-control-plane/envoy/type/tracing/v3"
 	xdstype "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
@@ -1825,7 +1825,7 @@ type filterChainOpts struct {
 	sniHosts         []string
 	destinationCIDRs []string
 	metadata         *core.Metadata
-	tlsContext       *auth.DownstreamTlsContext
+	tlsContext       *tlsv2.DownstreamTlsContext
 	httpOpts         *httpListenerOpts
 	thriftOpts       *thriftListenerOpts
 	match            *listener.FilterChainMatch
@@ -2548,7 +2548,7 @@ func appendListenerFilters(filters []*listener.ListenerFilter) []*listener.Liste
 }
 
 // nolint: interfacer
-func buildDownstreamTLSTransportSocket(tlsContext *auth.DownstreamTlsContext) *core.TransportSocket {
+func buildDownstreamTLSTransportSocket(tlsContext *tlsv2.DownstreamTlsContext) *core.TransportSocket {
 	if tlsContext == nil {
 		return nil
 	}

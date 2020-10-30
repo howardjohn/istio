@@ -27,6 +27,7 @@ import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	http_conn "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
+	matcherv2 "github.com/envoyproxy/go-control-plane/envoy/type/matcher"
 	"github.com/envoyproxy/go-control-plane/pkg/conversion"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"github.com/gogo/protobuf/types"
@@ -567,6 +568,18 @@ func shortHostName(host string, attributes model.ServiceAttributes) string {
 	return host
 }
 
+func StringToExactMatch2(in []string) []*matcherv2.StringMatcher {
+	if len(in) == 0 {
+		return nil
+	}
+	res := make([]*matcherv2.StringMatcher, 0, len(in))
+	for _, s := range in {
+		res = append(res, &matcherv2.StringMatcher{
+			MatchPattern: &matcherv2.StringMatcher_Exact{Exact: s},
+		})
+	}
+	return res
+}
 func StringToExactMatch(in []string) []*matcher.StringMatcher {
 	if len(in) == 0 {
 		return nil

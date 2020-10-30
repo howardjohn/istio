@@ -15,9 +15,8 @@
 package utils
 
 import (
+	tlsv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
-	tls "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
-
 	"istio.io/pkg/log"
 
 	"istio.io/istio/pilot/pkg/features"
@@ -58,14 +57,14 @@ func BuildInboundFilterChain(mTLSMode model.MutualTLSMode, sdsUdsPath string, no
 
 	meta := node.Metadata
 	var alpnIstioMatch *listener.FilterChainMatch
-	var ctx *tls.DownstreamTlsContext
+	var ctx *tlsv2.DownstreamTlsContext
 	if features.EnableTCPMetadataExchange &&
 		(listenerProtocol == networking.ListenerProtocolTCP || listenerProtocol == networking.ListenerProtocolAuto) {
 		alpnIstioMatch = &listener.FilterChainMatch{
 			ApplicationProtocols: util.ALPNInMeshWithMxc,
 		}
-		ctx = &tls.DownstreamTlsContext{
-			CommonTlsContext: &tls.CommonTlsContext{
+		ctx = &tlsv2.DownstreamTlsContext{
+			CommonTlsContext: &tlsv2.CommonTlsContext{
 				// For TCP with mTLS, we advertise "istio-peer-exchange" from client and
 				// expect the same from server. This  is so that secure metadata exchange
 				// transfer can take place between sidecars for TCP with mTLS.
@@ -77,8 +76,8 @@ func BuildInboundFilterChain(mTLSMode model.MutualTLSMode, sdsUdsPath string, no
 		alpnIstioMatch = &listener.FilterChainMatch{
 			ApplicationProtocols: util.ALPNInMesh,
 		}
-		ctx = &tls.DownstreamTlsContext{
-			CommonTlsContext: &tls.CommonTlsContext{
+		ctx = &tlsv2.DownstreamTlsContext{
+			CommonTlsContext: &tlsv2.CommonTlsContext{
 				// Note that in the PERMISSIVE mode, we match filter chain on "istio" ALPN,
 				// which is used to differentiate between service mesh and legacy traffic.
 				//
@@ -95,8 +94,8 @@ func BuildInboundFilterChain(mTLSMode model.MutualTLSMode, sdsUdsPath string, no
 
 		if features.EnableTLSv2OnInboundPath {
 			// Set Minimum TLS version to match the default client version and allowed strong cipher suites for sidecars.
-			ctx.CommonTlsContext.TlsParams = &tls.TlsParameters{
-				TlsMinimumProtocolVersion: tls.TlsParameters_TLSv1_2,
+			ctx.CommonTlsContext.TlsParams = &tlsv2.TlsParameters{
+				TlsMinimumProtocolVersion: tlsv2.TlsParameters_TLSv1_2,
 				CipherSuites:              SupportedCiphers,
 			}
 		}

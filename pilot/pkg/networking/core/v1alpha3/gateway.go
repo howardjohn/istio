@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 
+	tlsv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
+	corev2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
@@ -378,7 +380,7 @@ func (configgen *ConfigGeneratorImpl) createGatewayHTTPFilterChainOpts(node *mod
 		// and that no two non-HTTPS servers can be on same port or share port names.
 		// Validation is done per gateway and also during merging
 		sniHosts:   node.MergedGateway.SNIHostsByServer[server],
-		tlsContext: buildGatewayListenerTLSContext(server, sdsPath, node.Metadata, node.RequestedTypes.LDS),
+		//tlsContext: buildGatewayListenerTLSContext(server, sdsPath, node.Metadata, node.RequestedTypes.LDS),
 		httpOpts: &httpListenerOpts{
 			rds:              routeName,
 			useRemoteAddress: true,
@@ -415,14 +417,14 @@ func (configgen *ConfigGeneratorImpl) createGatewayHTTPFilterChainOpts(node *mod
 //
 // Note that ISTIO_MUTUAL TLS mode and ingressSds should not be used simultaneously on the same ingress gateway.
 func buildGatewayListenerTLSContext(
-	server *networking.Server, sdsPath string, metadata *model.NodeMetadata, requestedType string) *tls.DownstreamTlsContext {
+	server *networking.Server, sdsPath string, metadata *model.NodeMetadata, requestedType string) *tlsv2.DownstreamTlsContext {
 	// Server.TLS cannot be nil or passthrough. But as a safety guard, return nil
 	if server.Tls == nil || gateway.IsPassThroughServer(server) {
 		return nil // We don't need to setup TLS context for passthrough mode
 	}
 
-	ctx := &tls.DownstreamTlsContext{
-		CommonTlsContext: &tls.CommonTlsContext{
+	ctx := &tlsv2.DownstreamTlsContext{
+		CommonTlsContext: &tlsv2.CommonTlsContext{
 			AlpnProtocols: util.ALPNHttp,
 		},
 	}
@@ -430,38 +432,38 @@ func buildGatewayListenerTLSContext(
 	if server.Tls.CredentialName != "" {
 		// If SDS is enabled at gateway, and credential name is specified at gateway config, create
 		// SDS config for gateway to fetch key/cert at gateway agent.
-		authn_model.ApplyCustomSDSToServerCommonTLSContext(ctx.CommonTlsContext, server.Tls, authn_model.GatewaySdsUdsPath, requestedType)
+		//authn_model.ApplyCustomSDSToServerCommonTLSContext(ctx.CommonTlsContext, server.Tls, authn_model.GatewaySdsUdsPath, requestedType)
 	} else if server.Tls.Mode == networking.ServerTLSSettings_ISTIO_MUTUAL {
 		authn_model.ApplyToCommonTLSContext(ctx.CommonTlsContext, metadata, sdsPath, server.Tls.SubjectAltNames, requestedType, []string{})
 	} else {
 		// Fall back to the read-from-file approach when SDS is not enabled or Tls.CredentialName is not specified.
-		ctx.CommonTlsContext.TlsCertificates = []*tls.TlsCertificate{
+		ctx.CommonTlsContext.TlsCertificates = []*tlsv2.TlsCertificate{
 			{
-				CertificateChain: &core.DataSource{
-					Specifier: &core.DataSource_Filename{
+				CertificateChain: &corev2.DataSource{
+					Specifier: &corev2.DataSource_Filename{
 						Filename: server.Tls.ServerCertificate,
 					},
 				},
-				PrivateKey: &core.DataSource{
-					Specifier: &core.DataSource_Filename{
+				PrivateKey: &corev2.DataSource{
+					Specifier: &corev2.DataSource_Filename{
 						Filename: server.Tls.PrivateKey,
 					},
 				},
 			},
 		}
-		var trustedCa *core.DataSource
+		var trustedCa *corev2.DataSource
 		if len(server.Tls.CaCertificates) != 0 {
-			trustedCa = &core.DataSource{
-				Specifier: &core.DataSource_Filename{
+			trustedCa = &corev2.DataSource{
+				Specifier: &corev2.DataSource_Filename{
 					Filename: server.Tls.CaCertificates,
 				},
 			}
 		}
 		if trustedCa != nil || len(server.Tls.SubjectAltNames) > 0 {
-			ctx.CommonTlsContext.ValidationContextType = &tls.CommonTlsContext_ValidationContext{
-				ValidationContext: &tls.CertificateValidationContext{
+			ctx.CommonTlsContext.ValidationContextType = &tlsv2.CommonTlsContext_ValidationContext{
+				ValidationContext: &tlsv2.CertificateValidationContext{
 					TrustedCa:            trustedCa,
-					MatchSubjectAltNames: util.StringToExactMatch(server.Tls.SubjectAltNames),
+					MatchSubjectAltNames: util.StringToExactMatch2(server.Tls.SubjectAltNames),
 				},
 			}
 		}
@@ -478,11 +480,11 @@ func buildGatewayListenerTLSContext(
 		server.Tls.MinProtocolVersion != networking.ServerTLSSettings_TLS_AUTO ||
 		server.Tls.MaxProtocolVersion != networking.ServerTLSSettings_TLS_AUTO {
 
-		ctx.CommonTlsContext.TlsParams = &tls.TlsParameters{
-			TlsMinimumProtocolVersion: convertTLSProtocol(server.Tls.MinProtocolVersion),
-			TlsMaximumProtocolVersion: convertTLSProtocol(server.Tls.MaxProtocolVersion),
-			CipherSuites:              server.Tls.CipherSuites,
-		}
+		//ctx.CommonTlsContext.TlsParams = &tlsv2.TlsParameters{
+		//	TlsMinimumProtocolVersion: convertTLSProtocol(server.Tls.MinProtocolVersion),
+		//	TlsMaximumProtocolVersion: convertTLSProtocol(server.Tls.MaxProtocolVersion),
+		//	CipherSuites:              server.Tls.CipherSuites,
+		//}
 	}
 
 	return ctx
@@ -525,7 +527,7 @@ func (configgen *ConfigGeneratorImpl) createGatewayTCPFilterChainOpts(
 			return []*filterChainOpts{
 				{
 					sniHosts:       node.MergedGateway.SNIHostsByServer[server],
-					tlsContext:     buildGatewayListenerTLSContext(server, push.Mesh.SdsUdsPath, node.Metadata, requestedType),
+					//tlsContext:     buildGatewayListenerTLSContext(server, push.Mesh.SdsUdsPath, node.Metadata, requestedType),
 					networkFilters: filters,
 				},
 			}
