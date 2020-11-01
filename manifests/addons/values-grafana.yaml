@@ -49,10 +49,21 @@ dashboardProviders:
         disableDeletion: false
         options:
           path: /var/lib/grafana/dashboards/istio-services
+      - name: 'grafana-stack'
+        orgId: 1
+        folder: 'istio'
+        type: file
+        disableDeletion: false
+        options:
+          path: /var/lib/grafana/dashboards/grafana-stack
+
+image:
+  tag: 7.3.1
 
 dashboardsConfigMaps:
   istio: "istio-grafana-dashboards"
   istio-services: "istio-services-grafana-dashboards"
+  grafana-stack: "grafana-stack-dashboards"
 
 # Configure the prometheus data source. We expect prometheus:9090 in the same namespace
 datasources:
@@ -68,3 +79,30 @@ datasources:
         jsonData:
           timeInterval: 5s
         editable: true
+      - name: Jaeger
+        type: jaeger
+        id: 3
+        orgId: 1
+        url: http://tracing:80/jaeger
+        access: proxy
+        jsonData: {}
+        editable: true
+        uid: jaeger
+      - access: proxy
+        name: Loki
+        type: loki
+        url: http://loki:3100
+        orgId: 1
+        id: 2
+        editable: true
+        isDefault: false
+        jsonData:
+          derivedFields:
+          - datasourceUid: jaeger
+            matcherRegex: 'traceID=(\w+)'
+            name: TraceId
+            url: '$${__value.raw}'
+          - datasourceUid: jaeger
+            matcherRegex: '"trace_id":"(\w+)"'
+            name: TraceIdJson
+            url: '$${__value.raw}'

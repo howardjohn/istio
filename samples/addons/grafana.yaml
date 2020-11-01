@@ -7,7 +7,7 @@ metadata:
     helm.sh/chart: grafana-5.8.10
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: grafana
-    app.kubernetes.io/version: "7.2.1"
+    app.kubernetes.io/version: "7.3.1"
     app.kubernetes.io/managed-by: Helm
   name: grafana
   namespace: istio-system
@@ -22,7 +22,7 @@ metadata:
     helm.sh/chart: grafana-5.8.10
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: grafana
-    app.kubernetes.io/version: "7.2.1"
+    app.kubernetes.io/version: "7.3.1"
     app.kubernetes.io/managed-by: Helm
 data:
   grafana.ini: |
@@ -50,6 +50,33 @@ data:
       orgId: 1
       type: prometheus
       url: http://prometheus:9090
+    - access: proxy
+      editable: true
+      id: 3
+      jsonData: {}
+      name: Jaeger
+      orgId: 1
+      type: jaeger
+      uid: jaeger
+      url: http://tracing:80/jaeger
+    - access: proxy
+      editable: true
+      id: 2
+      isDefault: false
+      jsonData:
+        derivedFields:
+        - datasourceUid: jaeger
+          matcherRegex: traceID=(\w+)
+          name: TraceId
+          url: $${__value.raw}
+        - datasourceUid: jaeger
+          matcherRegex: '"trace_id":"(\w+)"'
+          name: TraceIdJson
+          url: $${__value.raw}
+      name: Loki
+      orgId: 1
+      type: loki
+      url: http://loki:3100
   dashboardproviders.yaml: |
     apiVersion: 1
     providers:
@@ -67,6 +94,13 @@ data:
         path: /var/lib/grafana/dashboards/istio-services
       orgId: 1
       type: file
+    - disableDeletion: false
+      folder: istio
+      name: grafana-stack
+      options:
+        path: /var/lib/grafana/dashboards/grafana-stack
+      orgId: 1
+      type: file
 ---
 # Source: grafana/templates/service.yaml
 apiVersion: v1
@@ -78,7 +112,7 @@ metadata:
     helm.sh/chart: grafana-5.8.10
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: grafana
-    app.kubernetes.io/version: "7.2.1"
+    app.kubernetes.io/version: "7.3.1"
     app.kubernetes.io/managed-by: Helm
 spec:
   type: ClusterIP
@@ -102,7 +136,7 @@ metadata:
     helm.sh/chart: grafana-5.8.10
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: grafana
-    app.kubernetes.io/version: "7.2.1"
+    app.kubernetes.io/version: "7.3.1"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -120,7 +154,7 @@ spec:
         app.kubernetes.io/instance: grafana
         app: grafana
       annotations:
-        checksum/config: d2485b1ee9f9be63381c231826a43742bb10ebac2964bdc3f22a100eab9d032c
+        checksum/config: a2f0ec09c460a4faad19b8e6bce863cfc8ea7de76e4689f1fcbc77ff0cfa7754
         checksum/dashboards-json-config: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
         checksum/sc-dashboard-provider-config: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
         sidecar.istio.io/inject: "false"
@@ -133,7 +167,7 @@ spec:
         runAsUser: 472
       containers:
         - name: grafana
-          image: "grafana/grafana:7.2.1"
+          image: "grafana/grafana:7.3.1"
           imagePullPolicy: IfNotPresent
           volumeMounts:
             - name: config
@@ -141,6 +175,8 @@ spec:
               subPath: grafana.ini
             - name: storage
               mountPath: "/var/lib/grafana"
+            - name: dashboards-grafana-stack
+              mountPath: "/var/lib/grafana/dashboards/grafana-stack"
             - name: dashboards-istio
               mountPath: "/var/lib/grafana/dashboards/istio"
             - name: dashboards-istio-services
@@ -188,6 +224,9 @@ spec:
           configMap:
             name: grafana
           
+        - name: dashboards-grafana-stack
+          configMap:
+            name: grafana-stack-dashboards
         - name: dashboards-istio
           configMap:
             name: istio-grafana-dashboards
@@ -1099,4 +1138,16 @@ kind: ConfigMap
 metadata:
   creationTimestamp: null
   name: istio-services-grafana-dashboards
+  namespace: istio-system
+
+---
+
+apiVersion: v1
+data:
+  grafana-stack.json: |
+    {"annotations":{"list":[{"builtIn":1,"datasource":"-- Grafana --","enable":true,"hide":true,"iconColor":"rgba(0, 211, 255, 1)","name":"Annotations & Alerts","type":"dashboard"},{"datasource":"Loki","enable":true,"expr":"{container=\"istio-proxy\"} |= \"response_code\" | json | __error__ != \"JSONParserErr\" | response_code > 299 \n| line_format \"{{.job}} -> {{.upstream_cluster}} on {{.path}} {{.response_code}} {{.response_flags}} {{.request_id}}\"","hide":false,"iconColor":"rgba(255, 96, 96, 1)","limit":100,"name":"HTTP Errors","showIn":0,"tags":[],"target":{},"type":"tags"}]},"editable":true,"gnetId":null,"graphTooltip":0,"id":8,"links":[],"panels":[{"aliasColors":{},"bars":false,"dashLength":10,"dashes":false,"datasource":"Prometheus","fieldConfig":{"defaults":{"custom":{}},"overrides":[]},"fill":1,"fillGradient":0,"gridPos":{"h":11,"w":24,"x":0,"y":0},"hiddenSeries":false,"id":4,"legend":{"avg":false,"current":false,"max":false,"min":false,"show":true,"total":false,"values":false},"lines":true,"linewidth":1,"nullPointMode":"null","options":{"alertThreshold":true},"percentage":false,"pluginVersion":"7.3.1","pointradius":2,"points":false,"renderer":"flot","seriesOverrides":[],"spaceLength":10,"stack":false,"steppedLine":false,"targets":[{"expr":"sum(rate(istio_requests_total{}[1m])) by (response_code) > 0","interval":"","legendFormat":"{{response_code}}","refId":"A"}],"thresholds":[],"timeFrom":null,"timeRegions":[],"timeShift":null,"title":"Repsponses","tooltip":{"shared":true,"sort":0,"value_type":"individual"},"type":"graph","xaxis":{"buckets":null,"mode":"time","name":null,"show":true,"values":[]},"yaxes":[{"format":"short","label":null,"logBase":1,"max":null,"min":null,"show":true},{"format":"short","label":null,"logBase":1,"max":null,"min":null,"show":true}],"yaxis":{"align":false,"alignLevel":null}},{"datasource":"Loki","fieldConfig":{"defaults":{"custom":{}},"overrides":[]},"gridPos":{"h":13,"w":24,"x":0,"y":11},"id":2,"options":{"showLabels":false,"showTime":false,"sortOrder":"Descending","wrapLogMessage":false},"pluginVersion":"7.3.1","targets":[{"expr":"{container=\"istio-proxy\"} |= \"response_code\" | json | __error__ != \"JSONParserErr\" | response_code > 299 | line_format \"{{.start_time}} {{.job}} -> {{.upstream_cluster}} on {{.path}} {{.response_code}} {{.response_flags}} traceID={{.trace_id}}\"","legendFormat":"","refId":"A"}],"timeFrom":null,"timeShift":null,"title":"Error Logs","type":"logs"}],"schemaVersion":26,"style":"dark","tags":[],"templating":{"list":[]},"time":{"from":"now-15m","to":"now"},"timepicker":{},"timezone":"","title":"Grafana Stack","uid":"L6_8xnhMk","version":7}
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: grafana-stack-dashboards
   namespace: istio-system

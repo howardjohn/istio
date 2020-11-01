@@ -47,6 +47,18 @@ helm3 template prometheus prometheus \
   -f "${WD}/values-prometheus.yaml" \
   > "${ADDONS}/prometheus.yaml"
 
+helm3 template loki loki \
+  --namespace istio-system \
+  --repo https://grafana.github.io/loki/charts \
+  > "${ADDONS}/loki.yaml"
+
+helm3 template promtail promtail \
+  --namespace istio-system \
+  --repo https://grafana.github.io/loki/charts \
+  --set "loki.serviceName=loki" \
+  > "${ADDONS}/promtail.yaml"
+
+
 function compressDashboard() {
   < "${DASHBOARDS}/$1" jq -c  > "${TMP}/$1"
 }
@@ -66,6 +78,7 @@ function compressDashboard() {
   compressDashboard "istio-service-dashboard.json"
   compressDashboard "istio-mesh-dashboard.json"
   compressDashboard "istio-extension-dashboard.json"
+  compressDashboard "grafana-stack.json"
   echo -e "\n---\n"
   kubectl create configmap -n istio-system istio-grafana-dashboards \
     --dry-run=client -oyaml \
@@ -79,4 +92,9 @@ function compressDashboard() {
     --from-file=istio-service-dashboard.json="${TMP}/istio-service-dashboard.json" \
     --from-file=istio-mesh-dashboard.json="${TMP}/istio-mesh-dashboard.json" \
     --from-file=istio-extension-dashboard.json="${TMP}/istio-extension-dashboard.json"
+
+  echo -e "\n---\n"
+  kubectl create configmap -n istio-system grafana-stack-dashboards \
+    --dry-run=client -oyaml \
+    --from-file=grafana-stack.json="${TMP}/grafana-stack.json"
 } > "${ADDONS}/grafana.yaml"
