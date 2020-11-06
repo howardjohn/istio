@@ -18,9 +18,6 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 )
 
@@ -39,52 +36,52 @@ func IsAWS() bool {
 		return false
 	}
 
-	if client := getEC2MetadataClient(); client != nil {
-		return client.Available()
-	}
+	//if client := getEC2MetadataClient(); client != nil {
+		//return client.Available()
+	//}
 	return false
 }
 
 type awsEnv struct {
-	identity ec2metadata.EC2InstanceIdentityDocument
+	//identity ec2metadata.EC2InstanceIdentityDocument
 }
 
 // NewAWS returns a platform environment customized for AWS.
 // Metadata returned by the AWS Environment is taken from the EC2 metadata
 // service.
 func NewAWS() Environment {
-	client := getEC2MetadataClient()
-	if client == nil {
-		return &awsEnv{}
-	}
+	//client := getEC2MetadataClient()
+	//if client == nil {
+	//	return &awsEnv{}
+	//}
 
-	doc, _ := client.GetInstanceIdentityDocument()
+	//doc, _ := client.GetInstanceIdentityDocument()
 	return &awsEnv{
-		identity: doc,
+		//identity: doc,
 	}
 }
 
 func (a *awsEnv) Metadata() map[string]string {
 	md := map[string]string{}
-	if len(a.identity.AccountID) > 0 {
-		md[AWSAccountID] = a.identity.AccountID
-	}
-	if len(a.identity.AvailabilityZone) > 0 {
-		md[AWSAvailabilityZone] = a.identity.AvailabilityZone
-	}
-	if len(a.identity.InstanceID) > 0 {
-		md[AWSInstanceID] = a.identity.InstanceID
-	}
-	if len(a.identity.Region) > 0 {
-		md[AWSRegion] = a.identity.Region
-	}
+	//if len(a.identity.AccountID) > 0 {
+	//	md[AWSAccountID] = a.identity.AccountID
+	//}
+	//if len(a.identity.AvailabilityZone) > 0 {
+	//	md[AWSAvailabilityZone] = a.identity.AvailabilityZone
+	//}
+	//if len(a.identity.InstanceID) > 0 {
+	//	md[AWSInstanceID] = a.identity.InstanceID
+	//}
+	//if len(a.identity.Region) > 0 {
+	//	md[AWSRegion] = a.identity.Region
+	//}
 	return md
 }
 
 func (a *awsEnv) Locality() *core.Locality {
 	return &core.Locality{
-		Zone:   a.identity.AvailabilityZone,
-		Region: a.identity.Region,
+		//Zone:   a.identity.AvailabilityZone,
+		//Region: a.identity.Region,
 	}
 }
 
@@ -96,16 +93,16 @@ func (a *awsEnv) IsKubernetes() bool {
 	return true
 }
 
-func getEC2MetadataClient() *ec2metadata.EC2Metadata {
-	sess, err := session.NewSession(&aws.Config{
-		// eliminate retries to prevent 20s wait for Available() on non-aws platforms.
-		MaxRetries: aws.Int(0),
-	})
-	if err != nil {
-		return nil
-	}
-	return ec2metadata.New(sess)
-}
+//func getEC2MetadataClient() *ec2metadata.EC2Metadata {
+//	sess, err := session.NewSession(&aws.Config{
+//		// eliminate retries to prevent 20s wait for Available() on non-aws platforms.
+//		MaxRetries: aws.Int(0),
+//	})
+//	if err != nil {
+//		return nil
+//	}
+//	return ec2metadata.New(sess)
+//}
 
 // Provides a quick way to tell if a host is likely on AWS, as the `Available()`
 // check on the client is potentially very slow.

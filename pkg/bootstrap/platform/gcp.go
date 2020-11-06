@@ -24,10 +24,6 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/compute/v1"
-	"google.golang.org/api/option"
-
 	"istio.io/pkg/env"
 	"istio.io/pkg/log"
 )
@@ -242,7 +238,7 @@ func (e *gcpEnv) Locality() *core.Locality {
 // Labels attempts to retrieve the GCE instance labels within the timeout
 // Requires read access to the Compute API (compute.instances.get)
 func (e *gcpEnv) Labels() map[string]string {
-	md := e.Metadata()
+	//md := e.Metadata()
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -251,27 +247,27 @@ func (e *gcpEnv) Labels() map[string]string {
 	var instanceLabels map[string]string
 	go func() {
 		// use explicit credentials with compute.instances.get IAM permissions
-		creds, err := google.FindDefaultCredentials(ctx, compute.ComputeReadonlyScope)
-		if err != nil {
-			log.Warnf("failed to find default credentials: %v", err)
-			success <- false
-			return
-		}
-		computeService, err := compute.NewService(ctx, option.WithCredentials(creds))
-		if err != nil {
-			log.Warnf("failed to create new service: %v", err)
-			success <- false
-			return
-		}
-		// instance.Labels is nil if no labels are present
-		instanceObj, err := computeService.Instances.Get(md[GCPProject], md[GCPLocation], md[GCEInstance]).Do()
-		if err != nil {
-			log.Warnf("unable to retrieve instance: %v", err)
-			success <- false
-			return
-		}
-		instanceLabels = instanceObj.Labels
-		success <- true
+		//creds, err := google.FindDefaultCredentials(ctx, compute.ComputeReadonlyScope)
+		//if err != nil {
+		//	log.Warnf("failed to find default credentials: %v", err)
+		//	success <- false
+		//	return
+		//}
+		//computeService, err := compute.NewService(ctx, option.WithCredentials(creds))
+		//if err != nil {
+		//	log.Warnf("failed to create new service: %v", err)
+		//	success <- false
+		//	return
+		//}
+		//// instance.Labels is nil if no labels are present
+		//instanceObj, err := computeService.Instances.Get(md[GCPProject], md[GCPLocation], md[GCEInstance]).Do()
+		//if err != nil {
+		//	log.Warnf("unable to retrieve instance: %v", err)
+		//	success <- false
+		//	return
+		//}
+		//instanceLabels = instanceObj.Labels
+		//success <- true
 	}()
 	select {
 	case <-ctx.Done():
