@@ -35,6 +35,7 @@ import (
 	"istio.io/istio/pilot/pkg/networking/plugin"
 	"istio.io/istio/pilot/pkg/networking/util"
 	authn_model "istio.io/istio/pilot/pkg/security/model"
+	"istio.io/istio/pilot/pkg/util/sets"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/gateway"
@@ -214,6 +215,7 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 	gatewayRoutes := make(map[string]map[string][]*route.Route)
 	gatewayVirtualServices := make(map[string][]config.Config)
 	vHostDedupMap := make(map[host.Name]*route.VirtualHost)
+	routeDedupMap := make(map[host.Name]*[]*route.Route)
 	for _, server := range servers {
 		gatewayName := merged.GatewayNameForServer[server]
 		if server.Tls != nil && server.Tls.HttpsRedirect {
@@ -241,6 +243,8 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 			gatewayVirtualServices[gatewayName] = virtualServices
 		}
 
+		dedupeable := sets.NewSet()
+		notDedupeable := sets.NewSet()
 		for _, virtualService := range virtualServices {
 			virtualServiceHosts := host.NewNames(virtualService.Spec.(*networking.VirtualService).Hosts)
 			serverHosts := host.NamesForNamespace(server.Hosts, virtualService.Namespace)
@@ -253,6 +257,7 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 				continue
 			}
 
+			log.Errorf("howardjohn: intersection: %v", intersectingHosts)
 			var routes []*route.Route
 			var exists bool
 			var err error
@@ -272,12 +277,19 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 			}
 
 			for _, hostname := range intersectingHosts {
+				if dedupeable.Contains(string(hostname)) {
+					notDedupeable.Insert(string(hostname))
+				}
+				dedupeable.Insert(string(hostname))
 				if vHost, exists := vHostDedupMap[hostname]; exists {
+					log.Errorf("howardjohn: %v dupe", hostname)
 					// before merging this virtual service's routes, make sure that the existing one is not a tls redirect host
 					if vHost.RequireTls == route.VirtualHost_NONE {
 						vHost.Routes = append(vHost.Routes, routes...)
+						routeDedupMap[hostname] = &routes
 					}
 				} else {
+					log.Errorf("howardjohn: %v new -> %p", hostname, routes)
 					newVHost := &route.VirtualHost{
 						Name:                       domainName(string(hostname), port),
 						Domains:                    buildGatewayVirtualHostDomains(string(hostname), port),
@@ -285,7 +297,34 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 						IncludeRequestAttemptCount: true,
 					}
 					vHostDedupMap[hostname] = newVHost
+					routeDedupMap[hostname] = &routes
 				}
+			}
+		}
+		log.Errorf("howardjohn: dedupable %v", dedupeable.UnsortedList())
+		log.Errorf("howardjohn: not dedupable %v", notDedupeable.UnsortedList())
+	}
+	for h1, r1 := range routeDedupMap {
+		for h2, r2 := range routeDedupMap {
+			if h1 == h2 {
+				continue
+			}
+			if r1 == r2 {
+				vh, f := vHostDedupMap[h1]
+				if !f {
+					log.Errorf("howardjohn: already hit %v", h1)
+					continue
+				}
+				v2, f := vHostDedupMap[h2]
+				if !f {
+					log.Errorf("howardjohn: already hit %v", h2)
+					continue
+				}
+				vh.Domains = append(vh.Domains, v2.Domains...)
+				delete(vHostDedupMap, h2)
+				log.Errorf("howardjohn: %v -> %v", h1, h2)
+			} else {
+				log.Errorf("howardjohn: %p != %p for %v -> %v", (r1), (r2), h1, h2)
 			}
 		}
 	}
