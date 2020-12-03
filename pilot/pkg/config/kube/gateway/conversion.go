@@ -258,10 +258,20 @@ func convertDestinationRule(r *KubernetesResources) []config.Config {
 	return result
 }
 
+func lookupGateways(cfg config.Config, routeMap map[RouteKey][]string) ([]string, bool) {
+	selector := getGatewaySelectorFromSpec(cfg.Spec)
+	if selector.Allow == k8s.GatewayAllowFromList && len(selector.GatewayRefs) == 1 &&
+		selector.GatewayRefs[0].Name == "mesh" && selector.GatewayRefs[0].Namespace == "istio-system" {
+		return []string{"mesh"}, true
+	}
+	gw, f := routeMap[toRouteKey(cfg)]
+	return gw, f
+}
+
 func convertVirtualService(r *KubernetesResources, routeMap map[RouteKey][]string) []config.Config {
 	result := []config.Config{}
 	for _, obj := range r.TCPRoute {
-		gateways, f := routeMap[toRouteKey(obj)]
+		gateways, f := lookupGateways(obj, routeMap)
 		if !f {
 			// There are no gateways using this route
 			continue
@@ -272,7 +282,7 @@ func convertVirtualService(r *KubernetesResources, routeMap map[RouteKey][]strin
 	}
 
 	for _, obj := range r.TLSRoute {
-		gateways, f := routeMap[toRouteKey(obj)]
+		gateways, f := lookupGateways(obj, routeMap)
 		if !f {
 			// There are no gateways using this route
 			continue
@@ -283,7 +293,7 @@ func convertVirtualService(r *KubernetesResources, routeMap map[RouteKey][]strin
 	}
 
 	for _, obj := range r.HTTPRoute {
-		gateways, f := routeMap[toRouteKey(obj)]
+		gateways, f := lookupGateways(obj, routeMap)
 		if !f {
 			// There are no gateways using this route
 			continue
