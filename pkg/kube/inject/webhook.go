@@ -63,6 +63,9 @@ func init() {
 	_ = corev1.AddToScheme(runtimeScheme)
 	_ = kubeApiAdmissionv1.AddToScheme(runtimeScheme)
 	_ = kubeApiAdmissionv1beta1.AddToScheme(runtimeScheme)
+	for t := range runtimeScheme.AllKnownTypes() {
+		fmt.Println(t)
+	}
 }
 
 const (

@@ -485,6 +485,154 @@ func parseTemplate(tmplStr string, funcMap map[string]interface{}, data SidecarT
 // IntoResourceFile injects the istio proxy into the specified
 // kubernetes YAML file.
 // nolint: lll
+func IntoResourceFileCall(in io.Reader, out io.Writer, injector Injector) error {
+	reader := yamlDecoder.NewYAMLReader(bufio.NewReaderSize(in, 4096))
+	for {
+		raw, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		obj, err := FromRawToObject(raw)
+		if err != nil && !runtime.IsNotRegisteredError(err) {
+			return err
+		}
+
+		var updated []byte
+		if err == nil {
+			outObject, err := IntoObjectCall(obj, injector)
+			if err != nil {
+				return err
+			}
+			if updated, err = yaml.Marshal(outObject); err != nil {
+				return err
+			}
+		} else {
+			updated = raw // unchanged
+		}
+
+		if _, err = out.Write(updated); err != nil {
+			return err
+		}
+		if _, err = fmt.Fprint(out, "---\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// IntoObject convert the incoming resources into Injected resources
+func IntoObjectCall(in runtime.Object, injector Injector) (interface{}, error) {
+	out := in.DeepCopyObject()
+
+	var deploymentMetadata *metav1.ObjectMeta
+	var metadata *metav1.ObjectMeta
+	var podSpec *corev1.PodSpec
+
+	// Handle Lists
+	if list, ok := out.(*corev1.List); ok {
+		result := list
+
+		for i, item := range list.Items {
+			obj, err := FromRawToObject(item.Raw)
+			if runtime.IsNotRegisteredError(err) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			r, err := IntoObjectCall(obj, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			re := runtime.RawExtension{}
+			re.Object = r.(runtime.Object)
+			result.Items[i] = re
+		}
+		return result, nil
+	}
+
+	// CronJobs have JobTemplates in them, instead of Templates, so we
+	// special case them.
+	switch v := out.(type) {
+	case *v2alpha1.CronJob:
+		job := v
+		metadata = &job.Spec.JobTemplate.ObjectMeta
+		deploymentMetadata = &job.ObjectMeta
+		podSpec = &job.Spec.JobTemplate.Spec.Template.Spec
+	case *corev1.Pod:
+		pod := v
+		metadata = &pod.ObjectMeta
+		deploymentMetadata = &pod.ObjectMeta
+		podSpec = &pod.Spec
+	case *appsv1.Deployment: // Added to be explicit about the most expected case
+		deploy := v
+		deploymentMetadata = &deploy.ObjectMeta
+		metadata = &deploy.Spec.Template.ObjectMeta
+		podSpec = &deploy.Spec.Template.Spec
+	default:
+		// `in` is a pointer to an Object. Dereference it.
+		outValue := reflect.ValueOf(out).Elem()
+
+		deploymentMetadata = outValue.FieldByName("ObjectMeta").Addr().Interface().(*metav1.ObjectMeta)
+
+		templateValue := outValue.FieldByName("Spec").FieldByName("Template")
+		// `Template` is defined as a pointer in some older API
+		// definitions, e.g. ReplicationController
+		if templateValue.Kind() == reflect.Ptr {
+			if templateValue.IsNil() {
+				return out, fmt.Errorf("spec.template is required value")
+			}
+			templateValue = templateValue.Elem()
+		}
+		metadata = templateValue.FieldByName("ObjectMeta").Addr().Interface().(*metav1.ObjectMeta)
+		podSpec = templateValue.FieldByName("Spec").Addr().Interface().(*corev1.PodSpec)
+	}
+
+	name := metadata.Name
+	if name == "" {
+		name = deploymentMetadata.Name
+	}
+
+	pod := &corev1.Pod{
+		TypeMeta:   metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
+		ObjectMeta: *metadata,
+		Spec:       *podSpec,
+	}
+	patchBytes, err := injector.Inject(pod)
+	if err != nil {
+		return nil, err
+	}
+	patched, err := applyJSONPatchToPod(pod, patchBytes)
+	if err != nil {
+		return nil, err
+	}
+	patchedObject, _, err := jsonSerializer.Decode(patched, nil, &corev1.Pod{})
+	if err != nil {
+		return nil, err
+	}
+	patchedPod := patchedObject.(*corev1.Pod)
+	*metadata = patchedPod.ObjectMeta
+	*podSpec = patchedPod.Spec
+	return out, nil
+}
+
+type Injector interface {
+	Inject(pod *corev1.Pod) ([]byte, error)
+}
+
+func injectPodExternal(pod *corev1.Pod) ([]byte, error) {
+	return []byte("[]"), nil
+}
+
+// IntoResourceFile injects the istio proxy into the specified
+// kubernetes YAML file.
+// nolint: lll
 func IntoResourceFile(sidecarTemplate Templates, valuesConfig string, revision string, meshconfig *meshconfig.MeshConfig, in io.Reader, out io.Writer, warningHandler func(string)) error {
 	reader := yamlDecoder.NewYAMLReader(bufio.NewReaderSize(in, 4096))
 	for {
