@@ -1,0 +1,21 @@
+{
+  "xds_servers": [
+    {
+      "server_uri": "dns:///localhost:15010",
+      "channel_creds": [
+        {
+          "type": "insecure"
+        }
+      ]
+    }
+  ],
+  "server_features": [
+    "xds_v3"
+  ],
+  "node": {
+    "id": "sidecar~10.0.0.1~foo.ns~ns.cluster.local",
+    "metadata": {
+      "GENERATOR": "grpc"
+    }
+  }
+}

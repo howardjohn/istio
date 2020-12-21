@@ -19,17 +19,18 @@ import (
 	"os"
 	"testing"
 	"time"
-
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
+	"istio.io/pkg/log"
 
 	//  To install the xds resolvers and balancers.
 	_ "google.golang.org/grpc/xds"
 
 	networking "istio.io/api/networking/v1alpha3"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/xds"
 	"istio.io/istio/pkg/config"
@@ -44,6 +45,7 @@ var (
 )
 
 func TestGRPC(t *testing.T) {
+	log.Configure(&log.Options{LogGrpc: true})
 	ds := xds.NewXDS(make(chan struct{}))
 
 	sd := ds.DiscoveryServer.MemRegistry

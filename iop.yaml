@@ -1,0 +1,44 @@
+apiVersion: operator.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: istio
+spec:
+  values:
+    sidecarInjectorWebhook:
+      templates:
+        grpc: |
+          metadata:
+            annotations:
+              grpc.io/proxyless-bootstrap: |
+                {
+                  "xds_servers": [{
+                    "server_uri": "dns:///istiod.istio-system.svc:15010",
+                    "channel_creds":[{"type":"insecure"}]
+                  }],
+                  "server_features":["xds_v3"],
+                  "node": {
+                    "id": "sidecar~10.0.0.1~proxyless.default~default.svc.cluster.local",
+                    "metadata": {"GENERATOR":"grpc"}
+                  }
+                }
+          spec:
+            containers:
+          {{- range $index, $container := .Spec.Containers }}
+            - name: {{ $container.Name }}
+              env:
+              - name: GRPC_XDS_EXPERIMENTAL_V3_SUPPORT
+                value: "true"
+              - name: GRPC_XDS_BOOTSTRAP
+                value: /var/lib/grpc/data/bootstrap.json
+              volumeMounts:
+              - mountPath: /var/lib/grpc/data/bootstrap.json
+                subPath: bootstrap.json
+                name: grpc-io-proxyless-bootstrap
+          {{- end}}
+            volumes:
+            - name: grpc-io-proxyless-bootstrap
+              downwardAPI:
+                items:
+                - path: bootstrap.json
+                  fieldRef:
+                    fieldPath: "metadata.annotations['grpc.io/proxyless-bootstrap']"
