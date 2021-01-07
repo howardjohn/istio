@@ -17,6 +17,7 @@ package common
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"istio.io/istio/pkg/test"
@@ -63,6 +64,9 @@ func (c TrafficTestCase) Run(ctx framework.TestContext, namespace string) {
 		if len(c.config) > 0 {
 			ctx.Config().ApplyYAMLOrFail(ctx, namespace, c.config)
 			ctx.Cleanup(func() {
+				if ctx.Failed() {
+					os.Exit(1)
+				}
 				_ = ctx.Config().DeleteYAML(namespace, c.config)
 			})
 		}
@@ -99,6 +103,7 @@ func RunAllTrafficTests(ctx framework.TestContext, apps *EchoDeployments) {
 	}
 	for name, tts := range cases {
 		ctx.NewSubTest(name).Run(func(ctx framework.TestContext) {
+			time.Sleep(time.Millisecond*150)
 			for _, tt := range tts {
 				tt.Run(ctx, apps.Namespace.Name())
 			}

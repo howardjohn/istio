@@ -73,6 +73,9 @@ type SidecarScope struct {
 	// sidecar scope
 	Sidecar *networking.Sidecar
 
+	// Version this sidecar was computed for
+	Version string
+
 	// Set of egress listeners, and their associated services.  A sidecar
 	// scope should have either ingress/egress listeners or both.  For
 	// every proxy workload that maps to a sidecar API object (or the
@@ -184,6 +187,7 @@ func DefaultSidecarScopeForNamespace(ps *PushContext, configNamespace string) *S
 		servicesByHostname: make(map[host.Name]*Service),
 		configDependencies: make(map[uint32]struct{}),
 		RootNamespace:      ps.Mesh.RootNamespace,
+		Version:            ps.PushVersion,
 	}
 
 	// Now that we have all the services that sidecars using this scope (in
@@ -230,6 +234,8 @@ func DefaultSidecarScopeForNamespace(ps *PushContext, configNamespace string) *S
 		}
 	}
 
+	log.Errorf("howardjohn: default sidecar for %v has %v DR", configNamespace, len(out.destinationRules))
+
 	return out
 }
 
@@ -246,6 +252,7 @@ func ConvertToSidecarScope(ps *PushContext, sidecarConfig *config.Config, config
 		Sidecar:            sidecar,
 		configDependencies: make(map[uint32]struct{}),
 		RootNamespace:      ps.Mesh.RootNamespace,
+		Version:            ps.PushVersion,
 	}
 
 	out.EgressListeners = make([]*IstioEgressListenerWrapper, 0)
@@ -376,6 +383,7 @@ func ConvertToSidecarScope(ps *PushContext, sidecarConfig *config.Config, config
 	if len(sidecar.Ingress) > 0 {
 		out.HasCustomIngressListeners = true
 	}
+	log.Errorf("howardjohn: sidecar for %v has %v DR", sidecarConfig.Name, len(out.destinationRules))
 
 	return out
 }

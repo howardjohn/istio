@@ -22,6 +22,7 @@ import (
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	"github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"istio.io/pkg/log"
 
 	networking "istio.io/api/networking/v1alpha3"
 	"istio.io/istio/pilot/pkg/features"
@@ -56,6 +57,13 @@ func (cb *ClusterBuilder) applyDestinationRule(c *cluster.Cluster, clusterMode C
 	proxyNetworkView map[string]bool) []*cluster.Cluster {
 	destRule := cb.push.DestinationRule(cb.proxy, service)
 	destinationRule := castDestinationRuleOrDefault(destRule)
+	if c.Name == "outbound|8888||fake.external.com" {
+		if destRule == nil {
+			log.Errorf("howardjohn: for %v, got NO dest rule", cb.proxy.ID)
+		} else {
+			log.Errorf("howardjohn: for %v, got dest rule %+v", cb.proxy.ID, destinationRule.GetTrafficPolicy())
+		}
+	}
 
 	opts := buildClusterOpts{
 		mesh:        cb.push.Mesh,

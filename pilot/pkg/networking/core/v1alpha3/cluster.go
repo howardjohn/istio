@@ -170,6 +170,9 @@ func (configgen *ConfigGeneratorImpl) buildOutboundClusters(cb *ClusterBuilder, 
 
 			clusters = cp.conditionallyAppend(clusters, defaultCluster)
 			clusters = cp.conditionallyAppend(clusters, subsetClusters...)
+			if defaultCluster.Name == "outbound|8888||fake.external.com" {
+				log.Errorf("howardjohn: for %v, got dest rule %+v", cb.proxy.ID, defaultCluster.GetTransportSocket())
+			}
 		}
 	}
 

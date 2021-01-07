@@ -425,6 +425,17 @@ func tlsOriginationCases(apps *EchoDeployments) []TrafficTestCase {
 			c := c
 			e := e
 
+			//cases = append(cases, TrafficTestCase{
+			//	name: fmt.Sprintf("%s: %s", c.Config().Cluster.Name(), e.alpn),
+			//	opts: echo.CallOptions{
+			//		Port:      &echo.Port{ServicePort: e.port, Protocol: protocol.HTTP},
+			//		Address:   apps.External[0].Address(),
+			//		Headers:   HostHeader(apps.External[0].Config().DefaultHostHeader),
+			//		Scheme:    scheme.HTTP,
+			//		Validator: echo.ExpectNotOK(),
+			//	},
+			//	call: c.CallWithRetryOrFail,
+			//})
 			cases = append(cases, TrafficTestCase{
 				name: fmt.Sprintf("%s: %s", c.Config().Cluster.Name(), e.alpn),
 				config: fmt.Sprintf(`

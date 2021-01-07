@@ -174,6 +174,12 @@ func ExpectCode(expected string) Validator {
 		return responses.CheckCode(expected)
 	})
 }
+// ExpectNotOk returns a Validator that checks the responses for the given response code.
+func ExpectNotOK() Validator {
+	return ValidatorFunc(func(resp client.ParsedResponses, err error) error {
+		return resp.CheckNotOK()
+	})
+}
 
 // ValidatorFunc is a function that serves as a Validator.
 type ValidatorFunc func(client.ParsedResponses, error) error

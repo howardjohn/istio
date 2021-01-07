@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	adminapi "github.com/envoyproxy/go-control-plane/envoy/admin/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	tls "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
@@ -177,6 +178,7 @@ func (s *DiscoveryServer) AddDebugHandlers(mux *http.ServeMux, enableProfiling b
 
 	s.addDebugHandler(mux, "/debug/authorizationz", "Internal authorization policies", s.Authorizationz)
 	s.addDebugHandler(mux, "/debug/config_dump", "ConfigDump in the form of the Envoy admin config dump API for passed in proxyID", s.ConfigDump)
+	s.addDebugHandler(mux, "/debug/push_context", "ConfigDump in the form of the Envoy admin config dump API for passed in proxyID", s.PushContext)
 	s.addDebugHandler(mux, "/debug/push_status", "Last PushContext Details", s.PushStatusHandler)
 
 	s.addDebugHandler(mux, "/debug/inject", "Active inject template", s.InjectTemplateHandler(webhook))
@@ -472,16 +474,29 @@ func (s *DiscoveryServer) adsz(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func (s *DiscoveryServer) PushContext(w http.ResponseWriter, req *http.Request) {
+	pc := s.globalPushContext()
+	_, _ = w.Write([]byte(spew.Sprint(pc.PushVersion)))
+	_, _ = w.Write([]byte(spew.Sprint(pc.ServiceIndex)))
+	_, _ = w.Write([]byte(spew.Sprint(pc.DestinationRuleIndex)))
+}
 // ConfigDump returns information in the form of the Envoy admin API config dump for the specified proxy
 // The dump will only contain dynamic listeners/clusters/routes and can be used to compare what an Envoy instance
 // should look like according to Pilot vs what it currently does look like.
 func (s *DiscoveryServer) ConfigDump(w http.ResponseWriter, req *http.Request) {
 	if proxyID := req.URL.Query().Get("proxyID"); proxyID != "" {
+
 		con := s.getProxyConnection(proxyID)
 		if con == nil {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte("Proxy not connected to this Pilot instance"))
 			return
+		}
+		if req.URL.Query().Get("push") != "" {
+			log.Errorf("howardjohn: enqueue for push - %v", s.pushQueue.Pending())
+			s.pushQueue.Enqueue(con, &model.PushRequest{Full: true, Push: s.globalPushContext()})
+		} else {
+			log.Errorf("howardjohn: push form is empty")
 		}
 
 		jsonm := &jsonpb.Marshaler{Indent: "    "}

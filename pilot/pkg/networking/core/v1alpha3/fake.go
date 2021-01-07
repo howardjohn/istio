@@ -160,7 +160,7 @@ func NewConfigGenTest(t test.Failer, opts TestOptions) *ConfigGenTest {
 	if !opts.SkipRun {
 		fake.Run()
 		env.PushContext = model.NewPushContext()
-		if err := env.PushContext.InitContext(env, nil, nil); err != nil {
+		if err := env.PushContext.InitContext(env, nil, nil, "fake"); err != nil {
 			t.Fatalf("Failed to initialize push context: %v", err)
 		}
 	}

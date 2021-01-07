@@ -130,6 +130,14 @@ func (r ParsedResponses) CheckOK() error {
 		return nil
 	})
 }
+func (r ParsedResponses) CheckNotOK() error {
+	return r.Check(func(i int, response *ParsedResponse) error {
+		if response.Code == "200" {
+			return fmt.Errorf("response[%d] Status Code: %s, expected not 200", i, response.Code)
+		}
+		return nil
+	})
+}
 
 func (r ParsedResponses) CheckOKOrFail(t test.Failer) ParsedResponses {
 	t.Helper()

@@ -167,8 +167,8 @@ type PushContext struct {
 	// virtualServiceIndex is the index of virtual services by various fields.
 	virtualServiceIndex virtualServiceIndex
 
-	// destinationRuleIndex is the index of destination rules by various fields.
-	destinationRuleIndex destinationRuleIndex
+	// DestinationRuleIndex is the index of destination rules by various fields.
+	DestinationRuleIndex destinationRuleIndex
 
 	// gatewayIndex is the index of gateways.
 	gatewayIndex gatewayIndex
@@ -204,6 +204,10 @@ type PushContext struct {
 	// AuthnBetaPolicies contains (beta) Authn policies by namespace.
 	AuthnBetaPolicies *AuthenticationPolicies `json:"-"`
 
+	// PushVersion
+	PushVersion string
+
+	// Version is the ledger version. TODO rename
 	Version string
 
 	// cache gateways addresses for each network
@@ -523,7 +527,7 @@ func NewPushContext() *PushContext {
 	return &PushContext{
 		ServiceIndex:            newServiceIndex(),
 		virtualServiceIndex:     newVirtualServiceIndex(),
-		destinationRuleIndex:    newDestinationRuleIndex(),
+		DestinationRuleIndex:    newDestinationRuleIndex(),
 		sidecarsByNamespace:     map[string][]*SidecarScope{},
 		envoyFiltersByNamespace: map[string][]*EnvoyFilterWrapper{},
 		gatewayIndex:            newGatewayIndex(),
@@ -759,6 +763,9 @@ func (ps *PushContext) DestinationRule(proxy *Proxy, service *Service) *config.C
 	if proxy.SidecarScope != nil && proxy.Type == SidecarProxy {
 		// If there is a sidecar scope for this proxy, return the destination rule
 		// from the sidecar scope.
+		if service.Hostname == "fake.external.com" {
+			//log.Errorf("howardjohn: got DR=%v for push %v sidecar %v %v", proxy.SidecarScope.DestinationRule(service.Hostname) != nil, ps.PushVersion, proxy.SidecarScope.Version, proxy.ID)
+		}
 		return proxy.SidecarScope.DestinationRule(service.Hostname)
 	}
 
@@ -774,12 +781,12 @@ func (ps *PushContext) DestinationRule(proxy *Proxy, service *Service) *config.C
 	// 1. select destination rule from proxy config namespace
 	if proxy.ConfigNamespace != ps.Mesh.RootNamespace {
 		// search through the DestinationRules in proxy's namespace first
-		if ps.destinationRuleIndex.namespaceLocal[proxy.ConfigNamespace] != nil {
+		if ps.DestinationRuleIndex.namespaceLocal[proxy.ConfigNamespace] != nil {
 			if hostname, ok := MostSpecificHostMatch(service.Hostname,
-				ps.destinationRuleIndex.namespaceLocal[proxy.ConfigNamespace].hostsMap,
-				ps.destinationRuleIndex.namespaceLocal[proxy.ConfigNamespace].hosts,
+				ps.DestinationRuleIndex.namespaceLocal[proxy.ConfigNamespace].hostsMap,
+				ps.DestinationRuleIndex.namespaceLocal[proxy.ConfigNamespace].hosts,
 			); ok {
-				return ps.destinationRuleIndex.namespaceLocal[proxy.ConfigNamespace].destRule[hostname]
+				return ps.DestinationRuleIndex.namespaceLocal[proxy.ConfigNamespace].destRule[hostname]
 			}
 		}
 	} else {
@@ -787,10 +794,10 @@ func (ps *PushContext) DestinationRule(proxy *Proxy, service *Service) *config.C
 		// need to worry about overriding other DRs with *.local type rules here. If we ignore this, then exportTo=. in
 		// root namespace would always be ignored
 		if hostname, ok := MostSpecificHostMatch(service.Hostname,
-			ps.destinationRuleIndex.rootNamespaceLocal.hostsMap,
-			ps.destinationRuleIndex.rootNamespaceLocal.hosts,
+			ps.DestinationRuleIndex.rootNamespaceLocal.hostsMap,
+			ps.DestinationRuleIndex.rootNamespaceLocal.hosts,
 		); ok {
-			return ps.destinationRuleIndex.rootNamespaceLocal.destRule[hostname]
+			return ps.DestinationRuleIndex.rootNamespaceLocal.destRule[hostname]
 		}
 	}
 
@@ -827,15 +834,15 @@ func (ps *PushContext) DestinationRule(proxy *Proxy, service *Service) *config.C
 }
 
 func (ps *PushContext) getExportedDestinationRuleFromNamespace(owningNamespace string, hostname host.Name, clientNamespace string) *config.Config {
-	if ps.destinationRuleIndex.exportedByNamespace[owningNamespace] != nil {
+	if ps.DestinationRuleIndex.exportedByNamespace[owningNamespace] != nil {
 		if specificHostname, ok := MostSpecificHostMatch(hostname,
-			ps.destinationRuleIndex.exportedByNamespace[owningNamespace].hostsMap,
-			ps.destinationRuleIndex.exportedByNamespace[owningNamespace].hosts,
+			ps.DestinationRuleIndex.exportedByNamespace[owningNamespace].hostsMap,
+			ps.DestinationRuleIndex.exportedByNamespace[owningNamespace].hosts,
 		); ok {
 			// Check if the dest rule for this host is actually exported to the proxy's (client) namespace
-			exportToMap := ps.destinationRuleIndex.exportedByNamespace[owningNamespace].exportTo[specificHostname]
+			exportToMap := ps.DestinationRuleIndex.exportedByNamespace[owningNamespace].exportTo[specificHostname]
 			if len(exportToMap) == 0 || exportToMap[visibility.Public] || exportToMap[visibility.Instance(clientNamespace)] {
-				return ps.destinationRuleIndex.exportedByNamespace[owningNamespace].destRule[specificHostname]
+				return ps.DestinationRuleIndex.exportedByNamespace[owningNamespace].destRule[specificHostname]
 			}
 		}
 	}
@@ -877,7 +884,7 @@ func (ps *PushContext) SubsetToLabels(proxy *Proxy, subsetName string, hostname 
 // InitContext will initialize the data structures used for code generation.
 // This should be called before starting the push, from the thread creating
 // the push context.
-func (ps *PushContext) InitContext(env *Environment, oldPushContext *PushContext, pushReq *PushRequest) error {
+func (ps *PushContext) InitContext(env *Environment, oldPushContext *PushContext, pushReq *PushRequest, version string) error {
 	// Acquire a lock to ensure we don't concurrently initialize the same PushContext.
 	// If this does happen, one thread will block then exit early from initDone=true
 	ps.initializeMutex.Lock()
@@ -891,6 +898,7 @@ func (ps *PushContext) InitContext(env *Environment, oldPushContext *PushContext
 	ps.ServiceDiscovery = env
 	ps.IstioConfigStore = env
 	ps.Version = env.Version()
+	ps.PushVersion = version
 
 	// Must be initialized first
 	// as initServiceRegistry/VirtualServices/Destrules
@@ -1011,7 +1019,7 @@ func (ps *PushContext) updateContext(
 			return err
 		}
 	} else {
-		ps.destinationRuleIndex = oldPushContext.destinationRuleIndex
+		ps.DestinationRuleIndex = oldPushContext.DestinationRuleIndex
 	}
 
 	if authnChanged {
@@ -1425,6 +1433,7 @@ func (ps *PushContext) SetDestinationRules(configs []config.Config) {
 	exportedDestRulesByNamespace := make(map[string]*processedDestRules)
 	rootNamespaceLocalDestRules := newProcessedDestRules()
 
+	log.Errorf("howardjohn: setup push context for %v DRs", len(configs))
 	for i := range configs {
 		rule := configs[i].Spec.(*networking.DestinationRule)
 		rule.Host = string(ResolveShortnameToFQDN(rule.Host, configs[i].Meta))
@@ -1478,9 +1487,9 @@ func (ps *PushContext) SetDestinationRules(configs []config.Config) {
 		sort.Sort(host.Names(exportedDestRulesByNamespace[ns].hosts))
 	}
 
-	ps.destinationRuleIndex.namespaceLocal = namespaceLocalDestRules
-	ps.destinationRuleIndex.exportedByNamespace = exportedDestRulesByNamespace
-	ps.destinationRuleIndex.rootNamespaceLocal = rootNamespaceLocalDestRules
+	ps.DestinationRuleIndex.namespaceLocal = namespaceLocalDestRules
+	ps.DestinationRuleIndex.exportedByNamespace = exportedDestRulesByNamespace
+	ps.DestinationRuleIndex.rootNamespaceLocal = rootNamespaceLocalDestRules
 }
 
 func (ps *PushContext) initAuthorizationPolicies(env *Environment) error {
