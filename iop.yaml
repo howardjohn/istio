@@ -1,0 +1,29 @@
+apiVersion: operator.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: istio
+spec:
+  revision: alt
+  components:
+    ingressGateways:
+    - name: istio-ingressgateway
+      enabled: true
+    - namespace: other
+      name: gateway
+      enabled: true
+      k8s:
+        service:
+          ports:
+          - port: 80
+            targetPort: 8080
+            name: http
+  values:
+    sidecarInjectorWebhook:
+      templates:
+        gateway: |
+          spec:
+            containers:
+            - name: istio-proxy
+              env:
+              - name: PROXY_CONFIG
+                value: {{ protoToJSON .ProxyConfig | quote }}
