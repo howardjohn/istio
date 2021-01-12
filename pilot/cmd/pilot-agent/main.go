@@ -360,17 +360,12 @@ func setupSecurityOptions(proxyConfig meshconfig.ProxyConfig) (security.Options,
 		o.CAEndpoint = proxyConfig.DiscoveryAddress
 	}
 
-	// TODO (liminw): CredFetcher is a general interface. In 1.7, we limit the use on GCE only because
-	// GCE is the only supported plugin at the moment.
-	if credFetcherTypeEnv == security.GCE {
-		o.CredIdentityProvider = credIdentityProvider
-		credFetcher, err := credentialfetcher.NewCredFetcher(credFetcherTypeEnv, o.TrustDomain, jwtPath, o.CredIdentityProvider)
-		if err != nil {
-			return security.Options{}, fmt.Errorf("failed to create credential fetcher: %v", err)
-		}
-		log.Infof("using credential fetcher of %s type in %s trust domain", credFetcherTypeEnv, o.TrustDomain)
-		o.CredFetcher = credFetcher
+	credFetcher, err := credentialfetcher.NewCredFetcher(credFetcherTypeEnv, o.TrustDomain, jwtPath, credIdentityProvider)
+	if err != nil {
+		return security.Options{}, fmt.Errorf("failed to create credential fetcher: %v", err)
 	}
+	log.Infof("using credential fetcher of %s type in %s trust domain", credFetcherTypeEnv, o.TrustDomain)
+	o.CredFetcher = credFetcher
 	// TODO extract this logic out to a plugin
 	if o.CAProviderName == "GoogleCA" || strings.Contains(o.CAEndpoint, "googleapis.com") {
 		o.TokenExchanger = stsclient.NewSecureTokenServiceExchanger(o.CredFetcher, o.TrustDomain)

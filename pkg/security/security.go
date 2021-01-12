@@ -39,8 +39,9 @@ const (
 	DefaultLocalSDSPath = "./etc/istio/proxy/SDS"
 
 	// Credential fetcher type
-	GCE  = "GoogleComputeEngine"
-	Mock = "Mock" // testing only
+	GCECredentialFetcher  = "GoogleComputeEngine"
+	JWTCredentialFetcher  = "JWT"
+	MockCredentialFetcher = "Mock" // testing only
 )
 
 // TODO: For 1.8, make sure MeshConfig is updated with those settings,
@@ -131,9 +132,6 @@ type Options struct {
 
 	// credential fetcher.
 	CredFetcher CredFetcher
-
-	// credential identity provider
-	CredIdentityProvider string
 
 	// Namespace corresponding to workload
 	WorkloadNamespace string
