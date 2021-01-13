@@ -643,6 +643,31 @@ func getAdminPortFromYaml(yamlData string) (uint32, error) {
 	return bootstrap.GetAdmin().GetAddress().GetSocketAddress().GetPortValue(), nil
 }
 
+func getAdminUDSFromYaml(yamlData string) (string, error) {
+	jsonData, err := yaml.YAMLToJSON([]byte(yamlData))
+	if err != nil {
+		return "", fmt.Errorf("error converting envoy bootstrap YAML to JSON: %v", err)
+	}
+
+	bootstrap := &envoyBootstrap.Bootstrap{}
+	if err := unmarshal(string(jsonData), bootstrap); err != nil {
+		return "", fmt.Errorf("error parsing Envoy bootstrap JSON: %v", err)
+	}
+	if bootstrap.GetAdmin() == nil {
+		return "", errors.New("unable to locate admin in envoy bootstrap")
+	}
+	if bootstrap.GetAdmin().GetAddress() == nil {
+		return "", errors.New("unable to locate admin/address in envoy bootstrap")
+	}
+	if bootstrap.GetAdmin().GetAddress().GetPipe() == nil {
+		return "", errors.New("unable to locate admin/address/pipe in envoy bootstrap")
+	}
+	if bootstrap.GetAdmin().GetAddress().GetPipe().GetPath() == "" {
+		return "", errors.New("unable to locate admin/address/pipe/path in envoy bootstrap")
+	}
+	return bootstrap.GetAdmin().GetAddress().GetPipe().GetPath(), nil
+}
+
 // configContext stores the output of applied Options.
 type configContext struct {
 	configPath string
@@ -686,6 +711,37 @@ func (c *configContext) getAdminPort() (uint32, error) {
 	}
 	// Found the port!
 	return port, nil
+}
+
+func (c *configContext) getAdminUDS() (string, error) {
+	var err error
+
+	// First, check the config yaml, which overrides config-path.
+	if c.configYaml != "" {
+		if uds, e := getAdminUDSFromYaml(c.configYaml); e != nil {
+			err = fmt.Errorf("failed to locate admin port in envoy config-yaml: %v", e)
+		} else {
+			// Found the port!
+			return uds, nil
+		}
+	}
+
+	// Haven't found it yet - check configPath.
+	if c.configPath == "" {
+		return "", multierror.Append(err, errors.New("unable to process envoy bootstrap"))
+	}
+
+	content, e := ioutil.ReadFile(c.configPath)
+	if e != nil {
+		return "", multierror.Append(err, fmt.Errorf("failed reading config-path file %s: %v", c.configPath, e))
+	}
+
+	uds, e := getAdminUDSFromYaml(string(content))
+	if e != nil {
+		return "", multierror.Append(err, fmt.Errorf("failed to locate admin uds in envoy config-yaml: %v", e))
+	}
+	// Found the uds!
+	return uds, nil
 }
 
 var flagValidators = make(map[FlagName]*flagValidator)

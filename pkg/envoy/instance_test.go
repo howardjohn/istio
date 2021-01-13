@@ -30,13 +30,17 @@ import (
 
 	"istio.io/istio/pkg/envoy"
 	testEnvoy "istio.io/istio/pkg/test/envoy"
-	"istio.io/istio/pkg/test/util/reserveport"
 	"istio.io/istio/pkg/test/util/tmpl"
+	"istio.io/istio/tests/util/leak"
 )
 
 var (
-	envoyLogFormat = envoy.LogFormat("[ENVOY][%Y-%m-%d %T.%e][%t][%l][%n]")
+	envoyLogFormat = envoy.LogFormat("[ENVOY][%Y-%m-%d %T.%e][%t][%l][%n] %v")
 )
+
+func TestMain(m *testing.M) {
+	leak.CheckMain(m)
+}
 
 func TestNewWithoutConfigShouldFail(t *testing.T) {
 	g := NewWithT(t)
@@ -49,7 +53,6 @@ func TestNewWithDuplicateOptionsShouldFail(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	_, err := envoy.New(envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -84,7 +87,6 @@ func TestNewWithoutBinaryPathShouldFail(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	_, err := envoy.New(envoy.Config{
 		Options: options(envoy.ConfigPath(h.BootstrapFile())),
@@ -96,7 +98,6 @@ func TestNewWithConfigPathShouldSucceed(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -110,7 +111,6 @@ func TestNewWithConfigYamlShouldSucceed(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -124,7 +124,6 @@ func TestStartWithBadBinaryShouldFail(t *testing.T) {
 	runLinuxOnly(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: absPath("testdata/envoy_bootstrap.json"), // Not a binary file.
@@ -144,7 +143,6 @@ func TestStartEnvoyShouldSucceed(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -166,7 +164,6 @@ func TestStartTwiceShouldDoNothing(t *testing.T) {
 	runLinuxOnly(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -187,7 +184,6 @@ func TestHotRestartTwiceShouldFail(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -212,7 +208,6 @@ func TestHotRestart(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -253,7 +248,6 @@ func TestCommandLineArgs(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	logPath := filepath.Join(h.tempDir, "envoyLogPath.txt")
 	drainDuration := time.Second * 30
@@ -318,7 +312,6 @@ func TestShutdown(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -344,7 +337,6 @@ func TestKillEnvoy(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -368,7 +360,6 @@ func TestCancelContext(t *testing.T) {
 	runLinuxOnly(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -394,7 +385,6 @@ func TestConfigDump(t *testing.T) {
 	g := NewWithT(t)
 
 	h := newBootstrapHelper(t)
-	defer h.Close()
 
 	i := h.NewOrFail(t, envoy.Config{
 		BinaryPath: testEnvoy.FindBinaryOrFail(t),
@@ -425,21 +415,16 @@ func TestConfigDump(t *testing.T) {
 
 type bootstrapHelper struct {
 	tempDir       string
-	portMgr       reserveport.PortManager
 	bootstrapFile string
 	baseID        envoy.BaseID
 }
 
 func newBootstrapHelper(t *testing.T) *bootstrapHelper {
 	t.Helper()
-	tempDir := newTempDir(t)
-	portMgr := reserveport.NewPortManagerOrFail(t)
-	adminPort := portMgr.ReservePortNumberOrFail(t)
-	listenerPort := portMgr.ReservePortNumberOrFail(t)
-	bootstrapFile := newBootstrapFile(t, tempDir, adminPort, listenerPort)
+	tempDir := t.TempDir()
+	bootstrapFile := newBootstrapFile(t, tempDir)
 	return &bootstrapHelper{
 		tempDir:       tempDir,
-		portMgr:       portMgr,
 		bootstrapFile: bootstrapFile,
 		baseID:        envoy.GenerateBaseID(),
 	}
@@ -456,11 +441,6 @@ func (h *bootstrapHelper) BootstrapContent(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return string(content)
-}
-
-func (h *bootstrapHelper) Close() {
-	_ = os.RemoveAll(h.tempDir)
-	h.portMgr.CloseSilently()
 }
 
 func (h *bootstrapHelper) New(cfg envoy.Config) (envoy.Instance, error) {
@@ -485,24 +465,14 @@ func absPath(path string) string {
 	return path
 }
 
-func newTempDir(t *testing.T) string {
-	t.Helper()
-	dir, err := ioutil.TempDir("", t.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
-func newBootstrapFile(t *testing.T, tempDir string, adminPort, listenerPort uint16) string {
+func newBootstrapFile(t *testing.T, tempDir string) string {
 	t.Helper()
 	data := map[string]interface{}{
-		"nodeID":       t.Name(),
-		"cluster":      t.Name(),
-		"localhost":    "127.0.0.1",
-		"wildcard":     "0.0.0.0",
-		"adminPort":    adminPort,
-		"listenerPort": listenerPort,
+		"nodeID":    t.Name(),
+		"cluster":   t.Name(),
+		"localhost": "127.0.0.1",
+		"wildcard":  "0.0.0.0",
+		"dir":       tempDir,
 	}
 
 	// Read the template file.
@@ -519,6 +489,7 @@ func newBootstrapFile(t *testing.T, tempDir string, adminPort, listenerPort uint
 
 	// Write out the result to the output file.
 	outputFile := filepath.Join(tempDir, t.Name()+".json")
+	t.Log(content)
 	if err := ioutil.WriteFile(outputFile, []byte(content), os.ModePerm); err != nil {
 		t.Fatal(err)
 	}

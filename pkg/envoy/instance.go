@@ -157,15 +157,19 @@ func New(cfg Config) (Instance, error) {
 		return nil, err
 	}
 
-	// Extract the admin port from the configuration.
-	adminPort := cfg.AdminPort
-	if adminPort == 0 {
-		var err error
-		adminPort, err = ctx.getAdminPort()
+	//// Extract the admin port from the configuration.
+	//adminPort := cfg.AdminPort
+	//if adminPort == 0 {
+	//	var err error
+	//	adminPort, err = ctx.getAdminPort()
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
+	adminUDS, err := ctx.getAdminUDS()
 		if err != nil {
 			return nil, err
 		}
-	}
 
 	// Create a new command with the specified options.
 	args := cfg.Options.ToArgs()
@@ -180,7 +184,7 @@ func New(cfg Config) (Instance, error) {
 		name:      cfg.Name,
 		config:    cfg,
 		cmd:       cmd,
-		adminPort: adminPort,
+		adminUDS: adminUDS,
 		baseID:    ctx.baseID,
 		epoch:     ctx.epoch,
 		waitCh:    make(chan struct{}, 1),
@@ -193,12 +197,12 @@ type instance struct {
 	waitErr    error
 	cmd        *exec.Cmd
 	waitCh     chan struct{}
-	adminPort  uint32
 	baseID     BaseID
 	epoch      Epoch
 	started    bool
 	hotRestart Instance
 	mux        sync.Mutex
+	adminUDS   string
 }
 
 func (i *instance) Config() Config {
@@ -303,7 +307,7 @@ func (i *instance) WaitLive() Waitable {
 		instance:    i,
 		retryPeriod: 200 * time.Millisecond,
 		retryHandler: func() (bool, error) {
-			info, err := GetServerInfo(i.adminPort)
+			info, err := GetServerInfo(i.adminUDS)
 			if err != nil {
 				return true, err
 			}

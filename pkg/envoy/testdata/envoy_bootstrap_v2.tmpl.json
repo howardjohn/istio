@@ -6,9 +6,8 @@
   "admin": {
     "access_log_path": "/dev/null",
     "address": {
-      "socket_address": {
-        "address": "{{ .localhost }}",
-        "port_value": {{ .adminPort }}
+      "pipe": {
+        "path": "{{ .dir }}/admin"
       }
     }
   },
@@ -25,9 +24,8 @@
             "lb_endpoints": [{
               "endpoint": {
                 "address":{
-                  "socket_address": {
-                    "address": "{{ .localhost }}",
-                    "port_value":  {{ .adminPort }}
+                  "pipe": {
+                    "path": "{{ .dir }}/admin"
                   }
                 }
               }
@@ -39,10 +37,8 @@
     "listeners":[
       {
         "address": {
-          "socket_address": {
-            "protocol": "TCP",
-            "address": "0.0.0.0",
-            "port_value": {{ .listenerPort }}
+          "pipe": {
+            "path": "{{ .dir }}/listener"
           }
         },
         "filter_chains": [

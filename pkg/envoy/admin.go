@@ -16,8 +16,10 @@ package envoy
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 
@@ -49,8 +51,8 @@ func DrainListeners(adminPort uint32, inboundonly bool) error {
 }
 
 // GetServerInfo returns a structure representing a call to /server_info
-func GetServerInfo(adminPort uint32) (*envoyAdmin.ServerInfo, error) {
-	buffer, err := doEnvoyGet("server_info", adminPort)
+func GetServerInfo(adminUDS string) (*envoyAdmin.ServerInfo, error) {
+	buffer, err := doEnvoyGet("server_info", adminUDS)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +79,7 @@ func GetConfigDump(adminPort uint32) (*envoyAdmin.ConfigDump, error) {
 	return msg, nil
 }
 
-func doEnvoyGet(path string, adminPort uint32) (*bytes.Buffer, error) {
+func doEnvoyGet(path string, adminUDS string) (*bytes.Buffer, error) {
 	requestURL := fmt.Sprintf("http://127.0.0.1:%d/%s", adminPort, path)
 	buffer, err := doHTTPGet(requestURL)
 	if err != nil {
@@ -93,6 +95,18 @@ func doEnvoyPost(path, contentType, body string, adminPort uint32) (*bytes.Buffe
 		return nil, err
 	}
 	return buffer, nil
+}
+
+func newUDSClient(sockPath string) *http.Client {
+	t := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", sockPath)
+		},
+	}
+	return &http.Client{
+		Transport: t,
+	}
 }
 
 func doHTTPGet(requestURL string) (*bytes.Buffer, error) {
