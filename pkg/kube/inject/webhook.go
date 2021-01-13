@@ -758,7 +758,7 @@ func mergeInjectedConfig(req *corev1.Pod, injected []byte) (*corev1.Pod, error) 
 	// The template is yaml, StrategicMergePatch expects JSON
 	injectedJSON, err := yaml.YAMLToJSON(injected)
 	if err != nil {
-		return nil, fmt.Errorf("yaml to json: %v", err)
+		return nil, fmt.Errorf("yaml to json: %v\n%v", err, string(injected))
 	}
 
 	return applyOverlay(req, injectedJSON)

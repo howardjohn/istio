@@ -1,0 +1,152 @@
+{{- if .Values.inject }}
+{{- $gateway := index .Values "gateways" "istio-ingressgateway" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $gateway.name | default "istio-ingressgateway" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ $gateway.labels | toYaml | indent 4 }}
+    release: {{ .Release.Name }}
+    istio.io/rev: {{ .Values.revision | default "default" }}
+    install.operator.istio.io/owning-resource: {{ .Values.ownerName | default "unknown" }}
+    operator.istio.io/component: "IngressGateways"
+spec:
+{{- if not $gateway.autoscaleEnabled }}
+{{- if $gateway.replicaCount }}
+  replicas: {{ $gateway.replicaCount }}
+{{- end }}
+{{- end }}
+  selector:
+    matchLabels:
+{{ $gateway.labels | toYaml | indent 6 }}
+  strategy:
+    rollingUpdate:
+      maxSurge: {{ $gateway.rollingMaxSurge }}
+      maxUnavailable: {{ $gateway.rollingMaxUnavailable }}
+  template:
+    metadata:
+      labels:
+{{ $gateway.labels | toYaml | indent 8 }}
+{{- if eq .Release.Namespace "istio-system"}}
+        heritage: Tiller
+        release: istio
+        chart: gateways
+{{- end }}
+        install.operator.istio.io/owning-resource: {{ .Values.ownerName | default "unknown" }}
+        operator.istio.io/component: "IngressGateways"
+        sidecar.istio.io/inject: "true"
+      annotations:
+        prometheus.io/port: "15020"
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/stats/prometheus"
+        inject.istio.io/templates: gateway
+{{- if $gateway.podAnnotations }}
+{{ toYaml $gateway.podAnnotations | indent 8 }}
+{{ end }}
+    spec:
+{{- if not $gateway.runAsRoot }}
+      securityContext:
+        runAsUser: 1337
+        runAsGroup: 1337
+        runAsNonRoot: true
+        fsGroup: 1337
+{{- end }}
+      serviceAccountName: {{ $gateway.name | default "istio-ingressgateway" }}-service-account
+{{- if .Values.global.priorityClassName }}
+      priorityClassName: "{{ .Values.global.priorityClassName }}"
+{{- end }}
+{{- if .Values.global.proxy.enableCoreDump }}
+      initContainers:
+        - name: enable-core-dump
+{{- if contains "/" .Values.global.proxy.image }}
+          image: "{{ .Values.global.proxy.image }}"
+{{- else }}
+          image: "{{ .Values.global.hub }}/{{ .Values.global.proxy.image | default "proxyv2" }}:{{ .Values.global.tag }}"
+{{- end }}
+{{- if .Values.global.imagePullPolicy }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+{{- end }}
+          command:
+            - /bin/sh
+          args:
+            - -c
+            - sysctl -w kernel.core_pattern=/var/lib/istio/data/core.proxy && ulimit -c unlimited
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            privileged: true
+{{- end }}
+      containers:
+        - name: istio-proxy
+          image: auto
+          ports:
+            {{- range $key, $val := $gateway.ports }}
+            - containerPort: {{ $val.targetPort | default $val.port }}
+              protocol: {{ $val.protocol | default "TCP" }}
+            {{- end }}
+        {{- if not $gateway.runAsRoot }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+        {{- end }}
+          resources:
+{{- if $gateway.resources }}
+{{ toYaml $gateway.resources | indent 12 }}
+{{- else }}
+{{ toYaml .Values.global.defaultResources | indent 12 }}
+{{- end }}
+          env:
+          {{- if not $gateway.runAsRoot }}
+          - name: ISTIO_META_UNPRIVILEGED_POD
+            value: "true"
+          {{- end }}
+          {{- range $key, $val := $gateway.env }}
+          - name: {{ $key }}
+            value: {{ $val }}
+          {{- end }}
+          volumeMounts:
+          {{- range $gateway.secretVolumes }}
+          - name: {{ .name }}
+            mountPath: {{ .mountPath | quote }}
+            readOnly: true
+          {{- end }}
+          {{- range $gateway.configVolumes }}
+          {{- if .mountPath }}
+          - name: {{ .name }}
+            mountPath: {{ .mountPath | quote }}
+            readOnly: true
+          {{- end }}
+          {{- end }}
+{{- if $gateway.additionalContainers }}
+{{ toYaml $gateway.additionalContainers | indent 8 }}
+{{- end }}
+      volumes:
+      {{- range $gateway.secretVolumes }}
+      - name: {{ .name }}
+        secret:
+          secretName: {{ .secretName | quote }}
+          optional: true
+      {{- end }}
+      {{- range $gateway.configVolumes }}
+      - name: {{ .name }}
+        configMap:
+          name: {{ .configMapName | quote }}
+          optional: true
+      {{- end }}
+      affinity:
+{{ include "nodeaffinity" (dict "global" .Values.global "nodeSelector" $gateway.nodeSelector) | trim | indent 8 }}
+      {{- include "podAntiAffinity" $gateway | indent 6 }}
+{{- if $gateway.tolerations }}
+      tolerations:
+{{ toYaml $gateway.tolerations | indent 6 }}
+{{- else if .Values.global.defaultTolerations }}
+      tolerations:
+{{ toYaml .Values.global.defaultTolerations | indent 6 }}
+{{- end }}
+{{- end }}

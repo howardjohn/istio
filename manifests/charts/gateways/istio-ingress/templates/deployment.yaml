@@ -1,3 +1,4 @@
+{{- if not .Values.inject }}
 {{- $gateway := index .Values "gateways" "istio-ingressgateway" }}
 apiVersion: apps/v1
 kind: Deployment
@@ -41,13 +42,14 @@ spec:
         istio.io/rev: {{ .Values.revision | default "default" }}
         install.operator.istio.io/owning-resource: {{ .Values.ownerName | default "unknown" }}
         operator.istio.io/component: "IngressGateways"
+        sidecar.istio.io/inject: "false"
       annotations:
         {{- if .Values.meshConfig.enablePrometheusMerge }}
         prometheus.io/port: "15020"
         prometheus.io/scrape: "true"
         prometheus.io/path: "/stats/prometheus"
         {{- end }}
-        inject.istio.io/templates: gateway
+        sidecar.istio.io/inject: "false"
 {{- if $gateway.podAnnotations }}
 {{ toYaml $gateway.podAnnotations | indent 8 }}
 {{ end }}
@@ -346,4 +348,5 @@ spec:
 {{- else if .Values.global.defaultTolerations }}
       tolerations:
 {{ toYaml .Values.global.defaultTolerations | indent 6 }}
+{{- end }}
 {{- end }}
