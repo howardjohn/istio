@@ -428,6 +428,7 @@ func (configgen *ConfigGeneratorImpl) buildSidecarInboundHTTPListenerOptsForPort
 		rds:              "", // no RDS for inbound traffic
 		useRemoteAddress: false,
 		connectionManager: &hcm.HttpConnectionManager{
+			StripPortMode: &hcm.HttpConnectionManager_StripAnyHostPort{StripAnyHostPort: true},
 			// Append and forward client cert to backend.
 			ForwardClientCertDetails: hcm.HttpConnectionManager_APPEND_FORWARD,
 			SetCurrentClientCertDetails: &hcm.HttpConnectionManager_SetCurrentClientCertDetails{
@@ -960,6 +961,7 @@ func (configgen *ConfigGeneratorImpl) buildHTTPProxy(node *model.Proxy,
 				rds:              RDSHttpProxy,
 				useRemoteAddress: false,
 				connectionManager: &hcm.HttpConnectionManager{
+					StripPortMode:       &hcm.HttpConnectionManager_StripAnyHostPort{StripAnyHostPort: true},
 					HttpProtocolOptions: httpOpts,
 				},
 			},
@@ -1066,6 +1068,7 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundHTTPListenerOptsForPor
 
 	if features.HTTP10 || listenerOpts.proxy.Metadata.HTTP10 == "1" {
 		httpOpts.connectionManager = &hcm.HttpConnectionManager{
+			StripPortMode: &hcm.HttpConnectionManager_StripAnyHostPort{StripAnyHostPort: true},
 			HttpProtocolOptions: &core.Http1ProtocolOptions{
 				AcceptHttp_10: true,
 			},
@@ -1611,7 +1614,9 @@ func buildHTTPConnectionManager(listenerOpts buildListenerOpts, httpOpts *httpLi
 	filters = append(filters, xdsfilters.Cors, xdsfilters.Fault, xdsfilters.Router)
 
 	if httpOpts.connectionManager == nil {
-		httpOpts.connectionManager = &hcm.HttpConnectionManager{}
+		httpOpts.connectionManager = &hcm.HttpConnectionManager{
+			StripPortMode: &hcm.HttpConnectionManager_StripAnyHostPort{StripAnyHostPort: true},
+		}
 	}
 
 	connectionManager := httpOpts.connectionManager

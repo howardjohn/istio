@@ -405,6 +405,7 @@ func (configgen *ConfigGeneratorImpl) createGatewayHTTPFilterChainOpts(node *mod
 				rds:              routeName,
 				useRemoteAddress: true,
 				connectionManager: &hcm.HttpConnectionManager{
+					StripPortMode: &hcm.HttpConnectionManager_StripAnyHostPort{StripAnyHostPort: true},
 					XffNumTrustedHops: xffNumTrustedHops,
 					// Forward client cert if connection is mTLS
 					ForwardClientCertDetails: forwardClientCertDetails,
@@ -435,6 +436,7 @@ func (configgen *ConfigGeneratorImpl) createGatewayHTTPFilterChainOpts(node *mod
 			rds:              routeName,
 			useRemoteAddress: true,
 			connectionManager: &hcm.HttpConnectionManager{
+				StripPortMode: &hcm.HttpConnectionManager_StripAnyHostPort{StripAnyHostPort: true},
 				XffNumTrustedHops: xffNumTrustedHops,
 				// Forward client cert if connection is mTLS
 				ForwardClientCertDetails: forwardClientCertDetails,
