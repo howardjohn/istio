@@ -110,6 +110,7 @@ spec:
               emptyDir: {}
     global:
       proxy:
+        componentLogLevel: config:debug
         resources:
           requests:
             cpu: 10m
