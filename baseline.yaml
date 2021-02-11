@@ -1,0 +1,78 @@
+# Diagram: can be viewed at https://edotor.net/ or others
+#digraph cluster {
+#    productpage -> details
+#    productpage -> reviews
+#    details -> "secure.example.com"
+#    details -> "wikipedia.org"
+#    reviews -> ratings
+#    subgraph cluster_product {
+#        label = "product"
+#        color="orange"
+#        productpage
+#        details
+#    }
+#    subgraph cluster_reviews {
+#        label = "reviews"
+#        color="orange"
+#        reviews
+#    }
+#    subgraph cluster_ratings {
+#        label = "ratings"
+#        color="orange"
+#        ratings
+#    }
+#    subgraph cluster_external {
+#        label = "external"
+#        color="orange"
+#        "secure.example.com"
+#        "wikipedia.org"
+#    }
+#}
+apiVersion: v1
+kind: Service
+metadata:
+  name: productpage
+  namespace: product
+spec:
+  selector:
+    app: productpage
+  ports:
+  - port: 9080
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: details
+  namespace: product
+spec:
+  selector:
+    app: details
+  ports:
+  - port: 9080
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reviews
+  namespace: reviews
+spec:
+  selector:
+    app: reviews
+  ports:
+  - port: 9080
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratings
+  namespace: ratings
+spec:
+  selector:
+    app: ratings
+  ports:
+  - port: 9080
+    name: http
+---

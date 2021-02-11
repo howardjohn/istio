@@ -1,0 +1,230 @@
+# Diagram: can be viewed at https://edotor.net/ or others
+#digraph cluster {
+#    # Configs
+#    "bookinfo-gw" -> ingressgateway [color=purple]
+#    "bookinfo-vs" -> "bookinfo-gw"  [color=purple]
+#
+#    "reviews-dr" -> reviews  [color=purple]
+#    "ratings-dr" -> ratings  [color=purple]
+#    "ratings-sidecar" -> ratings  [color=purple]
+#
+#    "egress-gw" -> egressgateway  [color=purple]
+#    "egress-vs" -> "egress-gw"  [color=purple]
+#
+#    # Traffic
+#    ingressgateway -> productpage [label="books.example.com"]
+#    productpage -> details
+#    productpage -> reviews
+#    details -> egressgateway -> "secure.example.com"
+#    details -> "wikipedia.org"
+#    reviews -> ratings
+#
+#
+#    "bookinfo-gw" [shape=rect,color=purple]
+#    "egress-gw" [shape=rect,color=purple]
+#
+#
+#    ingressgateway [color=green4]
+#    egressgateway [color=green4]
+#
+#    # Namespaces
+#    subgraph cluster_product {
+#        label = "product"
+#        color="orange"
+#        productpage
+#        details
+#        "bookinfo-vs" [shape=rect,color=purple]
+#    }
+#    subgraph cluster_reviews {
+#        label = "reviews"
+#        color="orange"
+#        reviews
+#        "reviews-dr" [shape=rect,color=purple]
+#        "ratings-dr" [shape=rect,color=purple]
+#    }
+#    subgraph cluster_ratings {
+#        label = "ratings"
+#        color="orange"
+#        ratings
+#        "ratings-sidecar" [shape=rect,color=purple]
+#    }
+#    subgraph cluster_external {
+#        label = "external"
+#        color="orange"
+#        "secure.example.com" [color=purple]
+#        "wikipedia.org" [color=purple]
+#        "egress-vs" [shape=rect,color=purple]
+#    }
+#}
+# Set up ingress
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: bookinfo-gw
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "books.example.com"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: bookinfo-vs
+  namespace: product
+spec:
+  hosts:
+  - "books.example.com"
+  gateways:
+  - bookinfo-gateway
+  http:
+  - match:
+    - uri:
+        exact: /productpage
+    route:
+    - destination:
+        host: productpage
+        port:
+          number: 9080
+---
+
+# Split reviews into 2 subsets
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: reviews-dr
+  namespace: reviews
+spec:
+  host: reviews
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  - name: v2
+    labels:
+      version: v2
+---
+
+# Override ratings settings in reviews namespace
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: ratings-dr
+  namespace: ratings
+spec:
+  host: ratings.ratings.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_CONN
+---
+
+# External services. wikipedia.org is direct, secure.example.com through egressgateway
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: wikipedia
+  namespace: external
+spec:
+  hosts:
+  - wikipedia.org
+  ports:
+  - number: 80
+    name: http
+    protocol: HTTP
+  - number: 443
+    name: https
+    protocol: HTTPS
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: example
+  namespace: external
+spec:
+  hosts:
+  - secure.example.com
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 80
+    name: http
+    protocol: HTTP
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: egress-gw
+  namespace: istio-system
+spec:
+  selector:
+    istio: egressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - secure.example.com
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: egress-vs
+  namespace: external
+spec:
+  hosts:
+  - secure.example.com
+  gateways:
+  - istio-system/egress-gw
+  - mesh
+  http:
+  - match:
+    - gateways:
+      - mesh
+      port: 80
+    route:
+    - destination:
+        host: istio-egressgateway.istio-system.svc.cluster.local
+        port:
+          number: 80
+      weight: 100
+  - match:
+    - gateways:
+      - istio-system/egress-gw
+      port: 80
+    route:
+    - destination:
+        host: secure.example.com
+        port:
+          number: 80
+      weight: 100
+
+---
+# Customize ratings to forward to UDS and scope down its egress configuration
+apiVersion: networking.istio.io/v1beta1
+kind: Sidecar
+metadata:
+  name: ratings-sidecar
+  namespace: ratings
+spec:
+  workloadSelector:
+    labels:
+      app: ratings
+  ingress:
+  - port:
+      number: 9080
+      protocol: HTTP
+      name: http
+    defaultEndpoint: unix:///var/run/someuds.sock
+  egress:
+  - hosts:
+    - "~/*" # import no host
