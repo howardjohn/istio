@@ -1,0 +1,323 @@
+# This shows one possible representation of the gateway API
+# Changes to the API are commented
+# This takes a fairly minimal approach - we do not model egress specially, nor do we replace
+# Sidecar customizations.
+# However, this does represent:
+# * Cross namespace references
+# * Consumer overrides
+# * Mesh routes
+# Diagram: can be viewed at https://edotor.net or others
+#digraph cluster {
+#    # Configs
+#    "bookinfo-gw" -> ingressgateway [color=purple]
+#    "bookinfo-gw" -> "ingress GatewayClass" [color=purple]
+#    "bookinfo-route" -> "bookinfo-gw"  [color=purple]
+#
+#    "reviews-v1" -> reviews  [color=blue]
+#    "reviews-v2" -> reviews  [color=blue]
+#    "reviews-route" -> reviews  [color=purple]
+#    "reviews-route" -> "mesh GatewayClass"  [color=purple]
+#    "ratings-bp" -> ratings  [color=purple]
+#    "ratings-sidecar" -> ratings  [color=purple]
+#
+#    "egress-gw" -> egressgateway  [color=purple]
+#    "mesh-to-egress" -> "egress-gw"  [color=purple]
+#    "mesh-to-egress" -> "mesh GatewayClass"  [color=purple]
+#    "egress-to-example" -> "egress-gw"  [color=purple]
+#
+#    # Traffic
+#    ingressgateway -> productpage [label="books.example.com"]
+#    productpage -> details
+#    productpage -> reviews
+#    details -> egressgateway -> "secure.example.com"
+#    details -> "wikipedia.org"
+#    reviews -> ratings
+#
+#
+#    "bookinfo-gw" [shape=rect,color=purple]
+#    "egress-gw" [shape=rect,color=purple]
+#    "ingress GatewayClass"  [shape=rect,color=purple]
+#    "egress GatewayClass"  [shape=rect,color=purple]
+#    "mesh GatewayClass"  [shape=rect,color=purple]
+#
+#    ingressgateway [color=green4]
+#    egressgateway [color=green4]
+#
+#    # Namespaces
+#    subgraph cluster_product {
+#        label = "product"
+#        color="orange"
+#        productpage
+#        details
+#        "bookinfo-route" [shape=rect,color=purple]
+#    }
+#    subgraph cluster_reviews {
+#        label = "reviews"
+#        color="orange"
+#        reviews
+#        "reviews-v1" [shape=rect,color=blue]
+#        "reviews-v2" [shape=rect,color=blue]
+#        "reviews-route" [shape=rect,color=purple]
+#        "ratings-bp" [shape=rect,color=purple]
+#    }
+#    subgraph cluster_ratings {
+#        label = "ratings"
+#        color="orange"
+#        ratings
+#        "ratings-sidecar" [shape=rect,color=purple]
+#    }
+#    subgraph cluster_external {
+#        label = "external"
+#        color="orange"
+#        "secure.example.com" [color=purple]
+#        "wikipedia.org" [color=purple]
+#        "mesh-to-egress" [shape=rect,color=purple]
+#        "egress-to-example" [shape=rect,color=purple]
+#    }
+#}
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: GatewayClass
+metadata:
+  name: ingress
+spec:
+  controller: istio.io/gateway-controller
+  config:
+    workloadSelector:
+      istio: ingressgateway
+---
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: GatewayClass
+metadata:
+  name: egress
+spec:
+  controller: istio.io/gateway-controller
+  config:
+    workloadSelector:
+      istio: egressgateway
+---
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: GatewayClass
+metadata:
+  name: mesh
+spec:
+  controller: istio.io/sidecar-controller
+---
+
+# Setup ingress
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: Gateway
+metadata:
+  name: bookinfo-gw
+  namespace: istio-system
+spec:
+  gatewayClassName: ingress
+  listeners:
+  - hostname: "books.example.com"
+    port: 80
+    protocol: HTTP
+    routes:
+      kind: HTTPRoute
+      namespaces:
+        from: All
+      selector:
+        matchLabels:
+          gateway: "bookinfo"
+---
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: HTTPRoute
+metadata:
+  name: bookinfo-route
+  namespace: default
+  labels:
+    gateway: "bookinfo"
+spec:
+  hostnames: ["books.example.com"]
+  rules:
+  - matches:
+    - path:
+        type: Exact
+        value: /productpage
+    forwardTo:
+    - serviceName: productpage
+      port: 9080
+---
+
+# Setup subsets
+# No API changes, but a new recommended way to model subsets
+apiVersion: v1
+kind: Service
+metadata:
+  name: reviews-v1
+  namespace: reviews
+spec:
+  selector:
+    app: reviews
+    version: v1
+  ports:
+  - port: 9080
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reviews-v2
+  namespace: reviews
+spec:
+  selector:
+    app: reviews
+    version: v2
+  ports:
+  - port: 9080
+    name: http
+---
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: HTTPRoute
+metadata:
+  name: reviews-route
+  namespace: reviews
+spec:
+  gateways:
+    # NEW: FromClass
+    allow: FromClass
+    gatewayClass: mesh
+  hostnames: ["reviews.reviews.svc.cluster.local"]
+  rules:
+  - forwardTo:
+    - serviceName: reviews-v1
+      port: 9080
+      weight: 75
+    - serviceName: reviews-v2
+      port: 9080
+      weight: 25
+---
+
+# Override ratings settings in reviews namespace
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: BackendPolicy
+metadata:
+  name: ratings-bp
+  namespace: reviews
+spec:
+  backendRefs:
+  - name: ratings
+    kind: service
+    namespace: ratings # NEW: cross namespace reference
+    port: 80
+  # NEW: just to match Istio example, add a load balancer policy here
+  # details here do not really matter much
+  trafficPolicy:
+    loadBalancer: LEAST_CONN
+---
+
+# External services. wikipedia.org is direct, secure.example.com through egressgateway
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: wikipedia
+  namespace: external
+spec:
+  hosts:
+  - wikipedia.org
+  ports:
+  - number: 80
+    name: http
+    protocol: HTTP
+  - number: 443
+    name: https
+    protocol: HTTPS
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: example
+  namespace: external
+spec:
+  hosts:
+  - secure.example.com
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 80
+    name: http
+    protocol: HTTP
+  resolution: DNS
+---
+
+# Setup egress
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: Gateway
+metadata:
+  name: egress-gw
+  namespace: istio-system
+spec:
+  gatewayClassName: egress
+  listeners:
+  - hostname: "secure.example.com"
+    port: 80
+    protocol: HTTP
+    routes:
+      kind: HTTPRoute
+      namespaces:
+        from: All
+      selector:
+        matchLabels:
+          gateway: "egress"
+---
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: HTTPRoute
+metadata:
+  name: mesh-to-egress
+  namespace: external
+spec:
+  gateways:
+    # NEW: FromClass
+    allow: FromClass
+    gatewayClass: mesh
+  hostnames:
+  - secure.example.com
+  rules:
+  - forwardTo:
+    - gatewayName: egress-gw # NEW: forwardTo gateway
+      port: 80
+---
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: HTTPRoute
+metadata:
+  name: egress-to-example
+  namespace: external
+  labels:
+    gateway: egress
+spec:
+  hostnames:
+  - secure.example.com
+  rules:
+  - forwardTo:
+    - backendRef:
+        kind: hostname # NEW: forward to hostname
+        group: istio.io
+        name: secure.example.com
+      port: 80
+---
+
+# Customize ratings to forward to UDS and scope down its egress configuration
+# In this example, we choose to retain the Sidecar API and layer it on the gateway api
+apiVersion: networking.istio.io/v1beta1
+kind: Sidecar
+metadata:
+  name: ratings-sidecar
+  namespace: ratings
+spec:
+  workloadSelector:
+    labels:
+      app: ratings
+  ingress:
+  - port:
+      number: 9080
+      protocol: HTTP
+      name: http
+    defaultEndpoint: unix:///var/run/someuds.sock
+  egress:
+  - hosts:
+    - "~/*" # import no host

@@ -5,6 +5,7 @@
 #    "bookinfo-vs" -> "bookinfo-gw"  [color=purple]
 #
 #    "reviews-dr" -> reviews  [color=purple]
+#    "reviews-vs" -> reviews  [color=purple]
 #    "ratings-dr" -> ratings  [color=purple]
 #    "ratings-sidecar" -> ratings  [color=purple]
 #
@@ -40,6 +41,7 @@
 #        color="orange"
 #        reviews
 #        "reviews-dr" [shape=rect,color=purple]
+#        "reviews-vs" [shape=rect,color=purple]
 #        "ratings-dr" [shape=rect,color=purple]
 #    }
 #    subgraph cluster_ratings {
@@ -94,7 +96,7 @@ spec:
           number: 9080
 ---
 
-# Split reviews into 2 subsets
+# Split reviews into 2 subsets, and split traffic
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
 metadata:
@@ -110,13 +112,38 @@ spec:
     labels:
       version: v2
 ---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: reviews-vs
+  namespace: reviews
+spec:
+  hosts:
+  - reviews
+  gateways:
+  - mesh
+  http:
+  - route:
+    - destination:
+        host: reviews
+        subset: v1
+        port:
+          number: 9080
+      weight: 75
+    - destination:
+        host: reviews
+        subset: v2
+        port:
+          number: 9080
+      weight: 25
+---
 
 # Override ratings settings in reviews namespace
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
 metadata:
   name: ratings-dr
-  namespace: ratings
+  namespace: reviews
 spec:
   host: ratings.ratings.svc.cluster.local
   trafficPolicy:
@@ -159,6 +186,8 @@ spec:
     protocol: HTTP
   resolution: DNS
 ---
+
+# Setup egress
 apiVersion: networking.istio.io/v1alpha3
 kind: Gateway
 metadata:
@@ -196,7 +225,6 @@ spec:
         host: istio-egressgateway.istio-system.svc.cluster.local
         port:
           number: 80
-      weight: 100
   - match:
     - gateways:
       - istio-system/egress-gw
@@ -206,7 +234,6 @@ spec:
         host: secure.example.com
         port:
           number: 80
-      weight: 100
 
 ---
 # Customize ratings to forward to UDS and scope down its egress configuration
