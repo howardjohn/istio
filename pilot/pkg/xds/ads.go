@@ -359,7 +359,7 @@ func (s *DiscoveryServer) processDeltaRequest(req *discovery.DeltaDiscoveryReque
 
 	push := s.globalPushContext()
 
-	return s.pushXdsDelta(con, push, versionInfo(), con.Watched(req.TypeUrl), request)
+	return s.pushXdsDelta(con, push, versionInfo(), con.Watched(req.TypeUrl), req.ResourceNamesSubscribe, request)
 }
 
 // StreamAggregatedResources implements the ADS interface.
@@ -1075,7 +1075,7 @@ func (s *DiscoveryServer) pushConnectionDelta(con *Connection, pushEv *Event) er
 	for _, w := range getWatchedResources(con.proxy.WatchedResources) {
 		if !features.EnableFlowControl {
 			// Always send the push if flow control disabled
-			if err := s.pushXdsDelta(con, pushRequest.Push, currentVersion, w, pushRequest); err != nil {
+			if err := s.pushXdsDelta(con, pushRequest.Push, currentVersion, w, nil, pushRequest); err != nil {
 				return err
 			}
 			continue
@@ -1091,7 +1091,7 @@ func (s *DiscoveryServer) pushConnectionDelta(con *Connection, pushEv *Event) er
 		}
 		if synced || timeout {
 			// Send the push now
-			if err := s.pushXdsDelta(con, pushRequest.Push, currentVersion, w, pushRequest); err != nil {
+			if err := s.pushXdsDelta(con, pushRequest.Push, currentVersion, w, nil, pushRequest); err != nil {
 				return err
 			}
 		} else {

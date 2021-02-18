@@ -199,8 +199,8 @@ func init() {
 // Push an XDS resource for the given connection. Configuration will be generated
 // based on the passed in generator. Based on the updates field, generators may
 // choose to send partial or even no response if there are no changes.
-func (s *DiscoveryServer) pushXdsDelta(con *Connection, push *model.PushContext,
-	currentVersion string, w *model.WatchedResource, req *model.PushRequest) error {
+func (s *DiscoveryServer) pushXdsDelta(con *Connection, push *model.PushContext, currentVersion string,
+	w *model.WatchedResource, subscribe []string, req *model.PushRequest) error {
 	if w == nil {
 		return nil
 	}
@@ -221,18 +221,37 @@ func (s *DiscoveryServer) pushXdsDelta(con *Connection, push *model.PushContext,
 	}
 	defer func() { recordPushTime(w.TypeUrl, time.Since(t0)) }()
 
+	deltaResponse := convertResponseToDelta(currentVersion, res)
+	originalResponse := deltaResponse
+	if subscribe != nil {
+		subres := sets.NewSet(subscribe...)
+		filteredResponse := []*discovery.Resource{}
+		for _, r := range deltaResponse {
+			if subres.Contains(r.Name) {
+				filteredResponse = append(filteredResponse, r)
+			} else {
+				adsLog.Debugf("ADS:%v SKIP %v", v3.GetShortType(w.TypeUrl), r.Name)
+			}
+		}
+		deltaResponse = filteredResponse
+	}
 	resp := &discovery.DeltaDiscoveryResponse{
 		TypeUrl:           w.TypeUrl,
 		SystemVersionInfo: currentVersion,
 		Nonce:             nonce(push.LedgerVersion),
-		// TODO removed
-		Resources: convertResponseToDelta(currentVersion, res),
+		Resources:         deltaResponse,
 	}
 	cur := sets.NewSet(w.ResourceNames...)
-	cur.Delete(extractNames(resp.Resources)...)
+	cur.Delete(extractNames(originalResponse)...)
 	resp.RemovedResources = cur.SortedList()
 	if len(resp.RemovedResources) > 0 {
 		adsLog.Errorf("ADS:%v REMOVE %v", v3.GetShortType(w.TypeUrl), resp.RemovedResources)
+	}
+	if isWildcardTypeURL(w.TypeUrl) {
+		// this is probably a bad idea...
+		con.proxy.Lock()
+		w.ResourceNames = extractNames(originalResponse)
+		con.proxy.Unlock()
 	}
 
 	if err := con.sendDelta(resp); err != nil {
