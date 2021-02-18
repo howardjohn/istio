@@ -278,12 +278,12 @@ var (
 				ProxyType:    role.Type,
 			}
 			extractXDSHeadersFromEnv(agentConfig)
-			if proxyXDSViaAgent {
-				agentConfig.ProxyXDSViaAgent = true
-				agentConfig.DNSCapture = dnsCaptureByAgent
-				agentConfig.ProxyNamespace = podNamespace
-				agentConfig.ProxyDomain = role.DNSDomain
-			}
+			//if proxyXDSViaAgent {
+			//	agentConfig.ProxyXDSViaAgent = true
+			//	agentConfig.DNSCapture = dnsCaptureByAgent
+			//	agentConfig.ProxyNamespace = podNamespace
+			//	agentConfig.ProxyDomain = role.DNSDomain
+			//}
 			sa := istio_agent.NewAgent(&proxyConfig, agentConfig, secOpts)
 
 			var pilotSAN []string

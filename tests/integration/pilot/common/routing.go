@@ -294,11 +294,11 @@ spec:
 								PortName: "http",
 								Headers:  header,
 								Count:    callCount,
-								Validator: echo.ValidatorFunc(
+								Validator: echo.And(echo.ExpectOK(), echo.ValidatorFunc(
 									func(response echoclient.ParsedResponses, _ error) error {
 										return ExpectString(response[0].RawResponse["Access-Control-Allow-Origin"],
 											"cors.com", "GET CORS origin")
-									}),
+									})),
 							}
 						}(),
 					},
@@ -310,10 +310,10 @@ spec:
 							Target:   apps.PodB[0],
 							PortName: "http",
 							Count:    callCount,
-							Validator: echo.ValidatorFunc(
+							Validator: echo.And(echo.ExpectOK(), echo.ValidatorFunc(
 								func(response echoclient.ParsedResponses, _ error) error {
 									return ExpectString(response[0].RawResponse["Access-Control-Allow-Origin"], "", "mismatched CORS origin")
-								}),
+								})),
 						},
 					},
 				},

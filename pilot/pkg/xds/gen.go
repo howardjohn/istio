@@ -18,8 +18,13 @@ import (
 	"encoding/json"
 	"time"
 
+	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/golang/protobuf/ptypes"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
@@ -128,6 +133,91 @@ func (s *DiscoveryServer) pushXds(con *Connection, push *model.PushContext,
 			// Add additional information to logs when debug mode enabled
 			adsLog.Infof("%s: PUSH for node:%s resources:%d size:%s nonce:%v version:%v",
 				v3.GetShortType(w.TypeUrl), con.proxy.ID, len(res), util.ByteCount(ResourceSize(res)), resp.Nonce, resp.VersionInfo)
+		} else {
+			adsLog.Infof("%s: PUSH for node:%s resources:%d size:%s",
+				v3.GetShortType(w.TypeUrl), con.proxy.ID, len(res), util.ByteCount(ResourceSize(res)))
+		}
+	}
+	return nil
+}
+
+// TODO: make generator return discovery.Resource; then we don't need to introspect the name
+func convertResponseToDelta(ver string, resources model.Resources) []*discovery.Resource {
+	convert := []*discovery.Resource{}
+	for _, r := range resources {
+		var name string
+		switch r.TypeUrl {
+		case v3.ClusterType:
+			aa := &cluster.Cluster{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.Name
+		case v3.ListenerType:
+			aa := &listener.Listener{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.Name
+		case v3.EndpointType:
+			aa := &endpoint.ClusterLoadAssignment{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.ClusterName
+		case v3.RouteType:
+			aa := &route.RouteConfiguration{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.Name
+		}
+		c := &discovery.Resource{
+			Name:     name,
+			Version:  ver,
+			Resource: r,
+		}
+		convert = append(convert, c)
+	}
+	return convert
+}
+
+// Push an XDS resource for the given connection. Configuration will be generated
+// based on the passed in generator. Based on the updates field, generators may
+// choose to send partial or even no response if there are no changes.
+func (s *DiscoveryServer) pushXdsDelta(con *Connection, push *model.PushContext,
+	currentVersion string, w *model.WatchedResource, req *model.PushRequest) error {
+	if w == nil {
+		return nil
+	}
+	gen := s.findGenerator(w.TypeUrl, con)
+	if gen == nil {
+		return nil
+	}
+
+	t0 := time.Now()
+
+	res, err := gen.Generate(con.proxy, push, w, req)
+	if err != nil || res == nil {
+		// If we have nothing to send, report that we got an ACK for this version.
+		if s.StatusReporter != nil {
+			s.StatusReporter.RegisterEvent(con.ConID, w.TypeUrl, push.LedgerVersion)
+		}
+		return err
+	}
+	defer func() { recordPushTime(w.TypeUrl, time.Since(t0)) }()
+
+	resp := &discovery.DeltaDiscoveryResponse{
+		TypeUrl:           w.TypeUrl,
+		SystemVersionInfo: currentVersion,
+		Nonce:             nonce(push.LedgerVersion),
+		// TODO removed
+		Resources: convertResponseToDelta(currentVersion, res),
+	}
+
+	if err := con.sendDelta(resp); err != nil {
+		recordSendError(w.TypeUrl, con.ConID, err)
+		return err
+	}
+
+	// Some types handle logs inside Generate, skip them here
+	if _, f := SkipLogTypes[w.TypeUrl]; !f {
+		if adsLog.DebugEnabled() {
+			// Add additional information to logs when debug mode enabled
+			adsLog.Infof("%s: PUSH for node:%s resources:%d size:%s nonce:%v version:%v",
+				v3.GetShortType(w.TypeUrl), con.proxy.ID, len(res), util.ByteCount(ResourceSize(res)), resp.Nonce, resp.SystemVersionInfo)
 		} else {
 			adsLog.Infof("%s: PUSH for node:%s resources:%d size:%s",
 				v3.GetShortType(w.TypeUrl), con.proxy.ID, len(res), util.ByteCount(ResourceSize(res)))
