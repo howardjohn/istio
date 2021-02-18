@@ -417,4 +417,8 @@ var (
 	WasmRemoteLoadConversion = env.RegisterBoolVar("ISTIO_AGENT_ENABLE_WASM_REMOTE_LOAD_CONVERSION", true,
 		"If enabled, Istio agent will intercept ECDS resource update, downloads Wasm module, "+
 			"and replaces Wasm module remote load with downloaded local module file.").Get()
+
+	DeltaXds = env.RegisterBoolVar("ISTIO_DELTA_XDS", false,
+		"If enabled, pilot will only send the delta configs as opposed to the state of the world on a " +
+		"Resource Request")
 )
