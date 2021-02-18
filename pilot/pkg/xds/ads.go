@@ -322,7 +322,6 @@ func debugRequest(req *discovery.DeltaDiscoveryRequest) {
 // handles 'push' requests and close - the code will eventually call the 'push' code, and it needs more mutex
 // protection. Original code avoided the mutexes by doing both 'push' and 'process requests' in same thread.
 func (s *DiscoveryServer) processDeltaRequest(req *discovery.DeltaDiscoveryRequest, con *Connection) error {
-	debugRequest(req)
 	if !s.preProcessRequest(con.proxy, tempToSotw(req)) {
 		return nil
 	}
@@ -340,6 +339,7 @@ func (s *DiscoveryServer) processDeltaRequest(req *discovery.DeltaDiscoveryReque
 	con.proxy.Unlock()
 
 	if shouldRespond {
+		debugRequest(req)
 		// This is a request, trigger a full push for this type
 		// Override the blocked push (if it exists), as this full push is guaranteed to be a superset
 		// of what we would have pushed from the blocked push.
@@ -592,20 +592,6 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 		return false
 	}
 
-
-	// This is first request - initialize typeUrl watches.
-	if request.ResponseNonce == "" {
-		adsLog.Debugf("ADS:%s: INIT %s %s", stype, con.ConID, request.ResponseNonce)
-		con.proxy.Lock()
-		con.proxy.WatchedResources[request.TypeUrl] = &model.WatchedResource{
-			TypeUrl: request.TypeUrl,
-			ResourceNames: deltaWatchedResources(nil, request),
-			LastRequest: tempToSotw(request),
-		}
-		con.proxy.Unlock()
-		return true
-	}
-
 	con.proxy.RLock()
 	previousInfo := con.proxy.WatchedResources[request.TypeUrl]
 	con.proxy.RUnlock()
@@ -615,7 +601,7 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 	// because Istiod is restarted or Envoy disconnects and reconnects.
 	// We should always respond with the current resource names.
 	if previousInfo == nil {
-		adsLog.Debugf("ADS:%s: RECONNECT %s %s", stype, con.ConID, request.ResponseNonce)
+		adsLog.Debugf("ADS:%s: INIT/RECONNECT %s %s", stype, con.ConID, request.ResponseNonce)
 		con.proxy.Lock()
 		con.proxy.WatchedResources[request.TypeUrl] = &model.WatchedResource{
 			TypeUrl: request.TypeUrl,
@@ -628,7 +614,8 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 
 	// If there is mismatch in the nonce, that is a case of expired/stale nonce.
 	// A nonce becomes stale following a newer nonce being sent to Envoy.
-	if request.ResponseNonce != previousInfo.NonceSent {
+	// TODO: due to concurrent unsubscribe, this probably doesn't make sense. Do we need any logic here?
+	if request.ResponseNonce != "" && request.ResponseNonce != previousInfo.NonceSent {
 		adsLog.Debugf("ADS:%s: REQ %s Expired nonce received %s, sent %s", stype,
 			con.ConID, request.ResponseNonce, previousInfo.NonceSent)
 		xdsExpiredNonce.With(typeTag.Value(v3.GetMetricType(request.TypeUrl))).Increment()
@@ -650,9 +637,14 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 	con.proxy.WatchedResources[request.TypeUrl].LastRequest = tempToSotw(request)
 	con.proxy.Unlock()
 
+	oldAck := listEqualUnordered(previousResources, con.proxy.WatchedResources[request.TypeUrl].ResourceNames)
+	newAck := request.ResponseNonce != ""
+	if newAck != oldAck {
+		adsLog.Errorf("ADS:%s: New ACK and old ACK check mismatch: %v vs %v", stype, oldAck, newAck)
+	}
 	// Envoy can send two DiscoveryRequests with same version and nonce
 	// when it detects a new resource. We should respond if they change.
-	if listEqualUnordered(previousResources, con.proxy.WatchedResources[request.TypeUrl].ResourceNames) {
+	if oldAck {
 		adsLog.Debugf("ADS:%s: ACK %s %s", stype, con.ConID, request.ResponseNonce)
 		return false
 	}

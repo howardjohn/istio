@@ -25,9 +25,11 @@ import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/golang/protobuf/ptypes"
+	"istio.io/pkg/log"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
+	"istio.io/istio/pilot/pkg/util/sets"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/pkg/env"
 	istioversion "istio.io/pkg/version"
@@ -141,6 +143,14 @@ func (s *DiscoveryServer) pushXds(con *Connection, push *model.PushContext,
 	return nil
 }
 
+func extractNames(res []*discovery.Resource) []string {
+	names := []string{}
+	for _, r := range res {
+		names = append(names, r.Name)
+	}
+	return names
+}
+
 // TODO: make generator return discovery.Resource; then we don't need to introspect the name
 func convertResponseToDelta(ver string, resources model.Resources) []*discovery.Resource {
 	convert := []*discovery.Resource{}
@@ -174,6 +184,10 @@ func convertResponseToDelta(ver string, resources model.Resources) []*discovery.
 	return convert
 }
 
+func init() {
+	adsLog.SetOutputLevel(log.DebugLevel)
+}
+
 // Push an XDS resource for the given connection. Configuration will be generated
 // based on the passed in generator. Based on the updates field, generators may
 // choose to send partial or even no response if there are no changes.
@@ -205,6 +219,12 @@ func (s *DiscoveryServer) pushXdsDelta(con *Connection, push *model.PushContext,
 		Nonce:             nonce(push.LedgerVersion),
 		// TODO removed
 		Resources: convertResponseToDelta(currentVersion, res),
+	}
+	cur := sets.NewSet(w.ResourceNames...)
+	cur.Delete(extractNames(resp.Resources)...)
+	resp.RemovedResources = cur.SortedList()
+	if len(resp.RemovedResources) > 0 {
+		adsLog.Errorf("ADS:%v REMOVE %v", v3.GetShortType(w.TypeUrl), resp.RemovedResources)
 	}
 
 	if err := con.sendDelta(resp); err != nil {
