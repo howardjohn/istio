@@ -67,6 +67,9 @@ type DeltaDiscoveryStream = discovery.AggregatedDiscoveryService_DeltaAggregated
 // DiscoveryClient is a client interface for XDS.
 type DiscoveryClient = discovery.AggregatedDiscoveryService_StreamAggregatedResourcesClient
 
+// DeltaDiscoveryClient is a client interface for Delta XDS.
+type DeltaDiscoveryClient = discovery.AggregatedDiscoveryService_DeltaAggregatedResourcesClient
+
 // Connection holds information about connected client.
 type Connection struct {
 	// PeerAddr is the address of the client, from network layer.
@@ -89,7 +92,7 @@ type Connection struct {
 	pushChannel chan *Event
 
 	// Both ADS and SDS streams implement this interface
-	stream DiscoveryStream
+	stream      DiscoveryStream
 	deltaStream DeltaDiscoveryStream
 
 	// Original node metadata, to avoid unmarshal/marshal.
@@ -137,7 +140,7 @@ func newDeltaConnection(peerAddr string, stream DeltaDiscoveryStream) *Connectio
 		stop:          make(chan struct{}),
 		PeerAddr:      peerAddr,
 		Connect:       time.Now(),
-		deltaStream:        stream,
+		deltaStream:   stream,
 		blockedPushes: map[string]*model.PushRequest{},
 	}
 }
@@ -224,15 +227,16 @@ func (s *DiscoveryServer) receiveDelta(con *Connection, reqChannel chan *discove
 		}
 	}()
 	firstReq := true
+	log := adsLog.WithLabels("addr", con.PeerAddr, "con", con.ConID)
 	for {
 		req, err := con.deltaStream.Recv()
 		if err != nil {
 			if isExpectedGRPCError(err) {
-				adsLog.Infof("ADS: %q %s terminated %v", con.PeerAddr, con.ConID, err)
+				log.Infof("ADS: terminated: %v", err)
 				return
 			}
 			*errP = err
-			adsLog.Errorf("ADS: %q %s terminated with error: %v", con.PeerAddr, con.ConID, err)
+			log.Errorf("ADS: terminated with error: %v", err)
 			totalXDSInternalErrors.Increment()
 			return
 		}
@@ -248,7 +252,7 @@ func (s *DiscoveryServer) receiveDelta(con *Connection, reqChannel chan *discove
 				*errP = err
 				return
 			}
-			adsLog.Infof("ADS: new connection for node:%s", con.ConID)
+			log.Infof("ADS: new connection")
 			defer func() {
 				s.removeCon(con.ConID)
 				if s.StatusGen != nil {
@@ -261,7 +265,7 @@ func (s *DiscoveryServer) receiveDelta(con *Connection, reqChannel chan *discove
 		select {
 		case reqChannel <- req:
 		case <-con.deltaStream.Context().Done():
-			adsLog.Infof("ADS: %q %s terminated with stream closed", con.PeerAddr, con.ConID)
+			log.Infof("ADS: terminated with stream closed")
 			return
 		}
 	}
@@ -308,11 +312,11 @@ func (s *DiscoveryServer) processRequest(req *discovery.DiscoveryRequest, con *C
 
 func debugRequest(req *discovery.DeltaDiscoveryRequest) {
 	debug, _ := (&jsonpb.Marshaler{Indent: " "}).MarshalToString(&discovery.DeltaDiscoveryRequest{
-		TypeUrl:                 req.TypeUrl,
+		TypeUrl:                  req.TypeUrl,
 		ResourceNamesSubscribe:   req.ResourceNamesSubscribe,
 		ResourceNamesUnsubscribe: req.ResourceNamesUnsubscribe,
 		InitialResourceVersions:  req.InitialResourceVersions,
-		ResponseNonce:           req.ResponseNonce,
+		ResponseNonce:            req.ResponseNonce,
 		ErrorDetail:              req.ErrorDetail,
 	})
 	adsLog.Errorf("howardjohn: %s", debug)
@@ -563,7 +567,8 @@ func tempToSotw(request *discovery.DeltaDiscoveryRequest) *discovery.DiscoveryRe
 		ErrorDetail:   request.ErrorDetail,
 	}
 }
-func deltaWatchedResources(existing []string, request *discovery.DeltaDiscoveryRequest ) []string {
+
+func deltaWatchedResources(existing []string, request *discovery.DeltaDiscoveryRequest) []string {
 	res := sets.NewSet(existing...)
 	res.Insert(request.ResourceNamesSubscribe...)
 	res.Delete(request.ResourceNamesUnsubscribe...)
@@ -581,7 +586,7 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 	// will be different from the version sent. But it is fragile to rely on that.
 	if request.ErrorDetail != nil {
 		errCode := codes.Code(request.ErrorDetail.Code)
-		adsLog.Warnf("ADS:%s: ACK ERROR %s %s:%s", stype, con.ConID, errCode.String(), request.ErrorDetail.GetMessage())
+		adsLog.Warnf("dADS:%s: ACK ERROR %s %s:%s", stype, con.ConID, errCode.String(), request.ErrorDetail.GetMessage())
 		incrementXDSRejects(request.TypeUrl, con.proxy.ID, errCode.String())
 		if s.StatusGen != nil {
 			s.StatusGen.OnNack(con.proxy, tempToSotw(request))
@@ -601,12 +606,12 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 	// because Istiod is restarted or Envoy disconnects and reconnects.
 	// We should always respond with the current resource names.
 	if previousInfo == nil {
-		adsLog.Debugf("ADS:%s: INIT/RECONNECT %s %s", stype, con.ConID, request.ResponseNonce)
+		adsLog.Debugf("dADS:%s: INIT/RECONNECT %s %s", stype, con.ConID, request.ResponseNonce)
 		con.proxy.Lock()
 		con.proxy.WatchedResources[request.TypeUrl] = &model.WatchedResource{
-			TypeUrl: request.TypeUrl,
+			TypeUrl:       request.TypeUrl,
 			ResourceNames: deltaWatchedResources(nil, request),
-			LastRequest: tempToSotw(request),
+			LastRequest:   tempToSotw(request),
 		}
 		con.proxy.Unlock()
 		return true
@@ -616,7 +621,7 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 	// A nonce becomes stale following a newer nonce being sent to Envoy.
 	// TODO: due to concurrent unsubscribe, this probably doesn't make sense. Do we need any logic here?
 	if request.ResponseNonce != "" && request.ResponseNonce != previousInfo.NonceSent {
-		adsLog.Debugf("ADS:%s: REQ %s Expired nonce received %s, sent %s", stype,
+		adsLog.Debugf("dADS:%s: REQ %s Expired nonce received %s, sent %s", stype,
 			con.ConID, request.ResponseNonce, previousInfo.NonceSent)
 		xdsExpiredNonce.With(typeTag.Value(v3.GetMetricType(request.TypeUrl))).Increment()
 		con.proxy.Lock()
@@ -633,22 +638,22 @@ func (s *DiscoveryServer) shouldRespondDelta(con *Connection, request *discovery
 	con.proxy.WatchedResources[request.TypeUrl].VersionAcked = ""
 	con.proxy.WatchedResources[request.TypeUrl].NonceAcked = request.ResponseNonce
 	con.proxy.WatchedResources[request.TypeUrl].NonceNacked = ""
-	con.proxy.WatchedResources[request.TypeUrl].ResourceNames =  deltaWatchedResources(previousResources, request)
+	con.proxy.WatchedResources[request.TypeUrl].ResourceNames = deltaWatchedResources(previousResources, request)
 	con.proxy.WatchedResources[request.TypeUrl].LastRequest = tempToSotw(request)
 	con.proxy.Unlock()
 
 	oldAck := listEqualUnordered(previousResources, con.proxy.WatchedResources[request.TypeUrl].ResourceNames)
 	newAck := request.ResponseNonce != ""
 	if newAck != oldAck {
-		adsLog.Errorf("ADS:%s: New ACK and old ACK check mismatch: %v vs %v", stype, oldAck, newAck)
+		adsLog.Errorf("dADS:%s: New ACK and old ACK check mismatch: %v vs %v", stype, oldAck, newAck)
 	}
 	// Envoy can send two DiscoveryRequests with same version and nonce
 	// when it detects a new resource. We should respond if they change.
 	if oldAck {
-		adsLog.Debugf("ADS:%s: ACK %s %s", stype, con.ConID, request.ResponseNonce)
+		adsLog.Debugf("dADS:%s: ACK %s %s", stype, con.ConID, request.ResponseNonce)
 		return false
 	}
-	adsLog.Debugf("ADS:%s: RESOURCE CHANGE previous resources: %v, new resources: %v %s %s", stype,
+	adsLog.Debugf("dADS:%s: RESOURCE CHANGE previous resources: %v, new resources: %v %s %s", stype,
 		previousResources, con.proxy.WatchedResources[request.TypeUrl].ResourceNames, con.ConID, request.ResponseNonce)
 
 	return true

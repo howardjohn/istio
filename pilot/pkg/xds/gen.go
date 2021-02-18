@@ -25,13 +25,13 @@ import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/golang/protobuf/ptypes"
-	"istio.io/pkg/log"
 
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
 	"istio.io/istio/pilot/pkg/util/sets"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/pkg/env"
+	"istio.io/pkg/log"
 	istioversion "istio.io/pkg/version"
 )
 
@@ -180,6 +180,14 @@ func convertResponseToDelta(ver string, resources model.Resources) []*discovery.
 			Resource: r,
 		}
 		convert = append(convert, c)
+	}
+	return convert
+}
+
+func ConvertDeltaToResponse(response []*discovery.Resource) model.Resources {
+	convert := model.Resources{}
+	for _, r := range response {
+		convert = append(convert, r.Resource)
 	}
 	return convert
 }

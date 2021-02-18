@@ -137,6 +137,36 @@ func TestAdsReconnect(t *testing.T) {
 	ads2.ExpectResponse()
 }
 
+func TestDeltaAds(t *testing.T) {
+	leak.Check(t)
+	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	ads := s.ConnectDeltaADS().WithType(v3.ClusterType)
+	ads.RequestResponseAck(nil)
+}
+
+func TestDeltaAdsClusterUpdate(t *testing.T) {
+	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
+	ads := s.ConnectDeltaADS().WithType(v3.EndpointType)
+
+	nonce := ""
+	sendEDSReqAndVerify := func(add, remove, expect []string) {
+		res := ads.RequestResponseAck(&discovery.DeltaDiscoveryRequest{
+			ResourceNamesSubscribe:   add,
+			ResourceNamesUnsubscribe: remove,
+			ResponseNonce:            nonce,
+		})
+		nonce = res.Nonce
+		got := xdstest.MapKeys(xdstest.ExtractLoadAssignments(xdstest.UnmarshalClusterLoadAssignment(t, xds.ConvertDeltaToResponse(res.Resources))))
+		if !reflect.DeepEqual(expect, got) {
+			t.Fatalf("expected clusters %v got %v", expect, got)
+		}
+	}
+
+	sendEDSReqAndVerify([]string{"outbound|80||local.default.svc.cluster.local"}, nil, []string{"outbound|80||local.default.svc.cluster.local"})
+	sendEDSReqAndVerify([]string{"outbound|81||local.default.svc.cluster.local"}, nil, []string{"outbound|80||local.default.svc.cluster.local", "outbound|81||local.default.svc.cluster.local"})
+	sendEDSReqAndVerify(nil, []string{"outbound|81||local.default.svc.cluster.local"}, []string{"outbound|80||local.default.svc.cluster.local"})
+}
+
 func TestAdsClusterUpdate(t *testing.T) {
 	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
 	ads := s.ConnectADS().WithType(v3.EndpointType)
