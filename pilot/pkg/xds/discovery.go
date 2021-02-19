@@ -20,9 +20,11 @@ import (
 	"time"
 
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"istio.io/istio/pilot/pkg/controller/workloadentry"
 	"istio.io/istio/pilot/pkg/features"
@@ -35,6 +37,9 @@ import (
 	"istio.io/istio/pilot/pkg/serviceregistry/memory"
 	"istio.io/istio/pilot/pkg/util/sets"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
+	"istio.io/istio/pilot/test/xdstest"
+	"istio.io/istio/pkg/config/host"
+	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/security"
 )
 
@@ -610,4 +615,104 @@ func (s *DiscoveryServer) ClientsOf(typeUrl string) []*Connection {
 	}
 
 	return pending
+}
+
+func (s *DiscoveryServer) compareDiff(con *Connection, resp *discovery.DiscoveryResponse, req *model.PushRequest) {
+	current := con.Watched(resp.TypeUrl).LastMessage
+	if current == nil {
+		log.Debugf("ADS:%s: resources initialized", v3.GetShortType(resp.TypeUrl))
+		return
+	}
+
+	filter := ChangedResources(req)[resp.TypeUrl]
+
+	now := convertResponseToMessage(resp.Resources)
+	ckeys := sets.NewSet(xdstest.MapKeys(current)...)
+	nkeys := sets.NewSet(xdstest.MapKeys(now)...)
+	removedResources := ckeys.Difference(nkeys).SortedList()
+	addedResources := nkeys.Difference(ckeys).SortedList()
+	intersection := ckeys.Intersection(nkeys).SortedList()
+	if req.Full {
+		if len(removedResources) > 0 {
+			log.Debugf("ADS:%s: resources removed: %v", v3.GetShortType(resp.TypeUrl), removedResources)
+		}
+		if len(addedResources) > 0 {
+			log.Debugf("ADS:%s: resources added: %v", v3.GetShortType(resp.TypeUrl), addedResources)
+		}
+	}
+	changed := sets.NewSet()
+	unChanged := sets.NewSet()
+	changed.Insert(removedResources...)
+	changed.Insert(addedResources...)
+	for _, res := range intersection {
+		if diff := cmp.Diff(current[res], now[res], protocmp.Transform()); diff != "" {
+			changed.Insert(res)
+			log.Debugf("ADS:%s: resource %v diff: %v", v3.GetShortType(resp.TypeUrl), res, diff)
+		} else {
+			unChanged.Insert(res)
+		}
+	}
+	for _, res := range changed.SortedList() {
+		expectedUpdate := filter(res)
+		if !expectedUpdate {
+			log.Errorf("ADS:%s: fatal missed update: %v", v3.GetShortType(resp.TypeUrl), res)
+		} else {
+			log.Infof("ADS:%s: successfully expected change: %v", v3.GetShortType(resp.TypeUrl), res)
+		}
+	}
+	for _, res := range unChanged.SortedList() {
+		expectedUpdate := filter(res)
+		if expectedUpdate {
+			log.Warnf("ADS:%s: optimization missed: %v", v3.GetShortType(resp.TypeUrl), res)
+		} else {
+			log.Infof("ADS:%s: successfully filtered change: %v", v3.GetShortType(resp.TypeUrl), res)
+		}
+	}
+}
+
+type ResourceFilter func(resourceName string) bool
+
+var MatchAll ResourceFilter = func(resourceName string) bool {
+	return true
+}
+
+var MatchNone ResourceFilter = func(resourceName string) bool {
+	return false
+}
+
+func (r ResourceFilter) And(r2 ResourceFilter) ResourceFilter {
+	return func(resourceName string) bool {
+		return r(resourceName) && r2(resourceName)
+	}
+}
+
+func (r ResourceFilter) Or(r2 ResourceFilter) ResourceFilter {
+	return func(resourceName string) bool {
+		return r(resourceName) || r2(resourceName)
+	}
+}
+
+func ChangedResources(req *model.PushRequest) map[string]ResourceFilter {
+	cu := req.ConfigsUpdated
+	resp := map[string]ResourceFilter{
+		v3.ClusterType:  MatchNone,
+		v3.ListenerType: MatchNone.Or(MatchAll),
+		v3.RouteType:    MatchNone.Or(MatchAll),
+		v3.EndpointType: MatchNone.Or(MatchAll),
+	}
+	log.Errorf("howardjohn: changes: %+v", cu)
+	if len(cu) == len(model.ConfigsOfKind(cu, gvk.ServiceEntry)) {
+		log.Errorf("howardjohn: set CDS based on service")
+		for c := range cu {
+			resp[v3.ClusterType] = resp[v3.ClusterType].Or(func(resourceName string) bool {
+				_, _, hn, _ := model.ParseSubsetKey(resourceName)
+				return hn == host.Name(c.Name)
+			})
+		}
+	} else {
+		log.Errorf("howardjohn: set CDS match all")
+		resp[v3.ClusterType] = resp[v3.ClusterType].Or(MatchAll)
+	}
+	resp[v3.EndpointType] = resp[v3.ClusterType]
+	return resp
 }

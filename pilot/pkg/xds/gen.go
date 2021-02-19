@@ -122,6 +122,7 @@ func (s *DiscoveryServer) pushXds(con *Connection, push *model.PushContext,
 		Nonce:        nonce(push.LedgerVersion),
 		Resources:    res,
 	}
+	s.compareDiff(con, resp, req)
 
 	configSize := ResourceSize(res)
 	configSizeBytes.With(typeTag.Value(w.TypeUrl)).Record(float64(configSize))

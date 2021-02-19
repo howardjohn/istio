@@ -57,6 +57,21 @@ func (s Set) Difference(s2 Set) Set {
 	return result
 }
 
+// Intersection returns a set of objects that are in both sets
+// For example:
+// s = {a1, a2, a3}
+// s2 = {a1, a2, a4, a5}
+// s.Intersection(s2) = {a1, a2}
+func (s Set) Intersection(s2 Set) Set {
+	result := NewSet()
+	for key := range s {
+		if _, exist := s2[key]; exist {
+			result.Insert(key)
+		}
+	}
+	return result
+}
+
 // UnsortedList returns the slice with contents in random order.
 func (s Set) UnsortedList() []string {
 	res := make([]string, 0, len(s))

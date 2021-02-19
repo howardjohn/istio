@@ -21,8 +21,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	uatomic "go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -924,14 +930,47 @@ func (conn *Connection) send(res *discovery.DiscoveryResponse) error {
 			conn.proxy.WatchedResources[res.TypeUrl].NonceSent = res.Nonce
 			conn.proxy.WatchedResources[res.TypeUrl].VersionSent = res.VersionInfo
 			conn.proxy.WatchedResources[res.TypeUrl].LastSent = time.Now()
+			conn.proxy.WatchedResources[res.TypeUrl].LastMessage = convertResponseToMessage(res.Resources)
 			conn.proxy.WatchedResources[res.TypeUrl].LastSize = sz
+			conn.proxy.Unlock()
+		} else if status.Convert(err).Code() == codes.DeadlineExceeded {
+			log.Infof("Timeout writing %s", conn.ConID)
+			xdsResponseWriteTimeouts.Increment()
 		}
-		conn.proxy.Unlock()
-	} else if status.Convert(err).Code() == codes.DeadlineExceeded {
-		log.Infof("Timeout writing %s", conn.ConID)
-		xdsResponseWriteTimeouts.Increment()
 	}
 	return err
+}
+
+func convertResponseToMessage(resources model.Resources) map[string]proto.Message {
+	convert := map[string]proto.Message{}
+	for _, r := range resources {
+		var pm proto.Message
+		var name string
+		switch r.TypeUrl {
+		case v3.ClusterType:
+			aa := &cluster.Cluster{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.Name
+			pm = aa
+		case v3.ListenerType:
+			aa := &listener.Listener{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.Name
+			pm = aa
+		case v3.EndpointType:
+			aa := &endpoint.ClusterLoadAssignment{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.ClusterName
+			pm = aa
+		case v3.RouteType:
+			aa := &route.RouteConfiguration{}
+			ptypes.UnmarshalAny(r, aa)
+			name = aa.Name
+			pm = aa
+		}
+		convert[name] = pm
+	}
+	return convert
 }
 
 // nolint

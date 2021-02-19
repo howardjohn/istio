@@ -30,6 +30,7 @@ import (
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	gogojsonpb "github.com/gogo/protobuf/jsonpb"
 	"github.com/golang/protobuf/jsonpb"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	structpb "github.com/golang/protobuf/ptypes/struct"
 
@@ -293,6 +294,9 @@ type WatchedResource struct {
 
 	// LastSent tracks the time of the generated push, to determine the time it takes the client to ack.
 	LastSent time.Time
+
+	// LastMessage tracks the time of the generated push, to determine the time it takes the client to ack.
+	LastMessage map[string]proto.Message
 
 	// Updates count the number of generated updates for the resource
 	Updates int
