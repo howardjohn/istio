@@ -18,15 +18,21 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/net/http2"
@@ -35,6 +41,7 @@ import (
 	"istio.io/istio/pkg/test/echo/common"
 	"istio.io/istio/pkg/test/echo/common/response"
 	"istio.io/istio/pkg/test/util/retry"
+	"istio.io/pkg/log"
 )
 
 const (
@@ -53,7 +60,8 @@ var _ Instance = &httpInstance{}
 
 type httpInstance struct {
 	Config
-	server *http.Server
+	server      *http.Server
+	connections sync.Map
 }
 
 func newHTTP(config Config) Instance {
@@ -66,12 +74,71 @@ func (s *httpInstance) GetConfig() Config {
 	return s.Config
 }
 
+func printContextInternals(ctx interface{}, inner bool) {
+	contextValues := reflect.ValueOf(ctx).Elem()
+	contextKeys := reflect.TypeOf(ctx).Elem()
+
+	if !inner {
+		fmt.Printf("\nFields for %s.%s\n", contextKeys.PkgPath(), contextKeys.Name())
+	}
+
+	if contextKeys.Kind() == reflect.Struct {
+		for i := 0; i < contextValues.NumField(); i++ {
+			reflectValue := contextValues.Field(i)
+			reflectValue = reflect.NewAt(reflectValue.Type(), unsafe.Pointer(reflectValue.UnsafeAddr())).Elem()
+
+			reflectField := contextKeys.Field(i)
+
+			if reflectField.Name == "Context" {
+				printContextInternals(reflectValue.Interface(), true)
+			} else {
+				fmt.Printf("field name: %+v\n", reflectField.Name)
+				fmt.Printf("value: %+v\n", reflectValue.Interface())
+			}
+		}
+	} else {
+		fmt.Printf("context is empty (int)\n")
+	}
+}
+
 func (s *httpInstance) Start(onReady OnReadyFunc) error {
 	h2s := &http2.Server{}
 	s.server = &http.Server{
+		Addr: "",
 		Handler: h2c.NewHandler(&httpHandler{
-			Config: s.Config,
+			Config:      s.Config,
+			Connections: &s.connections,
 		}, h2s),
+		TLSConfig:         nil,
+		ReadTimeout:       0,
+		ReadHeaderTimeout: 0,
+		WriteTimeout:      0,
+		IdleTimeout:       0,
+		MaxHeaderBytes:    0,
+		TLSNextProto:      nil,
+		ConnState: func(conn net.Conn, state http.ConnState) {
+			log.Errorf("howardjohn: conn %v -> %v", conn.RemoteAddr(), state.String())
+
+			switch state {
+			case http.StateNew:
+				addr, err := realServerAddress(conn)
+				var orig string
+				if err != nil {
+					orig = err.Error()
+				} else {
+					orig = addr.String()
+				}
+				s.connections.Store(conn.RemoteAddr().String(), orig)
+			case http.StateClosed:
+				s.connections.Delete(conn.RemoteAddr().String())
+			}
+			log.Errorf("howardjohn: done handle conn %v", state)
+			s.connections.Range(func(key, value interface{}) bool {
+				log.Errorf("howardjohn: have %v -> %v", key, value)
+				return true
+			})
+		},
+		ErrorLog: nil,
 	}
 
 	var listener net.Listener
@@ -188,6 +255,7 @@ func (s *httpInstance) Close() error {
 
 type httpHandler struct {
 	Config
+	Connections *sync.Map
 }
 
 // Imagine a pie of different flavors.
@@ -317,7 +385,17 @@ func (h *httpHandler) addResponsePayload(r *http.Request, body *bytes.Buffer) {
 		alpn = r.TLS.NegotiatedProtocol
 	}
 	writeField(body, "Alpn", alpn)
-
+	log.Errorf("howardjohn: lookup %v", r.RemoteAddr)
+	h.Connections.Range(func(key, value interface{}) bool {
+		log.Errorf("howardjohn: have %v", key)
+		return true
+	})
+	rcon, f := h.Connections.Load(r.RemoteAddr)
+	if !f {
+		writeField(body, "OriginalDst", "unknown")
+	} else {
+		writeField(body, "OriginalDst", rcon.(string))
+	}
 	keys := []string{}
 	for k := range r.Header {
 		keys = append(keys, k)
@@ -333,6 +411,80 @@ func (h *httpHandler) addResponsePayload(r *http.Request, body *bytes.Buffer) {
 	if hostname, err := os.Hostname(); err == nil {
 		writeField(body, response.HostnameField, hostname)
 	}
+}
+
+var nativeEndian binary.ByteOrder
+
+func init() {
+	i := uint32(1)
+	b := (*[4]byte)(unsafe.Pointer(&i))
+	if b[0] == 1 {
+		nativeEndian = binary.LittleEndian
+	} else {
+		nativeEndian = binary.BigEndian
+	}
+}
+
+const (
+	ianaProtocolIP   = 0x0
+	ianaProtocolTCP  = 0x6
+	ianaProtocolIPv6 = 0x29
+)
+
+const (
+	soBuffered = iota
+	soAvailable
+	soMax
+)
+
+type sockaddr struct {
+	family uint16
+	data   [14]byte
+}
+
+const SO_ORIGINAL_DST = 80
+
+// realServerAddress returns an intercepted connection's original destination.
+func realServerAddress(conn net.Conn) (net.Addr, error) {
+	tcpConn, ok := (conn).(*net.TCPConn)
+	if !ok {
+		return nil, errors.New("not a TCPConn")
+	}
+
+	file, err := tcpConn.File()
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	fd := file.Fd()
+
+	var addr sockaddr
+	size := uint32(unsafe.Sizeof(addr))
+	err = getsockopt(int(fd), syscall.SOL_IP, SO_ORIGINAL_DST, uintptr(unsafe.Pointer(&addr)), &size)
+	if err != nil {
+		return nil, err
+	}
+
+	var ip net.IP
+	switch addr.family {
+	case syscall.AF_INET:
+		ip = addr.data[2:6]
+	default:
+		return nil, errors.New("unrecognized address family")
+	}
+
+	port := int(addr.data[0])<<8 + int(addr.data[1])
+
+	return &net.TCPAddr{IP: ip, Port: port}, nil
+}
+
+func getsockopt(s int, level int, name int, val uintptr, vallen *uint32) (err error) {
+	_, _, e1 := syscall.Syscall6(syscall.SYS_GETSOCKOPT, uintptr(s), uintptr(level), uintptr(name), uintptr(val), uintptr(unsafe.Pointer(vallen)), 0)
+	if e1 != 0 {
+		err = e1
+	}
+	return
 }
 
 func delayResponse(request *http.Request) error {
