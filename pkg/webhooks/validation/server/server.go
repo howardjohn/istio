@@ -42,7 +42,8 @@ var scope = log.RegisterScope("validationServer", "validation webhook server", 0
 
 var (
 	runtimeScheme = runtime.NewScheme()
-	codecs        = serializer.NewCodecFactory(runtimeScheme)
+	codecs        = serializer.
+		NewCodecFactory(runtimeScheme)
 	deserializer  = codecs.UniversalDeserializer()
 
 	// Expect AdmissionRequest to only include these top-level field names

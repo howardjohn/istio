@@ -1,0 +1,161 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  creationTimestamp: null
+  name: ingress
+  namespace: default
+spec:
+  rules:
+  - host: foo.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: foo
+          servicePort: 80
+        path: /*
+  tls:
+  - hosts:
+    - foo.example.com
+    secretName: star-example-cred
+status:
+  loadBalancer: {}
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: istio
+  creationTimestamp: null
+  name: ingress
+  namespace: default
+spec:
+  rules:
+  - host: echo.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: echo
+          servicePort: 80
+        path: /*
+  tls:
+  - hosts:
+    - echo.example.com
+    secretName: echo-cred
+status:
+  loadBalancer: {}
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: istio
+  creationTimestamp: null
+  name: http-only
+  namespace: default
+spec:
+  rules:
+  - host: foo.bar.not-matched.com
+    http:
+      paths:
+      - backend:
+          serviceName: echo
+          servicePort: 80
+        path: /*
+status:
+  loadBalancer: {}
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: istio
+  creationTimestamp: null
+  name: wildcard
+  namespace: default
+spec:
+  rules:
+  - host: '*.example.com'
+    http:
+      paths:
+      - backend:
+          serviceName: echo
+          servicePort: 80
+        path: /*
+  tls:
+  - hosts:
+    - '*.example.com'
+    secretName: star-example-cred
+status:
+  loadBalancer: {}
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: istio
+  creationTimestamp: null
+  name: wildcard2
+  namespace: default
+spec:
+  rules:
+  - host: '*.example.com'
+    http:
+      paths:
+      - backend:
+          serviceName: echo
+          servicePort: 80
+        path: /bar*
+status:
+  loadBalancer: {}
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: istio
+  creationTimestamp: null
+  name: wildcard-to-explicit
+  namespace: default
+spec:
+  rules:
+  - host: '*.other.com'
+    http:
+      paths:
+      - backend:
+          serviceName: echo
+          servicePort: 80
+        path: /*
+status:
+  loadBalancer: {}
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: istio
+  creationTimestamp: null
+  name: ingress2
+  namespace: default
+spec:
+  rules:
+  - host: httpbin.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: httpbin
+          servicePort: 80
+        path: /*
+  tls:
+  - hosts:
+    - httpbin.example.com
+    secretName: star-example-cred
+status:
+  loadBalancer: {}
+
