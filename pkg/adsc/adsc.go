@@ -457,7 +457,7 @@ func (a *ADSC) handleRecv() {
 				if err != nil {
 					continue
 				}
-				err = ioutil.WriteFile(a.LocalCacheDir+"_mesh.json", strResponse, 0644)
+				err = ioutil.WriteFile(a.LocalCacheDir+"_mesh.json", strResponse, 0o644)
 				if err != nil {
 					continue
 				}
@@ -549,21 +549,17 @@ func mcpToPilot(m *mcp.Resource) (*config.Config, error) {
 	}
 	c.Namespace = nsn[0]
 	c.Name = nsn[1]
-	var err error
-	c.CreationTimestamp, err = types.TimestampFromProto(m.Metadata.CreateTime)
-	if err != nil {
-		return nil, err
-	}
-
-	pb, err := types.EmptyAny(m.Body)
-	if err != nil {
-		return nil, err
-	}
-	err = types.UnmarshalAny(m.Body, pb)
-	if err != nil {
-		return nil, err
-	}
-	c.Spec = pb
+	c.CreationTimestamp = m.Metadata.CreateTime.AsTime()
+	// TODO(howardjohn)
+	//pb, err := ptypes.EmptyAny(m.Body)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//err = types.UnmarshalAny(m.Body, pb)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//c.Spec = pb
 	return c, nil
 }
 
@@ -645,7 +641,7 @@ func (a *ADSC) Save(base string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(base+"_lds_tcp.json", strResponse, 0644)
+	err = ioutil.WriteFile(base+"_lds_tcp.json", strResponse, 0o644)
 	if err != nil {
 		return err
 	}
@@ -653,7 +649,7 @@ func (a *ADSC) Save(base string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(base+"_lds_http.json", strResponse, 0644)
+	err = ioutil.WriteFile(base+"_lds_http.json", strResponse, 0o644)
 	if err != nil {
 		return err
 	}
@@ -661,7 +657,7 @@ func (a *ADSC) Save(base string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(base+"_rds.json", strResponse, 0644)
+	err = ioutil.WriteFile(base+"_rds.json", strResponse, 0o644)
 	if err != nil {
 		return err
 	}
@@ -669,7 +665,7 @@ func (a *ADSC) Save(base string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(base+"_ecds.json", strResponse, 0644)
+	err = ioutil.WriteFile(base+"_ecds.json", strResponse, 0o644)
 	if err != nil {
 		return err
 	}
@@ -677,7 +673,7 @@ func (a *ADSC) Save(base string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(base+"_cds.json", strResponse, 0644)
+	err = ioutil.WriteFile(base+"_cds.json", strResponse, 0o644)
 	if err != nil {
 		return err
 	}
@@ -685,7 +681,7 @@ func (a *ADSC) Save(base string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(base+"_eds.json", strResponse, 0644)
+	err = ioutil.WriteFile(base+"_eds.json", strResponse, 0o644)
 	if err != nil {
 		return err
 	}
@@ -1146,7 +1142,7 @@ func (a *ADSC) handleMCP(gvk []string, resources []*any.Any) {
 				continue
 			}
 			err = ioutil.WriteFile(a.LocalCacheDir+"_res."+
-				val.GroupVersionKind.Kind+"."+val.Namespace+"."+val.Name+".json", strResponse, 0644)
+				val.GroupVersionKind.Kind+"."+val.Namespace+"."+val.Name+".json", strResponse, 0o644)
 			if err != nil {
 				adscLog.Warnf("Error writing received MCP config to local file %v", err)
 			}

@@ -26,7 +26,7 @@ import (
 
 	md "cloud.google.com/go/compute/metadata"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes/wrappers"
 
 	meshAPI "istio.io/api/mesh/v1alpha1"
 	"istio.io/istio/pilot/pkg/model"
@@ -341,7 +341,7 @@ func getProxyConfigOptions(config *meshAPI.ProxyConfig, metadata *model.Bootstra
 	return opts, nil
 }
 
-func getInt64ValueOrDefault(src *types.Int64Value, defaultVal int64) int64 {
+func getInt64ValueOrDefault(src *wrappers.Int64Value, defaultVal int64) int64 {
 	val := defaultVal
 	if src != nil {
 		val = src.Value

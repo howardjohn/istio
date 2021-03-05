@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes"
 
 	mcp "istio.io/api/mcp/v1alpha1"
 )
@@ -62,12 +62,12 @@ func (b *InMemoryBuilder) Set(collection, version string, resources []*mcp.Resou
 // through existing entries.
 func (b *InMemoryBuilder) SetEntry(collection, name, version string, createTime time.Time, labels,
 	annotations map[string]string, m proto.Message) error {
-	body, err := types.MarshalAny(m)
+	body, err := ptypes.MarshalAny(m)
 	if err != nil {
 		return err
 	}
 
-	createTimeProto, err := types.TimestampProto(createTime)
+	createTimeProto, err := ptypes.TimestampProto(createTime)
 	if err != nil {
 		return err
 	}

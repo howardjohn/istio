@@ -25,7 +25,7 @@ import (
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	auth "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	xdstype "github.com/envoyproxy/go-control-plane/envoy/type/v3"
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes/duration"
 	structpb "github.com/golang/protobuf/ptypes/struct"
 	"github.com/golang/protobuf/ptypes/wrappers"
 
@@ -41,7 +41,6 @@ import (
 	"istio.io/istio/pilot/pkg/util/sets"
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/protocol"
-	"istio.io/istio/pkg/util/gogo"
 	"istio.io/pkg/log"
 )
 
@@ -624,7 +623,7 @@ func applyConnectionPool(mesh *meshconfig.MeshConfig, c *cluster.Cluster, settin
 	}
 
 	threshold := getDefaultCircuitBreakerThresholds()
-	var idleTimeout *types.Duration
+	var idleTimeout *duration.Duration
 
 	if settings.Http != nil {
 		if settings.Http.Http2MaxRequests > 0 {
@@ -650,7 +649,7 @@ func applyConnectionPool(mesh *meshconfig.MeshConfig, c *cluster.Cluster, settin
 
 	if settings.Tcp != nil {
 		if settings.Tcp.ConnectTimeout != nil {
-			c.ConnectTimeout = gogo.DurationToProtoDuration(settings.Tcp.ConnectTimeout)
+			c.ConnectTimeout = settings.Tcp.ConnectTimeout
 		}
 
 		if settings.Tcp.MaxConnections > 0 {
@@ -665,7 +664,7 @@ func applyConnectionPool(mesh *meshconfig.MeshConfig, c *cluster.Cluster, settin
 	}
 
 	if idleTimeout != nil {
-		idleTimeoutDuration := gogo.DurationToProtoDuration(idleTimeout)
+		idleTimeoutDuration := idleTimeout
 
 		// TODO(https://github.com/istio/istio/issues/29735) remove nolint
 		// nolint: staticcheck
@@ -741,10 +740,10 @@ func applyOutlierDetection(c *cluster.Cluster, outlier *networking.OutlierDetect
 	}
 
 	if outlier.Interval != nil {
-		out.Interval = gogo.DurationToProtoDuration(outlier.Interval)
+		out.Interval = (outlier.Interval)
 	}
 	if outlier.BaseEjectionTime != nil {
-		out.BaseEjectionTime = gogo.DurationToProtoDuration(outlier.BaseEjectionTime)
+		out.BaseEjectionTime = (outlier.BaseEjectionTime)
 	}
 	if outlier.MaxEjectionPercent > 0 {
 		out.MaxEjectionPercent = &wrappers.UInt32Value{Value: uint32(outlier.MaxEjectionPercent)}

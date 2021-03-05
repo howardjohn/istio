@@ -21,6 +21,7 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/ptypes/duration"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"istio.io/istio/pkg/proto"
 )
@@ -38,14 +39,14 @@ func TestBoolToProtoBool(t *testing.T) {
 		},
 		{
 			desc: "BoolToProtoBool with true gogo.Value",
-			gogo: &types.BoolValue{
+			gogo: &wrapperspb.BoolValue{
 				Value: true,
 			},
 			expectedValue: proto.BoolTrue,
 		},
 		{
 			desc: "BoolToProtoBool with false gogo.Value",
-			gogo: &types.BoolValue{
+			gogo: &wrapperspb.BoolValue{
 				Value: false,
 			},
 			expectedValue: proto.BoolFalse,

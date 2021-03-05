@@ -505,7 +505,7 @@ func TestOptions(t *testing.T) {
 			testName: "envoy metrics keepalive",
 			key:      "envoy_metrics_service_tcp_keepalive",
 			option: option.EnvoyMetricsServiceTCPKeepalive(&networkingAPI.ConnectionPoolSettings_TCPSettings_TcpKeepalive{
-				Time: types.DurationProto(time.Second),
+				Time: duration.New(time.Second),
 			}),
 			expected: "{\"tcp_keepalive\":{\"keepalive_time\":{\"value\":1}}}",
 		},
@@ -575,7 +575,7 @@ func TestOptions(t *testing.T) {
 			testName: "envoy access log keepalive",
 			key:      "envoy_accesslog_service_tcp_keepalive",
 			option: option.EnvoyAccessLogServiceTCPKeepalive(&networkingAPI.ConnectionPoolSettings_TCPSettings_TcpKeepalive{
-				Time: types.DurationProto(time.Second),
+				Time: duration.New(time.Second),
 			}),
 			expected: "{\"tcp_keepalive\":{\"keepalive_time\":{\"value\":1}}}",
 		},

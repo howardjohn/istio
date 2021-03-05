@@ -51,7 +51,6 @@ import (
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/proto"
-	"istio.io/istio/pkg/util/gogo"
 	"istio.io/istio/pkg/util/protomarshal"
 	"istio.io/pkg/log"
 	"istio.io/pkg/monitoring"
@@ -1830,7 +1829,7 @@ func buildThriftRatelimit(domain string, thriftconfig *meshconfig.MeshConfig_Thr
 	}
 
 	if meshConfigTimeout := thriftconfig.GetRateLimitTimeout(); meshConfigTimeout != nil {
-		thriftRateLimit.Timeout = gogo.DurationToProtoDuration(meshConfigTimeout)
+		thriftRateLimit.Timeout = (meshConfigTimeout)
 	}
 
 	if err := thriftRateLimit.Validate(); err != nil {
@@ -1960,7 +1959,7 @@ func buildListener(opts buildListenerOpts, trafficDirection core.TrafficDirectio
 	accessLogBuilder.setListenerAccessLog(opts.push.Mesh, listener, opts.proxy)
 
 	if opts.proxy.Type != model.Router {
-		listener.ListenerFiltersTimeout = gogo.DurationToProtoDuration(opts.push.Mesh.ProtocolDetectionTimeout)
+		listener.ListenerFiltersTimeout = (opts.push.Mesh.ProtocolDetectionTimeout)
 		if listener.ListenerFiltersTimeout != nil {
 			listener.ContinueOnListenerFiltersTimeout = true
 		}

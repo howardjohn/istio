@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -246,8 +246,8 @@ func ReconcileStatuses(current *config.Config, desired Progress, generation int6
 	desiredCondition := v1alpha1.IstioCondition{
 		Type:               "Reconciled",
 		Status:             boolToConditionStatus(desired.AckedInstances == desired.TotalInstances),
-		LastProbeTime:      types.TimestampNow(),
-		LastTransitionTime: types.TimestampNow(),
+		LastProbeTime:      ptypes.TimestampNow(),
+		LastTransitionTime: ptypes.TimestampNow(),
 		Message:            fmt.Sprintf("%d/%d proxies up to date.", desired.AckedInstances, desired.TotalInstances),
 	}
 	if err != nil {

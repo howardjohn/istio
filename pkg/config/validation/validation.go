@@ -27,9 +27,9 @@ import (
 
 	udpaa "github.com/cncf/udpa/go/udpa/annotations"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
-	"github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes/duration"
 	"github.com/hashicorp/go-multierror"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -1197,11 +1197,8 @@ func ValidateProxyAddress(hostAddr string) error {
 }
 
 // ValidateDurationGogo checks that a gogo proto duration is well-formed
-func ValidateDurationGogo(pd *types.Duration) error {
-	dur, err := types.DurationFromProto(pd)
-	if err != nil {
-		return err
-	}
+func ValidateDurationGogo(pd *duration.Duration) error {
+	dur := pd.AsDuration()
 	if dur < time.Millisecond {
 		return errors.New("duration must be greater than 1ms")
 	}
@@ -1212,11 +1209,8 @@ func ValidateDurationGogo(pd *types.Duration) error {
 }
 
 // ValidateDuration checks that a proto duration is well-formed
-func ValidateDuration(pd *types.Duration) error {
-	dur, err := types.DurationFromProto(pd)
-	if err != nil {
-		return err
-	}
+func ValidateDuration(pd *duration.Duration) error {
+	dur := pd.AsDuration()
 	if dur < time.Millisecond {
 		return errors.New("duration must be greater than 1ms")
 	}
@@ -1236,7 +1230,7 @@ func ValidateDurationRange(dur, min, max time.Duration) error {
 }
 
 // ValidateParentAndDrain checks that parent and drain durations are valid
-func ValidateParentAndDrain(drainTime, parentShutdown *types.Duration) (errs error) {
+func ValidateParentAndDrain(drainTime, parentShutdown *duration.Duration) (errs error) {
 	if err := ValidateDuration(drainTime); err != nil {
 		errs = multierror.Append(errs, multierror.Prefix(err, "invalid drain duration:"))
 	}
@@ -1247,8 +1241,8 @@ func ValidateParentAndDrain(drainTime, parentShutdown *types.Duration) (errs err
 		return
 	}
 
-	drainDuration, _ := types.DurationFromProto(drainTime)
-	parentShutdownDuration, _ := types.DurationFromProto(parentShutdown)
+	drainDuration := drainTime.AsDuration()
+	parentShutdownDuration := parentShutdown.AsDuration()
 
 	if drainDuration%time.Second != 0 {
 		errs = multierror.Append(errs,
@@ -1305,22 +1299,19 @@ func ValidateDatadogCollector(d *meshconfig.Tracing_Datadog) error {
 }
 
 // ValidateConnectTimeout validates the envoy conncection timeout
-func ValidateConnectTimeout(timeout *types.Duration) error {
+func ValidateConnectTimeout(timeout *duration.Duration) error {
 	if err := ValidateDuration(timeout); err != nil {
 		return err
 	}
 
-	timeoutDuration, _ := types.DurationFromProto(timeout)
+	timeoutDuration := timeout.AsDuration()
 	err := ValidateDurationRange(timeoutDuration, connectTimeoutMin, connectTimeoutMax)
 	return err
 }
 
 // ValidateProtocolDetectionTimeout validates the envoy protocol detection timeout
-func ValidateProtocolDetectionTimeout(timeout *types.Duration) error {
-	dur, err := types.DurationFromProto(timeout)
-	if err != nil {
-		return err
-	}
+func ValidateProtocolDetectionTimeout(timeout *duration.Duration) error {
+	dur := timeout.AsDuration()
 	// 0s is a valid value if trying to disable protocol detection timeout
 	if dur == time.Second*0 {
 		return nil

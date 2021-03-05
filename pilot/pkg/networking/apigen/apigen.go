@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	gogotypes "github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes"
 	golangany "github.com/golang/protobuf/ptypes/any"
 
 	mcp "istio.io/api/mcp/v1alpha1"
@@ -158,12 +159,12 @@ func configToResource(c *config.Config) (*mcp.Resource, error) {
 
 	// MCP, K8S and Istio configs use gogo configs
 	// On the wire it's the same as golang proto.
-	a, err := config.ToProtoGogo(c.Spec)
+	a, err := config.ToProto(c.Spec)
 	if err != nil {
 		return nil, err
 	}
 	r.Body = a
-	ts, err := gogotypes.TimestampProto(c.CreationTimestamp)
+	ts, err := ptypes.TimestampProto(c.CreationTimestamp)
 	if err != nil {
 		return nil, err
 	}

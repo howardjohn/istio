@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
@@ -336,7 +335,7 @@ var (
 				ProxyViaAgent:       agentConfig.ProxyXDSViaAgent,
 			})
 
-			drainDuration, _ := types.DurationFromProto(proxyConfig.TerminationDrainDuration)
+			drainDuration := proxyConfig.TerminationDrainDuration.AsDuration()
 			if ds, f := features.TerminationDrainDuration.Lookup(); f {
 				// Legacy environment variable is set, us that instead
 				drainDuration = time.Second * time.Duration(ds)

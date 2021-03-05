@@ -24,16 +24,15 @@ import (
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	httpConn "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
-	gogojsonpb "github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
+	structpb "github.com/golang/protobuf/ptypes/struct"
 
 	networking "istio.io/api/networking/v1alpha3"
 )
 
 // nolint: interfacer
-func BuildXDSObjectFromStruct(applyTo networking.EnvoyFilter_ApplyTo, value *types.Struct, strict bool) (proto.Message, error) {
+func BuildXDSObjectFromStruct(applyTo networking.EnvoyFilter_ApplyTo, value *structpb.Struct, strict bool) (proto.Message, error) {
 	if value == nil {
 		// for remove ops
 		return nil, nil
@@ -68,13 +67,13 @@ func BuildXDSObjectFromStruct(applyTo networking.EnvoyFilter_ApplyTo, value *typ
 	return obj, nil
 }
 
-func GogoStructToMessage(pbst *types.Struct, out proto.Message, strict bool) error {
+func GogoStructToMessage(pbst *structpb.Struct, out proto.Message, strict bool) error {
 	if pbst == nil {
 		return errors.New("nil struct")
 	}
 
 	buf := &bytes.Buffer{}
-	if err := (&gogojsonpb.Marshaler{OrigName: true}).Marshal(buf, pbst); err != nil {
+	if err := (&jsonpb.Marshaler{OrigName: true}).Marshal(buf, pbst); err != nil {
 		return err
 	}
 

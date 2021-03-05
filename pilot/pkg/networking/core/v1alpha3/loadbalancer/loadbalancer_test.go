@@ -23,6 +23,7 @@ import (
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	"github.com/gogo/protobuf/types"
 	. "github.com/onsi/gomega"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	networking "istio.io/api/networking/v1alpha3"
@@ -162,7 +163,7 @@ func TestApplyLocalitySetting(t *testing.T) {
 		g := NewWithT(t)
 		cluster := buildSmallClusterWithNilLocalities()
 		lbsetting := &networking.LocalityLoadBalancerSetting{
-			Enabled: &types.BoolValue{Value: false},
+			Enabled: &wrapperspb.BoolValue{Value: false},
 		}
 		ApplyLocalityLBSetting(locality, cluster.LoadAssignment, lbsetting, true)
 		for _, localityEndpoint := range cluster.LoadAssignment.Endpoints {
@@ -201,8 +202,8 @@ func TestGetLocalityLbSetting(t *testing.T) {
 		{
 			"dr only override",
 			nil,
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: true}},
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: true}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: true}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: true}},
 		},
 		{
 			"both",
@@ -212,21 +213,21 @@ func TestGetLocalityLbSetting(t *testing.T) {
 		},
 		{
 			"mesh disabled",
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: false}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: false}},
 			nil,
 			nil,
 		},
 		{
 			"dr disabled",
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: true}},
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: false}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: true}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: false}},
 			nil,
 		},
 		{
 			"dr enabled override mesh disabled",
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: false}},
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: true}},
-			&networking.LocalityLoadBalancerSetting{Enabled: &types.BoolValue{Value: true}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: false}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: true}},
+			&networking.LocalityLoadBalancerSetting{Enabled: &wrapperspb.BoolValue{Value: true}},
 		},
 	}
 	for _, tt := range cases {

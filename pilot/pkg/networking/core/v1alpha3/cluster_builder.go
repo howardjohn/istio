@@ -20,7 +20,6 @@ import (
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
-	"github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/ptypes/duration"
 	"github.com/golang/protobuf/ptypes/wrappers"
 
@@ -29,7 +28,6 @@ import (
 	"istio.io/istio/pilot/pkg/networking/util"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/labels"
-	"istio.io/istio/pkg/util/gogo"
 )
 
 var defaultDestinationRule = networking.DestinationRule{}
@@ -209,7 +207,7 @@ func (cb *ClusterBuilder) buildDefaultCluster(name string, discoveryType cluster
 	switch discoveryType {
 	case cluster.Cluster_STRICT_DNS:
 		c.DnsLookupFamily = cluster.Cluster_V4_ONLY
-		dnsRate := gogo.DurationToProtoDuration(cb.push.Mesh.DnsRefreshRate)
+		dnsRate := (cb.push.Mesh.DnsRefreshRate)
 		c.DnsRefreshRate = dnsRate
 		c.RespectDnsTtl = true
 		fallthrough
@@ -416,7 +414,7 @@ func (cb *ClusterBuilder) buildBlackHoleCluster() *cluster.Cluster {
 	c := &cluster.Cluster{
 		Name:                 util.BlackHoleCluster,
 		ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_STATIC},
-		ConnectTimeout:       gogo.DurationToProtoDuration(cb.push.Mesh.ConnectTimeout),
+		ConnectTimeout:       (cb.push.Mesh.ConnectTimeout),
 		LbPolicy:             cluster.Cluster_ROUND_ROBIN,
 	}
 	return c
@@ -428,7 +426,7 @@ func (cb *ClusterBuilder) buildDefaultPassthroughCluster() *cluster.Cluster {
 	cluster := &cluster.Cluster{
 		Name:                 util.PassthroughCluster,
 		ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_ORIGINAL_DST},
-		ConnectTimeout:       gogo.DurationToProtoDuration(cb.push.Mesh.ConnectTimeout),
+		ConnectTimeout:       (cb.push.Mesh.ConnectTimeout),
 		LbPolicy:             cluster.Cluster_CLUSTER_PROVIDED,
 		ProtocolSelection:    cluster.Cluster_USE_DOWNSTREAM_PROTOCOL,
 	}
@@ -451,7 +449,7 @@ func (cb *ClusterBuilder) defaultTrafficPolicy(discoveryType cluster.Cluster_Dis
 		},
 		ConnectionPool: &networking.ConnectionPoolSettings{
 			Tcp: &networking.ConnectionPoolSettings_TCPSettings{
-				ConnectTimeout: &types.Duration{
+				ConnectTimeout: &duration.Duration{
 					Seconds: cb.push.Mesh.ConnectTimeout.Seconds,
 					Nanos:   cb.push.Mesh.ConnectTimeout.Nanos,
 				},

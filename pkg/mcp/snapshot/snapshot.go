@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes"
 
 	mcp "istio.io/api/mcp/v1alpha1"
 	"istio.io/istio/pkg/mcp/sink"
@@ -296,8 +296,8 @@ func (c *Cache) GetResource(group string, collection string, resourceName string
 	if snapshot, ok := c.snapshots[group]; ok {
 		for _, resource := range snapshot.Resources(collection) {
 			if resource.Metadata.Name == resourceName {
-				var dynamicAny types.DynamicAny
-				if err := types.UnmarshalAny(resource.Body, &dynamicAny); err == nil {
+				var dynamicAny ptypes.DynamicAny
+				if err := ptypes.UnmarshalAny(resource.Body, &dynamicAny); err == nil {
 					return &sink.Object{
 						TypeURL:  resource.Body.TypeUrl,
 						Metadata: resource.Metadata,

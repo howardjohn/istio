@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	networking "istio.io/api/networking/v1alpha3"
@@ -71,7 +72,7 @@ var testMesh = meshconfig.MeshConfig{
 		Seconds: 10,
 		Nanos:   1,
 	},
-	EnableAutoMtls: &types.BoolValue{
+	EnableAutoMtls: &wrapperspb.BoolValue{
 		Value: false,
 	},
 }
@@ -1074,7 +1075,7 @@ func TestStatNamePattern(t *testing.T) {
 			Seconds: 10,
 			Nanos:   1,
 		},
-		EnableAutoMtls: &types.BoolValue{
+		EnableAutoMtls: &wrapperspb.BoolValue{
 			Value: false,
 		},
 		InboundClusterStatName:  "LocalService_%SERVICE%",
@@ -1814,7 +1815,7 @@ func TestApplyLoadBalancer(t *testing.T) {
 			name: "Loadbalancer has distribute",
 			lbSettings: &networking.LoadBalancerSettings{
 				LocalityLbSetting: &networking.LocalityLoadBalancerSetting{
-					Enabled: &types.BoolValue{Value: true},
+					Enabled: &wrapperspb.BoolValue{Value: true},
 					Distribute: []*networking.LocalityLoadBalancerSetting_Distribute{
 						{
 							From: "region1/zone1/subzone1",

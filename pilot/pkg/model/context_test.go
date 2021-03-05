@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/golang/protobuf/jsonpb"
 	structpb "github.com/golang/protobuf/ptypes/struct"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	"istio.io/api/networking/v1alpha3"
@@ -81,7 +81,7 @@ func TestNodeMetadata(t *testing.T) {
 				NodeMetadata: model.NodeMetadata{
 					ProxyConfig: (*model.NodeMetaProxyConfig)(&meshconfig.ProxyConfig{
 						ConfigPath:             "foo",
-						DrainDuration:          types.DurationProto(time.Second * 5),
+						DrainDuration:          durationpb.New(time.Second * 5),
 						ControlPlaneAuthPolicy: meshconfig.AuthenticationPolicy_MUTUAL_TLS,
 						EnvoyAccessLogService: &meshconfig.RemoteService{
 							Address: "address",
@@ -98,7 +98,7 @@ func TestNodeMetadata(t *testing.T) {
 				NodeMetadata: model.NodeMetadata{
 					ProxyConfig: (*model.NodeMetaProxyConfig)(&meshconfig.ProxyConfig{
 						ConfigPath:             "foo",
-						DrainDuration:          types.DurationProto(time.Second * 5),
+						DrainDuration:          durationpb.New(time.Second * 5),
 						ControlPlaneAuthPolicy: meshconfig.AuthenticationPolicy_MUTUAL_TLS,
 						EnvoyAccessLogService: &meshconfig.RemoteService{
 							Address: "address",

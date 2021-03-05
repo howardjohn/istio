@@ -29,8 +29,8 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/ghodss/yaml"
-	"github.com/gogo/protobuf/types"
 	openshiftv1 "github.com/openshift/api/apps/v1"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 	"k8s.io/api/admission/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -816,11 +816,11 @@ func createWebhook(t testing.TB, cfg *Config) (*Webhook, func()) {
 		monitoringPort = 0
 	)
 
-	if err := ioutil.WriteFile(configFile, configBytes, 0644); err != nil { // nolint: vetshadow
+	if err := ioutil.WriteFile(configFile, configBytes, 0o644); err != nil { // nolint: vetshadow
 		t.Fatalf("WriteFile(%v) failed: %v", configFile, err)
 	}
 
-	if err := ioutil.WriteFile(valuesFile, []byte(values), 0644); err != nil { // nolint: vetshadow
+	if err := ioutil.WriteFile(valuesFile, []byte(values), 0o644); err != nil { // nolint: vetshadow
 		t.Fatalf("WriteFile(%v) failed: %v", valuesFile, err)
 	}
 
@@ -1072,25 +1072,25 @@ func TestEnablePrometheusAggregation(t *testing.T) {
 		},
 		{
 			"mesh on",
-			&meshconfig.MeshConfig{EnablePrometheusMerge: &types.BoolValue{Value: true}},
+			&meshconfig.MeshConfig{EnablePrometheusMerge: &wrapperspb.BoolValue{Value: true}},
 			nil,
 			true,
 		},
 		{
 			"mesh off",
-			&meshconfig.MeshConfig{EnablePrometheusMerge: &types.BoolValue{Value: false}},
+			&meshconfig.MeshConfig{EnablePrometheusMerge: &wrapperspb.BoolValue{Value: false}},
 			nil,
 			false,
 		},
 		{
 			"annotation on",
-			&meshconfig.MeshConfig{EnablePrometheusMerge: &types.BoolValue{Value: false}},
+			&meshconfig.MeshConfig{EnablePrometheusMerge: &wrapperspb.BoolValue{Value: false}},
 			map[string]string{annotation.PrometheusMergeMetrics.Name: "true"},
 			true,
 		},
 		{
 			"annotation off",
-			&meshconfig.MeshConfig{EnablePrometheusMerge: &types.BoolValue{Value: true}},
+			&meshconfig.MeshConfig{EnablePrometheusMerge: &wrapperspb.BoolValue{Value: true}},
 			map[string]string{annotation.PrometheusMergeMetrics.Name: "false"},
 			false,
 		},

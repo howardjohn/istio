@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes"
 	"golang.org/x/time/rate"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -439,7 +439,8 @@ func (c *Controller) updateWorkloadEntryHealth(obj interface{}) error {
 	if ok {
 		healthCondition := status.GetCondition(wleStatus.Conditions, status.ConditionHealthy)
 		if healthCondition != nil {
-			if healthCondition.LastProbeTime.Compare(condition.condition.LastProbeTime) > 0 {
+			// TODO(howardjohn) is order correct
+			if healthCondition.LastProbeTime.AsTime().Before(condition.condition.LastProbeTime.AsTime()) {
 				return nil
 			}
 		}
@@ -566,8 +567,8 @@ func transformHealthEvent(proxy *model.Proxy, entryName string, event HealthEven
 		Type: status.ConditionHealthy,
 		// last probe and transition are the same because
 		// we only send on transition in the agent
-		LastProbeTime:      types.TimestampNow(),
-		LastTransitionTime: types.TimestampNow(),
+		LastProbeTime:      ptypes.TimestampNow(),
+		LastTransitionTime: ptypes.TimestampNow(),
 	}
 	out := HealthCondition{
 		proxy:     proxy,

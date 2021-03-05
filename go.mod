@@ -2,6 +2,9 @@ module istio.io/istio
 
 go 1.16
 
+replace istio.io/api => github.com/howardjohn/api v0.0.0-20210305184615-e46b06ed913b
+//replace istio.io/api => ../api
+
 replace github.com/spf13/viper => github.com/istio/viper v1.3.3-0.20190515210538-2789fed3109c
 
 // Old version had no license

@@ -111,8 +111,8 @@ func (e *envoy) args(fname string, epoch int, bootstrapConfig string) []string {
 	startupArgs := []string{
 		"-c", fname,
 		"--restart-epoch", fmt.Sprint(epoch),
-		"--drain-time-s", fmt.Sprint(int(convertDuration(e.Config.DrainDuration) / time.Second)),
-		"--parent-shutdown-time-s", fmt.Sprint(int(convertDuration(e.Config.ParentShutdownDuration) / time.Second)),
+		"--drain-time-s", fmt.Sprint(int(e.Config.DrainDuration.AsDuration() / time.Second)),
+		"--parent-shutdown-time-s", fmt.Sprint(int(e.Config.ParentShutdownDuration.AsDuration() / time.Second)),
 		"--service-cluster", e.Config.ServiceCluster,
 		"--service-node", e.Node,
 		"--local-address-ip-version", proxyLocalAddressType,

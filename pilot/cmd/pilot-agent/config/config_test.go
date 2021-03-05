@@ -19,8 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/types"
-
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	"istio.io/istio/pkg/config/mesh"
 )
@@ -42,7 +40,7 @@ controlPlaneAuthPolicy: NONE`
 		m := mesh.DefaultProxyConfig()
 		m.DiscoveryAddress = "foo:123"
 		m.ProxyMetadata = map[string]string{"SOME": "setting"}
-		m.DrainDuration = types.DurationProto(time.Second)
+		m.DrainDuration = duration.New(time.Second)
 		m.ControlPlaneAuthPolicy = meshconfig.AuthenticationPolicy_NONE
 		return m
 	}()
@@ -108,7 +106,7 @@ proxyStatsMatcher:
 				m := mesh.DefaultProxyConfig()
 				m.DiscoveryAddress = "annotation:123"
 				m.ProxyMetadata = map[string]string{"ANNOTATION": "something"}
-				m.DrainDuration = types.DurationProto(5 * time.Second)
+				m.DrainDuration = duration.New(5 * time.Second)
 				m.ExtraStatTags = []string{"b"}
 				m.ProxyStatsMatcher = &meshconfig.ProxyConfig_ProxyStatsMatcher{}
 				m.ProxyStatsMatcher.InclusionPrefixes = []string{"a"}

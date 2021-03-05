@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes/wrappers"
 
 	"istio.io/api/annotation"
 	meshconfig "istio.io/api/mesh/v1alpha1"
@@ -71,7 +71,7 @@ func ConstructProxyConfig(meshConfigFile, serviceCluster, proxyConfigEnv string,
 			proxyConfig.Concurrency = byResources
 		}
 	} else {
-		proxyConfig.Concurrency = &types.Int32Value{Value: int32(concurrency)}
+		proxyConfig.Concurrency = &wrappers.Int32Value{Value: int32(concurrency)}
 	}
 	proxyConfig.ServiceCluster = serviceCluster
 	// resolve statsd address
@@ -91,7 +91,7 @@ func ConstructProxyConfig(meshConfigFile, serviceCluster, proxyConfigEnv string,
 }
 
 // determineConcurrencyOption determines the correct setting for --concurrency based on CPU requests/limits
-func determineConcurrencyOption() *types.Int32Value {
+func determineConcurrencyOption() *wrappers.Int32Value {
 	// If limit is set, us that
 	// The format in the file is a plain integer. `100` in the file is equal to `100m` (based on `divisor: 1m`
 	// in the pod spec).
@@ -99,12 +99,12 @@ func determineConcurrencyOption() *types.Int32Value {
 	// the pod will get concurrency=1. With 6500m, it will get concurrency=7.
 	limit, err := readPodCPULimits()
 	if err == nil && limit > 0 {
-		return &types.Int32Value{Value: int32(math.Ceil(float64(limit) / 1000))}
+		return &wrappers.Int32Value{Value: int32(math.Ceil(float64(limit) / 1000))}
 	}
 	// If limit is unset, use requests instead, with the same logic.
 	requests, err := readPodCPURequests()
 	if err == nil && requests > 0 {
-		return &types.Int32Value{Value: int32(math.Ceil(float64(requests) / 1000))}
+		return &wrappers.Int32Value{Value: int32(math.Ceil(float64(requests) / 1000))}
 	}
 	return nil
 }

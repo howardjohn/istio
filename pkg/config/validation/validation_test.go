@@ -23,6 +23,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/hashicorp/go-multierror"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	networking "istio.io/api/networking/v1alpha3"
@@ -379,7 +381,7 @@ func TestValidateMeshConfig(t *testing.T) {
 
 	invalid := meshconfig.MeshConfig{
 		ProxyListenPort:    0,
-		ConnectTimeout:     types.DurationProto(-1 * time.Second),
+		ConnectTimeout:     durationpb.New(-1 * time.Second),
 		DefaultConfig:      &meshconfig.ProxyConfig{},
 		TrustDomain:        "",
 		TrustDomainAliases: []string{"a.$b", "a/b", ""},
@@ -440,8 +442,8 @@ func TestValidateProxyConfig(t *testing.T) {
 		BinaryPath:             "/usr/local/bin/envoy",
 		DiscoveryAddress:       "istio-pilot.istio-system:15010",
 		ProxyAdminPort:         15000,
-		DrainDuration:          types.DurationProto(45 * time.Second),
-		ParentShutdownDuration: types.DurationProto(60 * time.Second),
+		DrainDuration:          durationpb.New(45 * time.Second),
+		ParentShutdownDuration: duration.New(60 * time.Second),
 		ServiceCluster:         "istio-proxy",
 		StatsdUdpAddress:       "istio-statsd-prom-bridge.istio-system:9125",
 		EnvoyMetricsService:    &meshconfig.RemoteService{Address: "metrics-service.istio-system:15000"},
@@ -498,12 +500,12 @@ func TestValidateProxyConfig(t *testing.T) {
 		},
 		{
 			name:    "drain duration invalid",
-			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.DrainDuration = types.DurationProto(-1 * time.Second) }),
+			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.DrainDuration = duration.New(-1 * time.Second) }),
 			isValid: false,
 		},
 		{
 			name:    "parent shutdown duration invalid",
-			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.ParentShutdownDuration = types.DurationProto(-1 * time.Second) }),
+			in:      modify(valid, func(c *meshconfig.ProxyConfig) { c.ParentShutdownDuration = duration.New(-1 * time.Second) }),
 			isValid: false,
 		},
 		{
@@ -737,8 +739,8 @@ func TestValidateProxyConfig(t *testing.T) {
 		BinaryPath:             "",
 		DiscoveryAddress:       "10.0.0.100",
 		ProxyAdminPort:         0,
-		DrainDuration:          types.DurationProto(-1 * time.Second),
-		ParentShutdownDuration: types.DurationProto(-1 * time.Second),
+		DrainDuration:          durationpb.New(-1 * time.Second),
+		ParentShutdownDuration: duration.New(-1 * time.Second),
 		ServiceCluster:         "",
 		StatsdUdpAddress:       "10.0.0.100",
 		EnvoyMetricsService:    &meshconfig.RemoteService{Address: "metrics-service"},
@@ -1705,7 +1707,7 @@ func TestValidateHTTPRetry(t *testing.T) {
 		}, valid: false},
 		{name: "invalid, retryRemoteLocalities configured but attempts set to zero", in: &networking.HTTPRetry{
 			Attempts:              0,
-			RetryRemoteLocalities: &types.BoolValue{Value: false},
+			RetryRemoteLocalities: &wrapperspb.BoolValue{Value: false},
 		}, valid: false},
 	}
 
