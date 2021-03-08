@@ -45,6 +45,7 @@ func TestPassThroughFilterChain(t *testing.T) {
 				file.AsStringOrFail(t, "testdata/pass-through-filter-chain.yaml.tmpl"))
 			ctx.Config().ApplyYAMLOrFail(t, ns.Name(), policies...)
 			fmt.Println(policies)
+			// TODO add partially permisive
 
 			for _, cluster := range ctx.Clusters() {
 				a := apps.A.Match(echo.Namespace(ns.Name())).GetOrFail(ctx, echo.InCluster(cluster))

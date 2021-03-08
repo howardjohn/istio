@@ -141,11 +141,13 @@ func reduceInboundListenerToFilterChains(listeners []*listener.Listener) ([]*lis
 		}
 		for _, c := range l.FilterChains {
 			chain := golangproto.Clone(c).(*listener.FilterChain)
+
 			inspectors := amendFilterChainMatchFromInboundListener(chain, l)
 			chains = append(chains, chain)
 			// Aggregate the inspector options. If any listener on the port needs inspector, we should add it
 			// Generally there is 1 listener per port anyways.
 			port := int(l.Address.GetSocketAddress().GetPortValue())
+			log.Errorf("howardjohn: %v -> %v", port, inspectors)
 			if port > 0 {
 				prev := inspectorsMap[port]
 				prev.HTTPInspector = prev.HTTPInspector || inspectors.HTTPInspector
@@ -232,6 +234,8 @@ func buildTLSInspector(inspectors map[int]enabledInspector) *listener.ListenerFi
 			ports = append(ports, p)
 		}
 	}
+	log.Errorf("howardjohn: inspectors: %v", ports) // the plugin generated ones don't have this set, so we always get tls inspector
+	// we need to disable it for partial port DISABLE mode
 	// No need to filter, return the cached version enabled for all ports
 	if len(ports) == 0 {
 		return xdsfilters.TLSInspector
