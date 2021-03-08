@@ -39,7 +39,7 @@ spec:
   rules:
   - to:
     - operation:
-        ports: ["8085", "8087"]
+        ports: ["8085", "8087", "8089"]
 ---
 
 # The following policy enables mTLS (Strict) for workload c.
@@ -90,6 +90,8 @@ spec:
       mode: STRICT
     8088:
       mode: STRICT
+    8084:
+      mode: STRICT
 ---
 
 # The following policy enables permissive mTLS on port 8086 and 8088 for workload f.
@@ -109,5 +111,7 @@ spec:
     8086:
       mode: DISABLE
     8088:
+      mode: DISABLE
+    8084:
       mode: DISABLE
 ---
