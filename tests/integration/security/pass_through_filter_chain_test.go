@@ -18,7 +18,6 @@ package security
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"istio.io/istio/pkg/config/protocol"
@@ -45,6 +44,7 @@ func TestPassThroughFilterChain(t *testing.T) {
 			policies := tmpl.EvaluateAllOrFail(t, args,
 				file.AsStringOrFail(t, "testdata/pass-through-filter-chain.yaml.tmpl"))
 			ctx.Config().ApplyYAMLOrFail(t, ns.Name(), policies...)
+			fmt.Println(policies)
 
 			for _, cluster := range ctx.Clusters() {
 				a := apps.A.Match(echo.Namespace(ns.Name())).GetOrFail(ctx, echo.InCluster(cluster))
@@ -312,8 +312,8 @@ func TestPassThroughFilterChain(t *testing.T) {
 										return nil
 									}
 
-									if err == nil || (!strings.Contains(err.Error(), "connection reset by peer") && !strings.Contains(err.Error(), "EOF")) {
-										return fmt.Errorf("want error 'connection reset by peer' or 'EOF' but got: %v", err)
+									if err == nil {
+										return fmt.Errorf("want error but did not get one: %v", responses)
 									}
 								}
 								return nil

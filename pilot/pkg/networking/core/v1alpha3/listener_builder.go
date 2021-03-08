@@ -464,9 +464,9 @@ func buildInboundCatchAllNetworkFilterChains(configgen *ConfigGeneratorImpl,
 	if node.SupportsIPv4() {
 		ipVersions = append(ipVersions, util.InboundPassthroughClusterIpv4)
 	}
-	if node.SupportsIPv6() {
-		ipVersions = append(ipVersions, util.InboundPassthroughClusterIpv6)
-	}
+	//if node.SupportsIPv6() {
+	//	ipVersions = append(ipVersions, util.InboundPassthroughClusterIpv6)
+	//}
 	filterChains := make([]*listener.FilterChain, 0, 3)
 	filterChains = append(filterChains, &listener.FilterChain{
 		Name: VirtualInboundBlackholeFilterChainName,
@@ -512,6 +512,22 @@ func buildInboundCatchAllNetworkFilterChains(configgen *ConfigGeneratorImpl,
 			chains := p.OnInboundPassthroughFilterChains(in)
 			allChains = append(allChains, chains...)
 		}
+		tlsInspectorEnabled := false
+	allChainsLabel:
+		for _, c := range allChains {
+			for _, lf := range c.ListenerFilters {
+				if lf.Name == wellknown.TlsInspector {
+					tlsInspectorEnabled = true
+					break allChainsLabel
+				}
+			}
+		}
+		if tlsInspectorEnabled {
+			allChains = append(allChains, istionetworking.FilterChain{
+				FilterChainMatch: &listener.FilterChainMatch{TransportProtocol: xdsfilters.TLSTransportProtocol},
+			})
+		}
+
 		// Override the filter chain match to make sure the pass through filter chain captures the pass through traffic.
 		for i := range allChains {
 			chain := &allChains[i]
@@ -539,15 +555,19 @@ func buildInboundCatchAllNetworkFilterChains(configgen *ConfigGeneratorImpl,
 				FilterChainMatch: chain.FilterChainMatch,
 				Filters:          append(chain.TCP, tcpProxyFilter),
 			}
+
 			if chain.TLSContext != nil {
 				needTLS = true
-				filterChain.FilterChainMatch.TransportProtocol = xdsfilters.TLSTransportProtocol
+
+				if chain.FilterChainMatch.TransportProtocol == "" {
+					filterChain.FilterChainMatch.TransportProtocol = xdsfilters.TLSTransportProtocol
+				}
 				// Update transport socket from the TLS context configured by the plugin.
 				filterChain.TransportSocket = &core.TransportSocket{
 					Name:       util.EnvoyTLSSocketName,
 					ConfigType: &core.TransportSocket_TypedConfig{TypedConfig: util.MessageToAny(chain.TLSContext)},
 				}
-			} else {
+			} else if chain.FilterChainMatch.TransportProtocol == "" {
 				filterChain.FilterChainMatch.TransportProtocol = xdsfilters.RawBufferTransportProtocol
 			}
 			filterChain.Name = VirtualInboundListenerName
@@ -555,6 +575,9 @@ func buildInboundCatchAllNetworkFilterChains(configgen *ConfigGeneratorImpl,
 		}
 	}
 
+	for i, c := range filterChains {
+		log.Errorf("howardjohn: %v: %v, %v", i, c.GetFilterChainMatch().GetTransportProtocol(), c.GetFilterChainMatch().GetApplicationProtocols())
+	}
 	return filterChains, needTLS
 }
 
@@ -564,9 +587,9 @@ func buildInboundCatchAllHTTPFilterChains(configgen *ConfigGeneratorImpl, node *
 	if node.SupportsIPv4() {
 		ipVersions = append(ipVersions, util.InboundPassthroughClusterIpv4)
 	}
-	if node.SupportsIPv6() {
-		ipVersions = append(ipVersions, util.InboundPassthroughClusterIpv6)
-	}
+	//if node.SupportsIPv6() {
+	//	ipVersions = append(ipVersions, util.InboundPassthroughClusterIpv6)
+	//}
 	filterChains := make([]*listener.FilterChain, 0, 2)
 
 	needTLS := false
@@ -596,6 +619,7 @@ func buildInboundCatchAllHTTPFilterChains(configgen *ConfigGeneratorImpl, node *
 			chains := p.OnInboundPassthroughFilterChains(in)
 			allChains = append(allChains, chains...)
 		}
+
 		// Override the filter chain match to make sure the pass through filter chain captures the pass through traffic.
 		for i := range allChains {
 			chain := &allChains[i]
@@ -642,8 +666,8 @@ func buildInboundCatchAllHTTPFilterChains(configgen *ConfigGeneratorImpl, node *
 			if chain.TLSContext != nil {
 				needTLS = true
 				filterChain.FilterChainMatch.TransportProtocol = xdsfilters.TLSTransportProtocol
-				filterChain.FilterChainMatch.ApplicationProtocols =
-					append(filterChain.FilterChainMatch.ApplicationProtocols, mtlsHTTPALPNs...)
+				log.Errorf("howardjohn: have alpn %v", filterChain.FilterChainMatch.ApplicationProtocols)
+				filterChain.FilterChainMatch.ApplicationProtocols = mtlsHTTPALPNs
 
 				// Update transport socket from the TLS context configured by the plugin.
 				filterChain.TransportSocket = &core.TransportSocket{
@@ -656,6 +680,9 @@ func buildInboundCatchAllHTTPFilterChains(configgen *ConfigGeneratorImpl, node *
 			filterChain.Name = virtualInboundCatchAllHTTPFilterChainName
 			filterChains = append(filterChains, filterChain)
 		}
+	}
+	for i, c := range filterChains {
+		log.Errorf("howardjohn: http %v: %v, %v", i, c.GetFilterChainMatch().GetTransportProtocol(), c.GetFilterChainMatch().GetApplicationProtocols())
 	}
 
 	return filterChains, needTLS
