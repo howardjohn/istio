@@ -1,0 +1,34 @@
+# Option 1: FromClass
+# Pros: simple, solves extension scoping (https://github.com/kubernetes-sigs/gateway-api/issues/568)
+# Cons: cannot have mesh+gateway
+spec:
+  gateways:
+    allow: FromClass
+    gatewayClass: mesh
+
+# Option 2: Matcher
+# Pros: flexible, solves extension scoping (https://github.com/kubernetes-sigs/gateway-api/issues/568)
+# Cons: complex
+gateways:
+  allow: FromList
+  gatewayRefs:
+  - name: istio-ingressgateway
+    namespace: istio-system # required if name is set
+  - class: mesh # select any gateway with class=mesh
+  - class: gke-xlb # select any gateway with class=gke-xlb if its in gke-system
+    namespace: gke-system
+  - namespace: my-gateway-namespace # select any gateway from my-gateway-namespace
+  - name: istio-local
+    namespace: istio-system
+    class: istio # select a specific gateway, and enforce its a part of a specific class
+
+# Option 3: magic name
+# Pros: no api change, supports multiple gateways. Istio is using this currently for POC
+# Cons: implicit behavior, doesn't solve extension scoping
+gateways:
+  allow: FromList
+  gatewayRefs:
+  - name: mesh # alternatively could be explicitly scoped
+    namespace: istio-system # namespace is required
+  - name: istio-ingress
+    namespace: istio-system

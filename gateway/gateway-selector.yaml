@@ -1,0 +1,59 @@
+# Option 1: add selector to gateway
+# What selector means is implementation specific. For us its a label selector on pod. For managed LB,
+# it may be arbitrary metadata (via for gRPC it could be XDS metadata, for GCLB it could be LB labels(?))
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: Gateway
+metadata:
+ name: httpbin
+spec:
+ gatewayClassName: mesh
+ selector:
+   app: httpbin
+---
+# Option 2: add selector as gateway class parameter
+# Requires 1:1 GatewayClass and gateway deployment. Certainly not viable if we have "mesh" gateways,
+# not ideal otherwise (cluster admin is hard). Also very verbose
+# Prototype: https://github.com/istio/istio/pull/31159/files
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: GatewayClass
+metadata:
+  name: istio-cluster-local
+spec:
+  controller: istio.io/gateway-controller
+  parametersRef:
+    group: core
+    kind: ConfigMap
+    name: istio-cluster-local-gateway-class
+    scope: Namespace
+    namespace: istio-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-cluster-local-gateway-class
+  namespace: istio-system
+data:
+  istio-cluster-local: |
+    selector:
+      app: httpbin
+---
+# Option 3: annotation on gateway
+# No major issues other than general annotation issues
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: Gateway
+metadata:
+  name: httpbin
+  annotations:
+    # Could also be a reference to a Service, but it wouldn't work outside k8s
+    gateway.istio.io/selector: |
+      app: httpbin
+---
+# Option 4: annotation on pod
+# Pod references Gateway
+# Downside: not dynamic, not very reasonable to have many Gateways per pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: httpbin-abcde
+  annotations:
+    networking.x-k8s.io/gateway: my-gateway
