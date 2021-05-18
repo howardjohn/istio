@@ -100,11 +100,12 @@ func NewEndpointBuilder(clusterName string, proxy *model.Proxy, push *model.Push
 		hostname:   hostname,
 		port:       port,
 	}
-	if b.push.NetworkManager().IsMultiNetworkEnabled() || model.IsDNSSrvSubsetKey(clusterName) {
-		// We only need this for multi-network, or for clusters meant for use with AUTO_PASSTHROUGH
-		// As an optimization, we skip this logic entirely for everything else.
-		b.mtlsChecker = newMtlsChecker(push, port, dr)
-	}
+	// TODO only for HasWorkloadPeerAuth
+	// if b.push.NetworkManager().IsMultiNetworkEnabled() || model.IsDNSSrvSubsetKey(clusterName) {
+	// We only need this for multi-network, or for clusters meant for use with AUTO_PASSTHROUGH
+	// As an optimization, we skip this logic entirely for everything else.
+	b.mtlsChecker = newMtlsChecker(push, port, dr)
+	//}
 	return b
 }
 
@@ -315,9 +316,12 @@ func (b *EndpointBuilder) buildLocalityLbEndpointsFromShards(
 				}
 				localityEpMap[ep.Locality.Label] = locLbEps
 			}
-			if ep.EnvoyEndpoint == nil {
-				ep.EnvoyEndpoint = buildEnvoyLbEndpoint(ep)
-			}
+			disabled := b.mtlsChecker.mtlsDisabledByPeerAuthentication(ep)
+			log.Errorf("howardjohn: %v/%v -> disabled=%v, build=%v", b.clusterName, ep.Address, disabled, ep.EnvoyEndpoint == nil)
+			ep.EnvoyEndpoint = buildEnvoyLbEndpoint(ep, disabled)
+			log.Errorf("howardjohn: %+v", ep.EnvoyEndpoint.Metadata.GetFilterMetadata())
+			//if ep.EnvoyEndpoint == nil {
+			//}
 			locLbEps.append(ep, ep.EnvoyEndpoint, ep.TunnelAbility)
 
 			// detect if mTLS is possible for this endpoint, used later during ep filtering
@@ -384,7 +388,7 @@ func (b *EndpointBuilder) createClusterLoadAssignment(llbOpts []*LocLbEndpointsA
 }
 
 // buildEnvoyLbEndpoint packs the endpoint based on istio info.
-func buildEnvoyLbEndpoint(e *model.IstioEndpoint) *endpoint.LbEndpoint {
+func buildEnvoyLbEndpoint(e *model.IstioEndpoint, disabled bool) *endpoint.LbEndpoint {
 	addr := util.BuildAddress(e.Address, e.EndpointPort)
 
 	ep := &endpoint.LbEndpoint{
@@ -398,10 +402,14 @@ func buildEnvoyLbEndpoint(e *model.IstioEndpoint) *endpoint.LbEndpoint {
 		},
 	}
 
+	mode := e.TLSMode
+	if disabled {
+		mode = model.DisabledTLSModeLabel
+	}
 	// Istio telemetry depends on the metadata value being set for endpoints in the mesh.
 	// Istio endpoint level tls transport socket configuration depends on this logic
 	// Do not removepilot/pkg/xds/fake.go
-	ep.Metadata = util.BuildLbEndpointMetadata(e.Network, e.TLSMode, e.WorkloadName, e.Namespace, e.Locality.ClusterID, e.Labels)
+	ep.Metadata = util.BuildLbEndpointMetadata(e.Network, mode, e.WorkloadName, e.Namespace, e.Locality.ClusterID, e.Labels)
 
 	return ep
 }
