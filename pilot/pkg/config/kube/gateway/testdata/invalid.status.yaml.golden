@@ -23,8 +23,9 @@ spec: null
 status:
   conditions:
   - lastTransitionTime: fake
-    message: Listeners valid, assigned to service(s) istio-ingressgateway.default.svc.domain.suffix
-    reason: ListenersValid
+    message: 'failed to assign to all requested addresses: hostname "istio-ingressgateway.default.svc.domain.suffix"
+      not found'
+    reason: AddressNotAssigned
     status: "True"
     type: Ready
   - lastTransitionTime: fake

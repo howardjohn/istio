@@ -46,7 +46,8 @@ type KubernetesResources struct {
 	Namespaces    map[string]*corev1.Namespace
 
 	// Domain for the cluster. Typically cluster.local
-	Domain string
+	Domain  string
+	Context model.GatewayContext
 }
 
 // gatewayLabelSelectorAsSelector is like metav1.LabelSelectorAsSelector but for gateway selector, which
@@ -1026,17 +1027,21 @@ func convertGateway(r *KubernetesResources) ([]config.Config, map[RouteKey][]str
 				Servers: servers,
 			},
 		}
+		internal, external, warnings := r.Context.ResolveGatewayInstances(obj.Namespace, gatewayServices, servers)
+		if len(skippedAddresses) > 0 {
+			warnings = append(warnings, fmt.Sprintf("Only NamedAddress is supported, ignoring %v", skippedAddresses))
+		}
 		obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
 			gs := s.(*k8s.GatewayStatus)
 			// TODO: report invalid configurations
-			if len(skippedAddresses) == 0 {
+			if len(warnings) == 0 {
 				gs.Conditions = kstatus.ConditionallyUpdateCondition(gs.Conditions, metav1.Condition{
 					Type:               string(k8s.GatewayConditionReady),
 					Status:             kstatus.StatusTrue,
 					ObservedGeneration: obj.Generation,
 					LastTransitionTime: metav1.Now(),
-					Reason:             "ListenersValid",
-					Message:            fmt.Sprintf("Listeners valid, assigned to service(s) %s", strings.Join(gatewayServices, ", ")),
+					Reason:             "GatewayValid",
+					Message:            fmt.Sprintf("Gateway valid, assigned to service(s) %s", humanReadableJoin(internal)),
 				})
 			} else {
 				// TODO report named service that does not exist
@@ -1046,11 +1051,16 @@ func convertGateway(r *KubernetesResources) ([]config.Config, map[RouteKey][]str
 					ObservedGeneration: obj.Generation,
 					LastTransitionTime: metav1.Now(),
 					Reason:             string(k8s.GatewayReasonAddressNotAssigned),
-					Message:            fmt.Sprintf("Only NamedAddress is supported, ignoring %v", skippedAddresses),
+					Message:            fmt.Sprintf("failed to assign to all requested addresses: %s", strings.Join(warnings, "; ")),
 				})
 			}
-			// TODO: when we implement "address" support in status, we should report unscheduled
-			// if there is no associated Service.
+			for _, addr := range external {
+				ip := k8s.IPAddressType
+				gs.Addresses = append(gs.Addresses, k8s.GatewayAddress{
+					Type:  &ip,
+					Value: addr,
+				})
+			}
 			gs.Conditions = kstatus.ConditionallyUpdateCondition(gs.Conditions, metav1.Condition{
 				Type:               string(k8s.GatewayConditionScheduled),
 				Status:             kstatus.StatusTrue,
@@ -1146,4 +1156,17 @@ func emptyOrEqual(have, expected string) bool {
 
 func StrPointer(s string) *string {
 	return &s
+}
+
+func humanReadableJoin(ss []string) string {
+	switch len(ss) {
+	case 0:
+		return ""
+	case 1:
+		return ss[0]
+	case 2:
+		return ss[0] + " and " + ss[1]
+	default:
+		return strings.Join(ss[:len(ss)-1], ", ") + ", and " + ss[len(ss)-1]
+	}
 }

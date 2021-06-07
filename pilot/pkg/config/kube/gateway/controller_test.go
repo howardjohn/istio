@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	"istio.io/istio/pilot/pkg/model"
+	"istio.io/istio/pilot/pkg/networking/core/v1alpha3"
 	svc "sigs.k8s.io/gateway-api/apis/v1alpha1"
 
 	networking "istio.io/api/networking/v1alpha3"
@@ -130,7 +132,8 @@ func TestListGatewayResourceType(t *testing.T) {
 		Spec: httpRouteSpec,
 	})
 
-	g.Expect(controller.Recompute()).ToNot(HaveOccurred())
+	cg := v1alpha3.NewConfigGenTest(t, v1alpha3.TestOptions{})
+	g.Expect(controller.Recompute(model.NewGatewayContext(cg.PushContext()))).ToNot(HaveOccurred())
 	cfg, err := controller.List(gvk.Gateway, "ns1")
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(cfg).To(HaveLen(1))
@@ -178,7 +181,8 @@ func TestListVirtualServiceResourceType(t *testing.T) {
 		Spec: httpRouteSpec,
 	})
 
-	g.Expect(controller.Recompute()).ToNot(HaveOccurred())
+	cg := v1alpha3.NewConfigGenTest(t, v1alpha3.TestOptions{})
+	g.Expect(controller.Recompute(model.NewGatewayContext(cg.PushContext()))).ToNot(HaveOccurred())
 	cfg, err := controller.List(gvk.VirtualService, "ns1")
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(cfg).To(HaveLen(1))

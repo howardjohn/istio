@@ -23,9 +23,11 @@ spec: null
 status:
   conditions:
   - lastTransitionTime: fake
-    message: Listeners valid, assigned to service(s) istio-ingressgateway.default.svc.domain.suffix,
-      istio-ingressgateway.not-default.svc.domain.suffix, example.com
-    reason: ListenersValid
+    message: 'failed to assign to all requested addresses: hostname "istio-ingressgateway.default.svc.domain.suffix"
+      not found; hostname "istio-ingressgateway.not-default.svc.domain.suffix" not
+      found; hostname "example.com" not found in namespace "default", but it was found
+      in namespace(s) "istio-system"'
+    reason: AddressNotAssigned
     status: "True"
     type: Ready
   - lastTransitionTime: fake
