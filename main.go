@@ -5,10 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
-	"istio.io/istio/pkg/config/schema/gvk"
-	batchv1 "k8s.io/api/batch/v1"
+	"go.uber.org/zap/zapcore"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,7 +34,7 @@ func main() {
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New())
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.Level(zapcore.DebugLevel)))
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:             scheme,
 		MetricsBindAddress: metricsAddr,
@@ -61,9 +62,8 @@ func main() {
 }
 func init() {
 	utilruntime.Must(gateway.AddToScheme(scheme))
-	utilruntime.Must(batchv1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
-	//+kubebuilder:scaffold:scheme
+	utilruntime.Must(appsv1.AddToScheme(scheme))
 }
 
 // GatewayReconciler reconciles a Gateway object
@@ -84,51 +84,86 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// on deleted requests.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	svcPorts := make([]corev1.ServicePort, 0, len(gw.Spec.Listeners))
+	for i, l := range gw.Spec.Listeners {
+		// TODO dedupe
+		svcPorts = append(svcPorts, corev1.ServicePort{
+			Name:     fmt.Sprintf("%s-%d", strings.ToLower(string(l.Protocol)), i),
+			Protocol: "TCP",
+			Port:     int32(l.Port),
+		})
+	}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      gw.Name,
 			Namespace: gw.Namespace,
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: gvk.ServiceApisGateway.Version,
-				Kind:       gvk.ServiceApisGateway.Kind,
-				Name:       gw.Name,
-				UID:        gw.UID,
-			}},
-		},
-		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{
-					Name:     "http",
-					Protocol: "TCP",
-					Port:     80,
-				},
-			},
-			Selector:                      nil,
-			ClusterIP:                     "",
-			ClusterIPs:                    nil,
-			Type:                          "",
-			ExternalIPs:                   nil,
-			SessionAffinity:               "",
-			LoadBalancerIP:                "",
-			LoadBalancerSourceRanges:      nil,
-			ExternalName:                  "",
-			ExternalTrafficPolicy:         "",
-			HealthCheckNodePort:           0,
-			PublishNotReadyAddresses:      false,
-			SessionAffinityConfig:         nil,
-			TopologyKeys:                  nil,
-			IPFamilies:                    nil,
-			IPFamilyPolicy:                nil,
-			AllocateLoadBalancerNodePorts: nil,
-			LoadBalancerClass:             nil,
-			InternalTrafficPolicy:         nil,
 		},
 	}
-	res, err := controllerutil.CreateOrPatch(ctx, r.Client, svc, func() error {
-		fmt.Println("in patch fn?")
+	if res, err := controllerutil.CreateOrPatch(ctx, r.Client, svc, func() error {
+		if err := controllerutil.SetOwnerReference(&gw, svc, scheme); err != nil {
+			return err
+		}
+		svc.Annotations = gw.Annotations
+		svc.Labels = gw.Labels
+		svc.Spec.Ports = svcPorts
+		svc.Spec.Selector = map[string]string{
+			"istio.io/gateway-name": gw.Name,
+		}
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+
 		return nil
-	})
-	log.Error(err, "patch", "res", res)
+	}); err != nil {
+		return ctrl.Result{}, err
+	} else {
+		log.WithValues("res", res).Info("service updated")
+	}
+
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      gw.Name,
+			Namespace: gw.Namespace,
+		},
+	}
+	if res, err := controllerutil.CreateOrPatch(ctx, r.Client, dep, func() error {
+		if err := controllerutil.SetOwnerReference(&gw, dep, scheme); err != nil {
+			return err
+		}
+		dep.Annotations = gw.Annotations
+		dep.Labels = gw.Labels
+		dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
+			"istio.io/gateway-name": gw.Name,
+		}}
+		dep.Spec.Template = corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					// TODO merge in gw annotations
+					"inject.istio.io/templates": "gateway",
+				},
+				Labels: map[string]string{
+					// TODO merge in gw labels, especially revision
+					"sidecar.istio.io/inject": "true",
+					"istio.io/gateway-name":   gw.Name,
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:  "istio-proxy",
+						Image: "auto",
+					},
+				},
+			},
+		}
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, err
+	} else {
+		log.WithValues("res", res).Info("deployment updated")
+	}
+	//if err := r.Patch(ctx, svc, client.Apply, client.ForceOwnership, client.FieldOwner("gateway-controller")); err != nil {
+	//	return ctrl.Result{}, err
+	//}
+	log.Info("updated service")
 
 	return ctrl.Result{}, nil
 }
