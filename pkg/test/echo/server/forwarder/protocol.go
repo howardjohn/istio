@@ -182,7 +182,9 @@ func newProtocol(cfg Config) (protocol, error) {
 		} else if cfg.Request.Http3 {
 			proto.client.Transport = &http3.RoundTripper{
 				TLSClientConfig: tlsConfig,
-				QuicConfig:      &quic.Config{},
+				QuicConfig: &quic.Config{
+					HandshakeIdleTimeout: timeout,
+				},
 			}
 		} else if cfg.Request.Http2 && scheme.Instance(urlScheme) == scheme.HTTPS {
 			if cfg.Request.Alpn == nil {

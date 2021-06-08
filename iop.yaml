@@ -1,0 +1,31 @@
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: install
+spec:
+  meshConfig:
+    accessLogFile: /dev/stdout
+  values:
+    pilot:
+      env:
+        PILOT_ENABLE_HTTP3: "true"
+    gateways:
+      istio-ingressgateway:
+        name: istio-ingressgateway
+        ports:
+        - port: 15021
+          targetPort: 15021
+          name: status-port
+          protocol: TCP
+        - port: 80
+          targetPort: 8080
+          name: http2
+          protocol: TCP
+        - port: 443
+          targetPort: 8443
+          name: https
+          protocol: TCP
+        - port: 443
+          targetPort: 8443
+          name: http3
+          protocol: UDP

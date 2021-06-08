@@ -38,6 +38,16 @@ const (
 	ListenerProtocolAuto
 )
 
+// TransportProtocol is the transport protocol associated with the listener.
+type TransportProtocol int
+
+const (
+	// TransportProtocolTCP is a TCP listener.
+	TransportProtocolTCP = iota
+	// TransportProtocolUDP is a UDP listener.
+	TransportProtocolUDP
+)
+
 // ModelProtocolToListenerProtocol converts from a config.Protocol to its corresponding plugin.ListenerProtocol
 func ModelProtocolToListenerProtocol(p protocol.Instance,
 	trafficDirection core.TrafficDirection) ListenerProtocol {

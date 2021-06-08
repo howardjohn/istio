@@ -42,6 +42,7 @@ import (
 	networking "istio.io/api/networking/v1alpha3"
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
+	networking2 "istio.io/istio/pilot/pkg/networking"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/labels"
@@ -170,6 +171,35 @@ func BuildAddress(bind string, port uint32) *core.Address {
 			Address: &core.Address_SocketAddress{
 				SocketAddress: &core.SocketAddress{
 					Address: bind,
+					PortSpecifier: &core.SocketAddress_PortValue{
+						PortValue: port,
+					},
+				},
+			},
+		}
+	}
+
+	return &core.Address{
+		Address: &core.Address_Pipe{
+			Pipe: &core.Pipe{
+				Path: strings.TrimPrefix(bind, model.UnixAddressPrefix),
+			},
+		},
+	}
+}
+
+// BuildAddressWithProtocol returns a SocketAddress with the given ip and port or uds.
+func BuildAddressWithProtocol(bind string, port uint32, tp networking2.TransportProtocol) *core.Address {
+	protocol := core.SocketAddress_TCP
+	if tp == networking2.TransportProtocolUDP {
+		protocol = core.SocketAddress_UDP
+	}
+	if port != 0 {
+		return &core.Address{
+			Address: &core.Address_SocketAddress{
+				SocketAddress: &core.SocketAddress{
+					Protocol: protocol,
+					Address:  bind,
 					PortSpecifier: &core.SocketAddress_PortValue{
 						PortValue: port,
 					},

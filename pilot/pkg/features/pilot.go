@@ -116,6 +116,14 @@ var (
 		"EnableMysqlFilter enables injection of `envoy.filters.network.mysql_proxy` in the filter chain.",
 	).Get()
 
+	// EnableHTTP3 enables HTTP3 support. Currently only available for gateways.
+	// Requires an HTTP3 Gateway exposed on a UDP port in the Service
+	EnableHTTP3 = env.RegisterBoolVar(
+		"PILOT_ENABLE_HTTP3",
+		false,
+		"PILOT_ENABLE_HTTP3 enables HTTP3 support. Currently only available for gateways",
+	).Get()
+
 	// EnableRedisFilter enables injection of `envoy.filters.network.redis_proxy` in the filter chain.
 	// Pilot injects this outbound filter if the service port name is `redis`.
 	EnableRedisFilter = env.RegisterBoolVar(

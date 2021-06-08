@@ -27,8 +27,10 @@ import (
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	quicauth "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/quic/v3"
 	auth "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
@@ -1220,6 +1222,7 @@ type buildListenerOpts struct {
 	class             ListenerClass
 	service           *model.Service
 	protocol          istionetworking.ListenerProtocol
+	transportProtocol istionetworking.TransportProtocol
 }
 
 func buildHTTPConnectionManager(listenerOpts buildListenerOpts, httpOpts *httpListenerOpts,
@@ -1248,6 +1251,10 @@ func buildHTTPConnectionManager(listenerOpts buildListenerOpts, httpOpts *httpLi
 
 	connectionManager := httpOpts.connectionManager
 	connectionManager.CodecType = hcm.HttpConnectionManager_AUTO
+	if listenerOpts.transportProtocol == istionetworking.TransportProtocolUDP {
+		// In theory AUTO should work here but an Envoy bug requires explicit config.
+		connectionManager.CodecType = hcm.HttpConnectionManager_HTTP3
+	}
 	connectionManager.AccessLog = []*accesslog.AccessLog{}
 	connectionManager.HttpFilters = filters
 	connectionManager.StatPrefix = httpOpts.statPrefix
@@ -1329,6 +1336,10 @@ func buildListener(opts buildListenerOpts, trafficDirection core.TrafficDirectio
 			break
 		}
 	}
+	// TLS inspector does not work with UDP. When using QUIC it handles TLS without explicit inspector filter.
+	if opts.transportProtocol == istionetworking.TransportProtocolUDP {
+		needTLSInspector = false
+	}
 
 	if opts.proxy.GetInterceptionMode() == model.InterceptionTproxy && trafficDirection == core.TrafficDirection_INBOUND {
 		listenerFiltersMap[xdsfilters.OriginalSrcFilterName] = true
@@ -1399,9 +1410,15 @@ func buildListener(opts buildListenerOpts, trafficDirection core.TrafficDirectio
 		if !needMatch && filterChainMatchEmpty(match) {
 			match = nil
 		}
+		var ts *core.TransportSocket
+		if opts.transportProtocol == istionetworking.TransportProtocolUDP {
+			ts = buildQuicDownstreamTLSTransportSocket(chain.tlsContext)
+		} else {
+			ts = buildDownstreamTLSTransportSocket(chain.tlsContext)
+		}
 		filterChains = append(filterChains, &listener.FilterChain{
 			FilterChainMatch: match,
-			TransportSocket:  buildDownstreamTLSTransportSocket(chain.tlsContext),
+			TransportSocket:  ts,
 		})
 	}
 
@@ -1412,27 +1429,35 @@ func buildListener(opts buildListenerOpts, trafficDirection core.TrafficDirectio
 		}
 	}
 
-	listener := &listener.Listener{
+	l := &listener.Listener{
 		// TODO: need to sanitize the opts.bind if its a UDS socket, as it could have colons, that envoy
 		// doesn't like
 		Name:             opts.bind + "_" + strconv.Itoa(opts.port.Port),
-		Address:          util.BuildAddress(opts.bind, uint32(opts.port.Port)),
+		Address:          util.BuildAddressWithProtocol(opts.bind, uint32(opts.port.Port), opts.transportProtocol),
 		TrafficDirection: trafficDirection,
 		ListenerFilters:  listenerFilters,
 		FilterChains:     filterChains,
 		DeprecatedV1:     deprecatedV1,
 	}
+	if opts.transportProtocol == istionetworking.TransportProtocolUDP {
+		l.Name += "_udp" // Assign a unique name so we do not conflict with TCP listeners
+		l.UdpListenerConfig = &listener.UdpListenerConfig{
+			QuicOptions:            &listener.QuicProtocolOptions{},
+			DownstreamSocketConfig: &core.UdpSocketConfig{PreferGro: &wrappers.BoolValue{Value: true}},
+		}
+		l.ReusePort = true
+	}
 
-	accessLogBuilder.setListenerAccessLog(opts.push.Mesh, listener, opts.proxy)
+	accessLogBuilder.setListenerAccessLog(opts.push.Mesh, l, opts.proxy)
 
 	if opts.proxy.Type != model.Router {
-		listener.ListenerFiltersTimeout = gogo.DurationToProtoDuration(opts.push.Mesh.ProtocolDetectionTimeout)
-		if listener.ListenerFiltersTimeout != nil {
-			listener.ContinueOnListenerFiltersTimeout = true
+		l.ListenerFiltersTimeout = gogo.DurationToProtoDuration(opts.push.Mesh.ProtocolDetectionTimeout)
+		if l.ListenerFiltersTimeout != nil {
+			l.ContinueOnListenerFiltersTimeout = true
 		}
 	}
 
-	return listener
+	return l
 }
 
 func getMatchAllFilterChain(l *listener.Listener) (int, *listener.FilterChain) {
@@ -1729,6 +1754,16 @@ func buildDownstreamTLSTransportSocket(tlsContext *auth.DownstreamTlsContext) *c
 		return nil
 	}
 	return &core.TransportSocket{Name: util.EnvoyTLSSocketName, ConfigType: &core.TransportSocket_TypedConfig{TypedConfig: util.MessageToAny(tlsContext)}}
+}
+
+// nolint: interfacer
+func buildQuicDownstreamTLSTransportSocket(tlsContext *auth.DownstreamTlsContext) *core.TransportSocket {
+	if tlsContext == nil {
+		return nil
+	}
+	return &core.TransportSocket{Name: wellknown.TransportSocketQuic, ConfigType: &core.TransportSocket_TypedConfig{
+		TypedConfig: util.MessageToAny(&quicauth.QuicDownstreamTransport{DownstreamTlsContext: tlsContext}),
+	}}
 }
 
 func isMatchAllFilterChain(fc *listener.FilterChain) bool {

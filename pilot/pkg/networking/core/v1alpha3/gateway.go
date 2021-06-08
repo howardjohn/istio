@@ -197,6 +197,86 @@ func (configgen *ConfigGeneratorImpl) buildGatewayListeners(builder *ListenerBui
 		}
 		listeners = append(listeners, mutable.Listener)
 	}
+
+	// Setup an UDP servers
+	// NOTE: this is not flag protected, but creation of MergedUDPServers is
+	for port, ms := range mergedGateway.MergedUDPServers {
+		servers := ms.Servers
+
+		// Skip ports we cannot bind to. Note that MergeGateways will already translate Service port to
+		// targetPort, which handles the common case of exposing ports like 80 and 443 but listening on
+		// higher numbered ports.
+		if builder.node.Metadata.UnprivilegedPod != "" && port.Number < 1024 {
+			log.Warnf("buildGatewayListeners: skipping privileged gateway port %d for node %s as it is an unprivileged pod",
+				port.Number, builder.node.ID)
+			continue
+		}
+		bind := actualWildcard
+		if len(port.Bind) > 0 {
+			bind = port.Bind
+		}
+
+		// on a given port, we can either have plain text HTTP servers or
+		// HTTPS/TLS servers with SNI. We cannot have a mix of http and https server on same port.
+		opts := buildListenerOpts{
+			push:              builder.push,
+			proxy:             builder.node,
+			bind:              bind,
+			port:              &model.Port{Port: int(port.Number)},
+			bindToPort:        true,
+			class:             ListenerClassGateway,
+			transportProtocol: istionetworking.TransportProtocolUDP,
+		}
+
+		filterChains := make([]istionetworking.FilterChain, 0)
+		// build http connection manager with TLS context
+		filterChainOpts := make([]*filterChainOpts, 0)
+		for _, server := range servers {
+			routeName := mergedGateway.TLSServerInfo[server].RouteName
+			// This is a HTTPS server, where we are doing TLS termination. Build a http connection manager with TLS context
+			filterChainOpts = append(filterChainOpts, configgen.createGatewayHTTPFilterChainOpts(builder.node, server.Port, server,
+				routeName, proxyConfig))
+			filterChains = append(filterChains, istionetworking.FilterChain{
+				ListenerProtocol:   istionetworking.ListenerProtocolHTTP,
+				IstioMutualGateway: server.Tls.Mode == networking.ServerTLSSettings_ISTIO_MUTUAL,
+			})
+		}
+		opts.filterChainOpts = filterChainOpts
+
+		l := buildListener(opts, core.TrafficDirection_OUTBOUND)
+
+		mutable := &MutableListener{
+			MutableObjects: istionetworking.MutableObjects{
+				Listener: l,
+				// Note: buildListener creates filter chains but does not populate the filters in the chain; that's what
+				// this is for.
+				FilterChains: filterChains,
+			},
+		}
+
+		pluginParams := &plugin.InputParams{
+			Node: builder.node,
+			Push: builder.push,
+			// TOOD: missing SI
+		}
+		for _, p := range configgen.Plugins {
+			if err := p.OnOutboundListener(pluginParams, &mutable.MutableObjects); err != nil {
+				log.Warn("buildGatewayListeners: failed to build listener for gateway: ", err.Error())
+			}
+		}
+
+		// Filters are serialized one time into an opaque struct once we have the complete list.
+		if err := mutable.build(opts); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("gateway omitting listener %q due to: %v", mutable.Listener.Name, err.Error()))
+			continue
+		}
+
+		if log.DebugEnabled() {
+			log.Debugf("buildGatewayListeners: constructed listener with %d filter chains:\n%v",
+				len(mutable.Listener.FilterChains), mutable.Listener)
+		}
+		listeners = append(listeners, mutable.Listener)
+	}
 	// We'll try to return any listeners we successfully marshaled; if we have none, we'll emit the error we built up
 	err := errs.ErrorOrNil()
 	if err != nil {

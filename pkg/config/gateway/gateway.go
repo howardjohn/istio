@@ -27,6 +27,13 @@ func IsTLSServer(server *v1alpha3.Server) bool {
 	return false
 }
 
+// IsHTTP3Compatible returns true if this server is able to serve HTTP3 trafic
+// This requires TLS
+func IsHTTP3Compatible(server *v1alpha3.Server) bool {
+	p := protocol.Parse(server.Port.Protocol)
+	return p == protocol.HTTPS && server.Tls != nil && !IsPassThroughServer(server)
+}
+
 // IsHTTPServer returns true if this server is using HTTP or HTTPS with termination
 func IsHTTPServer(server *v1alpha3.Server) bool {
 	p := protocol.Parse(server.Port.Protocol)

@@ -55,6 +55,8 @@ type TLSServerInfo struct {
 type MergedGateway struct {
 	// MergedServers maps from physical port to virtual servers.
 	MergedServers map[ServerPort]*MergedServers
+	// MergedUDPServers maps from physical port to virtual servers.
+	MergedUDPServers map[ServerPort]*MergedServers
 
 	// GatewayNameForServer maps from server to the owning gateway name.
 	// Used for select the set of virtual services that apply to a port.
@@ -112,6 +114,7 @@ const DisableGatewayPortTranslationLabel = "experimental.istio.io/disable-gatewa
 func MergeGateways(gateways []gatewayWithInstances) *MergedGateway {
 	gatewayPorts := make(map[uint32]bool)
 	mergedServers := make(map[ServerPort]*MergedServers)
+	mergedUDPServers := make(map[ServerPort]*MergedServers)
 	plainTextServers := make(map[uint32]ServerPort)
 	serversByRouteName := make(map[string][]*networking.Server)
 	tlsServerInfo := make(map[*networking.Server]*TLSServerInfo)
@@ -246,6 +249,13 @@ func MergeGateways(gateways []gatewayWithInstances) *MergedGateway {
 					if gateway.IsHTTPServer(s) {
 						serversByRouteName[routeName] = []*networking.Server{s}
 					}
+					// If we can serve HTTP3, add a UDP server as well
+					// HTTP3 is enabled when the flag is enabled, we have an HTTPS port with non-passthrough TLS,
+					// and a Service backing the workload is for protocol UDP.
+					if features.EnableHTTP3 && gateway.IsHTTP3Compatible(s) && udpSupportedPort(s.Port.Number, gwAndInstance.instances) {
+						mergedUDPServers[serverPort] = &MergedServers{Servers: []*networking.Server{s}, RouteName: routeName}
+					}
+					// TODO: when EnableHTTP3, only include if TCP port is defined. This allows UDP only ports
 					mergedServers[serverPort] = &MergedServers{Servers: []*networking.Server{s}, RouteName: routeName}
 				}
 				log.Debugf("MergeGateways: gateway %q merged server %v", gatewayName, s.Hosts)
@@ -255,6 +265,7 @@ func MergeGateways(gateways []gatewayWithInstances) *MergedGateway {
 
 	return &MergedGateway{
 		MergedServers:                   mergedServers,
+		MergedUDPServers:                mergedUDPServers,
 		GatewayNameForServer:            gatewayNameForServer,
 		TLSServerInfo:                   tlsServerInfo,
 		ServersByRouteName:              serversByRouteName,
@@ -302,6 +313,15 @@ func resolvePorts(number uint32, instances []*ServiceInstance, legacyGatewaySele
 	// For cases where we are directly referencing a Service, we know that they port *must* be in the Service,
 	// so we have no fallback. If there was no match, the Gateway is a no-op.
 	return ret
+}
+
+func udpSupportedPort(number uint32, instances []*ServiceInstance) bool {
+	for _, w := range instances {
+		if int(number) == w.ServicePort.Port && w.ServicePort.Protocol == protocol.UDP {
+			return true
+		}
+	}
+	return false
 }
 
 func canMergeProtocols(current protocol.Instance, p protocol.Instance) bool {
