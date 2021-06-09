@@ -67,7 +67,7 @@ func (r Result) CheckSuccessRate(t test.Failer, minimumPercent float64) {
 			minimumPercent, r.SuccessfulRequests, r.TotalRequests, r.PercentSuccess(), r.Error)
 	}
 	if r.SuccessfulRequests == r.TotalRequests {
-		t.Log("traffic checker succeeded with all successful requests")
+		t.Log("traffic checker succeeded with all successful requests, %d total", r.TotalRequests)
 	} else {
 		t.Logf("traffic checker met minimum threshold, with %d/%d successes, but encountered some failures: %v", r.SuccessfulRequests, r.TotalRequests, r.Error)
 	}
