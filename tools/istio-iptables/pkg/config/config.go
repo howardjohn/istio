@@ -56,6 +56,7 @@ type Config struct {
 	OutputPath              string        `json:"OUTPUT_PATH"`
 	NetworkNamespace        string        `json:"NETWORK_NAMESPACE"`
 	CNIMode                 bool          `json:"CNI_MODE"`
+	TraceLogging            bool          `json:"TRACE_LOGGING"`
 }
 
 func (c *Config) String() string {

@@ -206,6 +206,12 @@ func TestIptables(t *testing.T) {
 				cfg.ProxyUID = "3,4"
 			},
 		},
+		{
+			"logging",
+			func(cfg *config.Config) {
+				cfg.TraceLogging = true
+			},
+		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

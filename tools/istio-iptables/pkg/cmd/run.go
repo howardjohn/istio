@@ -56,7 +56,7 @@ type IptablesConfigurator struct {
 
 func NewIptablesConfigurator(cfg *config.Config, ext dep.Dependencies) *IptablesConfigurator {
 	return &IptablesConfigurator{
-		iptables: builder.NewIptablesBuilder(),
+		iptables: builder.NewIptablesBuilder(cfg.TraceLogging),
 		ext:      ext,
 		cfg:      cfg,
 	}

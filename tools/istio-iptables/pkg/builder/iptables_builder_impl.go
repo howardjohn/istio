@@ -36,12 +36,14 @@ type Rules struct {
 
 // IptablesBuilder is an implementation for IptablesBuilder interface
 type IptablesBuilder struct {
-	rules Rules
+	rules         Rules
+	loggingEnable bool
 }
 
 // NewIptablesBuilders creates a new IptablesBuilder
-func NewIptablesBuilder() *IptablesBuilder {
+func NewIptablesBuilder(loggingEnable bool) *IptablesBuilder {
 	return &IptablesBuilder{
+		loggingEnable: loggingEnable,
 		rules: Rules{
 			rulesv4: []*Rule{},
 			rulesv6: []*Rule{},
@@ -67,7 +69,27 @@ func (rb *IptablesBuilder) InsertRuleV6(chain string, table string, position int
 	return rb
 }
 
+func indexOf(element string, data []string) int {
+	for k, v := range data {
+		if element == v {
+			return k
+		}
+	}
+	return -1 // not found.
+}
+
 func (rb *IptablesBuilder) AppendRuleV4(chain string, table string, params ...string) *IptablesBuilder {
+	idx := indexOf("-j", params)
+	rb.loggingEnable = true
+	if rb.loggingEnable && idx >= 0 {
+			match := params[:idx]
+			match = append(match, "-j", "LOG", "--log-uid", "--log-prefix", `"istio\t"`)
+			rb.rules.rulesv4 = append(rb.rules.rulesv4, &Rule{
+				chain:  chain,
+				table:  table,
+				params: append([]string{"-A", chain}, match...),
+			})
+	}
 	rb.rules.rulesv4 = append(rb.rules.rulesv4, &Rule{
 		chain:  chain,
 		table:  table,

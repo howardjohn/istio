@@ -83,6 +83,7 @@ const (
 	ProxyGID                  = "proxy-gid"
 	KubeVirtInterfaces        = "kube-virt-interfaces"
 	DryRun                    = "dry-run"
+	TraceLogging              = "trace-logging"
 	Clean                     = "clean"
 	RestoreFormat             = "restore-format"
 	SkipRuleApply             = "skip-rule-apply"
