@@ -337,6 +337,10 @@ func setPathContext(nc *PathContext, value interface{}, merge bool) error {
 func setValueContext(nc *PathContext, value interface{}, merge bool) (bool, error) {
 	vv, mapFromString := tryToUnmarshalStringToYAML(value)
 
+	if nc.Parent == nil {
+		return false, nil
+	}
+
 	switch parentNode := nc.Parent.Node.(type) {
 	case *interface{}:
 		switch vParentNode := (*parentNode).(type) {
