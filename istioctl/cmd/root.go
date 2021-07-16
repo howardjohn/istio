@@ -231,6 +231,7 @@ debug and diagnose their Istio mesh.
 	experimentalCmd.AddCommand(revisionCommand())
 	experimentalCmd.AddCommand(debugCommand())
 	experimentalCmd.AddCommand(preCheck())
+	experimentalCmd.AddCommand(parseIptablesLogCommand())
 
 	analyzeCmd := Analyze()
 	hideInheritedFlags(analyzeCmd, "istioNamespace")

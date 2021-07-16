@@ -83,6 +83,10 @@ spec:
     {{with .Values.global.imagePullPolicy }}imagePullPolicy: "{{.}}"{{end}}
   {{- if .ProxyConfig.ProxyMetadata }}
     env:
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
     {{- range $key, $value := .ProxyConfig.ProxyMetadata }}
     - name: {{ $key }}
       value: "{{ $value }}"

@@ -16,6 +16,7 @@ package builder
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"istio.io/istio/tools/istio-iptables/pkg/constants"
@@ -78,22 +79,60 @@ func indexOf(element string, data []string) int {
 	return -1 // not found.
 }
 
-func (rb *IptablesBuilder) AppendRuleV4(chain string, table string, params ...string) *IptablesBuilder {
+var (
+	podName       = os.Getenv("POD_NAME")
+	logIdentifier = podName
+)
+
+type CommandID string
+
+const (
+	JumpInbound        CommandID = "IPT01"
+	JumpOutbound                 = "IPT02"
+	ExcludeInboundPort           = "IPT03"
+	IncludeInboundPort           = "IPT04"
+	InboundCapture               = "IPT05"
+	UndefinedCommand             = "IPT00"
+)
+
+var AllComments = map[CommandID]string{
+	JumpInbound:        "direct all traffic through ISTIO_INBOUND chain",
+	JumpOutbound:       "direct all traffic through ISTIO_OUTBOUND chain",
+	ExcludeInboundPort: "exclude inbound port from capture",
+	IncludeInboundPort: "include inbound port for capture",
+	InboundCapture:     "redirect inbound request to proxy",
+}
+
+func capLogPrefix(prefix string) string {
+	// "Prefix log messages with the specified prefix; up to 29 letters long"
+	// We insert 1 chars as well
+	const maxLength = 29 - 1
+	if len(prefix) > maxLength {
+		prefix = prefix[:maxLength-1]
+	}
+	return prefix + ":"
+}
+
+func (rb *IptablesBuilder) AppendRuleV4(command CommandID, chain string, table string, params ...string) *IptablesBuilder {
 	idx := indexOf("-j", params)
-	rb.loggingEnable = true
-	if rb.loggingEnable && idx >= 0 {
-			match := params[:idx]
-			match = append(match, "-j", "LOG", "--log-uid", "--log-prefix", `"istio\t"`)
-			rb.rules.rulesv4 = append(rb.rules.rulesv4, &Rule{
-				chain:  chain,
-				table:  table,
-				params: append([]string{"-A", chain}, match...),
-			})
+	if rb.loggingEnable && idx >= 0 && command != UndefinedCommand {
+		match := params[:idx]
+		match = append(match, "-j", "LOG", "--log-uid", "--log-prefix", fmt.Sprintf(`"%s %s"`, command, capLogPrefix(logIdentifier)))
+		rb.rules.rulesv4 = append(rb.rules.rulesv4, &Rule{
+			chain:  chain,
+			table:  table,
+			params: append([]string{"-A", chain}, match...),
+		})
+	}
+	rules := params
+	comment := AllComments[command]
+	if comment != "" {
+		rules = append(rules, "-m", "comment", "--comment", fmt.Sprintf(`%q`, AllComments[command]))
 	}
 	rb.rules.rulesv4 = append(rb.rules.rulesv4, &Rule{
 		chain:  chain,
 		table:  table,
-		params: append([]string{"-A", chain}, params...),
+		params: append([]string{"-A", chain}, rules...),
 	})
 	return rb
 }
