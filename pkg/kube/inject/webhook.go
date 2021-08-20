@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"gomodules.xyz/jsonpatch/v3"
+	jsonpatch "github.com/evanphx/json-patch"
 	kubeApiAdmissionv1 "k8s.io/api/admission/v1"
 	kubeApiAdmissionv1beta1 "k8s.io/api/admission/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -511,11 +511,7 @@ func createPatch(pod *corev1.Pod, original []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	p, err := jsonpatch.CreatePatch(original, reinjected)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(p)
+	return jsonpatch.CreateMergePatch(original, reinjected)
 }
 
 // postProcessPod applies additionally transformations to the pod after merging with the injected template

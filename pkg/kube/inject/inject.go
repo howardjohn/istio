@@ -710,16 +710,12 @@ func applyJSONPatchToPod(input *corev1.Pod, patch []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	p, err := jsonpatch.DecodePatch(patch)
+	p, err := jsonpatch.MergePatch(objJS, patch)
 	if err != nil {
 		return nil, err
 	}
 
-	patchedJSON, err := p.Apply(objJS)
-	if err != nil {
-		return nil, err
-	}
-	return patchedJSON, nil
+	return p, nil
 }
 
 // SidecarInjectionStatus contains basic information about the

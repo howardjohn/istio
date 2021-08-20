@@ -670,16 +670,12 @@ func prettyJSON(inputJSON []byte, t *testing.T) []byte {
 
 func applyJSONPatch(input, patch []byte, t *testing.T) []byte {
 	t.Helper()
-	p, err := jsonpatch.DecodePatch(patch)
+	p, err := jsonpatch.MergePatch(input, patch)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	patchedJSON, err := p.Apply(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return prettyJSON(patchedJSON, t)
+	return prettyJSON(p, t)
 }
 
 func jsonToUnstructured(obj []byte, t *testing.T) *unstructured.Unstructured {
@@ -856,58 +852,7 @@ func TestRunAndServe(t *testing.T) {
 	skipReview := makeTestData(t, true, "v1beta1")
 
 	// nolint: lll
-	validPatch := []byte(`[
-{
-    "op": "add",
-    "path": "/metadata/annotations",
-    "value": {
-        "prometheus.io/path": "/stats/prometheus",
-        "prometheus.io/port": "15020",
-        "prometheus.io/scrape": "true",
-        "sidecar.istio.io/status": "{\"initContainers\":[\"istio-init\"],\"containers\":[\"istio-proxy\"],\"volumes\":[\"istio-envoy\"],\"imagePullSecrets\":[\"istio-image-pull-secrets\"],\"revision\":\"default\"}"
-    }
-},
-{
-    "op": "add",
-    "path": "/spec/volumes/1",
-    "value": {
-        "name": "v0"
-    }
-},
-{
-    "op": "replace",
-    "path": "/spec/volumes/0/name",
-    "value": "istio-envoy"
-},
-{
-    "op": "add",
-    "path": "/spec/initContainers/1",
-    "value": {
-        "name": "istio-init",
-        "resources": {}
-    }
-},
-{
-    "op": "add",
-    "path": "/spec/containers/1",
-    "value": {
-        "name": "istio-proxy",
-        "resources": {}
-    }
-},
-{
-    "op": "add",
-    "path": "/spec/imagePullSecrets/1",
-    "value": {
-        "name": "p0"
-    }
-},
-{
-    "op": "replace",
-    "path": "/spec/imagePullSecrets/0/name",
-    "value": "istio-image-pull-secrets"
-}
-]`)
+	validPatch := []byte(`{"metadata":{"annotations":{"prometheus.io/path":"/stats/prometheus","prometheus.io/port":"15020","prometheus.io/scrape":"true","sidecar.istio.io/status":"{\"initContainers\":[\"istio-init\"],\"containers\":[\"istio-proxy\"],\"volumes\":[\"istio-envoy\"],\"imagePullSecrets\":[\"istio-image-pull-secrets\"],\"revision\":\"default\"}"}},"spec":{"containers":[{"name":"c1","resources":{}},{"name":"istio-proxy","resources":{}}],"imagePullSecrets":[{"name":"istio-image-pull-secrets"},{"name":"p0"}],"initContainers":[{"name":"c0","resources":{}},{"name":"istio-init","resources":{}}],"volumes":[{"name":"istio-envoy"},{"name":"v0"}]}}`)
 
 	cases := []struct {
 		name           string
@@ -1045,11 +990,11 @@ func BenchmarkInjectServe(b *testing.B) {
 	wh.Run(stop)
 
 	body := makeTestData(b, false, "v1beta1")
-	req := httptest.NewRequest("POST", "http://sidecar-injector/inject", bytes.NewReader(body))
-	req.Header.Add("Content-Type", "application/json")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest("POST", "http://sidecar-injector/inject", bytes.NewReader(body))
+		req.Header.Add("Content-Type", "application/json")
 		wh.serveInject(httptest.NewRecorder(), req)
 	}
 }
