@@ -61,6 +61,9 @@ var rootCmd = &cobra.Command{
 		iptConfigurator := NewIptablesConfigurator(cfg, ext)
 		if !cfg.SkipRuleApply {
 			iptConfigurator.run()
+			if err := iptConfigurator.configureRoutes(); err != nil {
+				handleErrorWithCode(err, 1)
+			}
 		}
 		if cfg.RunValidation {
 			hostIP, err := getLocalIP()
