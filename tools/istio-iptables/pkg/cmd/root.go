@@ -61,7 +61,8 @@ var rootCmd = &cobra.Command{
 		iptConfigurator := NewIptablesConfigurator(cfg, ext)
 		if !cfg.SkipRuleApply {
 			iptConfigurator.run()
-			if err := iptConfigurator.configureRoutes(); err != nil {
+			if err := configureRoutes(cfg, ext); err != nil {
+				log.Errorf("failed to configure routes: ")
 				handleErrorWithCode(err, 1)
 			}
 		}
@@ -75,6 +76,21 @@ var rootCmd = &cobra.Command{
 
 			if err := validator.Run(); err != nil {
 				handleErrorWithCode(err, constants.ValidationErrorCode)
+			}
+		}
+	},
+}
+
+var configureRoutesCommand = &cobra.Command{
+	Use:    "configure-routes",
+	Short:  "Configures iproute2 rules for the Istio sidecar",
+	PreRun: bindFlags,
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg := constructConfig()
+		log.Errorf("howardjohn: in routing with %s", cfg.String())
+		if !cfg.SkipRuleApply {
+			if err := configureRoutes(cfg, nil); err != nil {
+				handleErrorWithCode(err, 1)
 			}
 		}
 	},
@@ -331,6 +347,11 @@ func bindFlags(cmd *cobra.Command, args []string) {
 // Only adding flags in `init()` while moving its binding to Viper and value defaulting as part of the command execution.
 // Otherwise, the flag with the same name shared across subcommands will be overwritten by the last.
 func init() {
+	bindCmdlineFlags(rootCmd)
+	bindCmdlineFlags(configureRoutesCommand)
+}
+
+func bindCmdlineFlags(rootCmd *cobra.Command) {
 	rootCmd.Flags().StringP(constants.EnvoyPort, "p", "", "Specify the envoy port to which redirect all TCP traffic (default $ENVOY_PORT = 15001)")
 
 	rootCmd.Flags().StringP(constants.InboundCapturePort, "z", "",
@@ -408,6 +429,10 @@ func init() {
 
 func GetCommand() *cobra.Command {
 	return rootCmd
+}
+
+func GetRouteCommand() *cobra.Command {
+	return configureRoutesCommand
 }
 
 func Execute() {

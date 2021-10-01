@@ -145,3 +145,7 @@ const (
 const (
 	IstioAgentDNSListenerPort = "15053"
 )
+
+const (
+	CommandConfigureRoutes = "configure-routes"
+)

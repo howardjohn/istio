@@ -281,30 +281,39 @@ func SplitV4V6(ips []string) (ipv4 []string, ipv6 []string) {
 	return
 }
 
-func (cfg *IptablesConfigurator) configureRoutes() error {
+func configureRoutes(cfg *config.Config, ext dep.Dependencies) error {
+	if cfg.DryRun {
+		log.Infof("skipping configuring routes due to dry run mode")
+		return nil
+	}
+	if ext != nil && cfg.CNIMode {
+		command := os.Args[0]
+		return ext.Run(command, constants.CommandConfigureRoutes)
+	}
 	link, err := netlink.LinkByName("lo")
 	if err != nil {
 		return fmt.Errorf("failed to find 'lo' link: %v", err)
 	}
-	if cfg.cfg.EnableInboundIPv6 {
+	if cfg.EnableInboundIPv6 {
 		// Setup a new IP address on local interface. This is used as the source IP for inbound traffic
 		// to distinguish traffic we want to capture vs traffic we do not.
 		// Equivalent to `ip -6 addr add "::6/128" dev lo`
 		address := &net.IPNet{IP: net.ParseIP("::6"), Mask: net.CIDRMask(128, 128)}
 		addr := &netlink.Addr{IPNet: address}
+
 		err = netlink.AddrAdd(link, addr)
 		if ignoreExists(err) != nil {
 			return fmt.Errorf("failed to add IPv6 inbound address: %v", err)
 		}
 		log.Infof("Added ::6 address")
 	}
-	if cfg.cfg.InboundPortsInclude != "" {
-		if cfg.cfg.InboundInterceptionMode == constants.TPROXY {
-			tproxyTable, err := strconv.Atoi(cfg.cfg.InboundTProxyRouteTable)
+	if cfg.InboundPortsInclude != "" {
+		if cfg.InboundInterceptionMode == constants.TPROXY {
+			tproxyTable, err := strconv.Atoi(cfg.InboundTProxyRouteTable)
 			if err != nil {
 				return fmt.Errorf("failed to parse InboundTProxyRouteTable: %v", err)
 			}
-			tproxyMark, err := strconv.Atoi(cfg.cfg.InboundTProxyMark)
+			tproxyMark, err := strconv.Atoi(cfg.InboundTProxyMark)
 			if err != nil {
 				return fmt.Errorf("failed to parse InboundTProxyMark: %v", err)
 			}
