@@ -29,13 +29,23 @@ import (
 	originalsrc "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/listener/original_src/v3"
 	tlsinspector "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/listener/tls_inspector/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	wasmfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/wasm/v3"
 	wasm "github.com/envoyproxy/go-control-plane/envoy/extensions/wasm/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
+	protobuf "github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes/any"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	alpn "istio.io/api/envoy/config/filter/http/alpn/v2alpha1"
 	"istio.io/api/envoy/config/filter/network/metadata_exchange"
+	"istio.io/api/envoy/config/filter/network/metadata_exchange"
+	"istio.io/api/envoy/extensions/stats"
+	meshconfig "istio.io/api/mesh/v1alpha1"
+	tpb "istio.io/api/telemetry/v1alpha1"
 	"istio.io/istio/pilot/pkg/features"
+	"istio.io/istio/pilot/pkg/model"
+	"istio.io/istio/pilot/pkg/networking"
 	"istio.io/istio/pilot/pkg/networking/util"
 )
 
@@ -47,7 +57,8 @@ const (
 	TLSTransportProtocol       = "tls"
 	RawBufferTransportProtocol = "raw_buffer"
 
-	MxFilterName = "istio.metadata_exchange"
+	MxFilterName    = "istio.metadata_exchange"
+	StatsFilterName = "istio.stats"
 )
 
 // Define static filters to be reused across the codebase. This avoids duplicate marshaling/unmarshaling
@@ -185,11 +196,156 @@ func buildHTTPMxFilter() *hcm.HttpFilter {
 			Configuration: util.MessageToAny(&metadata_exchange.MetadataExchange{}),
 		},
 	}
-
 	return &hcm.HttpFilter{
 		Name:       MxFilterName,
 		ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: util.MessageToAny(httpMxConfigProto)},
 	}
+}
+
+func BuildTCPStatsFilter(class networking.ListenerClass, metrics model.TelemetryMetricsProviders) []*listener.Filter {
+	res := []*listener.Filter{}
+	// TODO map is not ordered!
+	for provider, metricsCfg := range metrics {
+		switch provider.GetProvider().(type) {
+		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
+			cfg := generateStatsConfig(class, metricsCfg)
+			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
+			root := rootIDForClass(class)
+			vmConfig.VmConfig.VmId = "tcp_" + root
+
+			wasmConfig := &wasmfilter.Wasm{
+				Config: &wasm.PluginConfig{
+					RootId:        root,
+					Vm:            vmConfig,
+					Configuration: cfg,
+				},
+			}
+
+			f := &listener.Filter{
+				Name:       StatsFilterName,
+				ConfigType: &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(wasmConfig)},
+			}
+			res = append(res, f)
+		default:
+			// Only prometheus supported currently
+			continue
+		}
+	}
+	return res
+}
+
+func BuildHTTPStatsFilter(class networking.ListenerClass, metrics model.TelemetryMetricsProviders) []*hcm.HttpFilter {
+	res := []*hcm.HttpFilter{}
+	// TODO map is not ordered!
+	for provider, metricsCfg := range metrics {
+		switch provider.GetProvider().(type) {
+		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
+			cfg := generateStatsConfig(class, metricsCfg)
+			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
+			root := rootIDForClass(class)
+			vmConfig.VmConfig.VmId = root
+
+			wasmConfig := &httpwasm.Wasm{
+				Config: &wasm.PluginConfig{
+					RootId:        root,
+					Vm:            vmConfig,
+					Configuration: cfg,
+				},
+			}
+
+			f := &hcm.HttpFilter{
+				Name:       StatsFilterName,
+				ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: util.MessageToAny(wasmConfig)},
+			}
+			res = append(res, f)
+		default:
+			// Only prometheus supported currently
+			continue
+		}
+	}
+	return res
+}
+
+var metricToPrometheusMetric = map[string]string{
+	"REQUEST_COUNT":          "requests_total",
+	"REQUEST_DURATION":       "request_duration_milliseconds",
+	"REQUEST_SIZE":           "request_bytes",
+	"RESPONSE_SIZE":          "response_bytes",
+	"TCP_OPENED_CONNECTIONS": "tcp_connections_opened_total",
+	"TCP_CLOSED_CONNECTIONS": "tcp_connections_closed_total",
+	"TCP_SENT_BYTES":         "tcp_sent_bytes_total",
+	"TCP_RECEIVED_BYTES":     "tcp_received_bytes_total",
+	"GRPC_REQUEST_MESSAGES":  "request_messages_total",
+	"GRPC_RESPONSE_MESSAGES": "response_messages_total",
+}
+
+func generateStatsConfig(class networking.ListenerClass, metricsCfg map[string]model.MetricOverride) *any.Any {
+	cfg := stats.PluginConfig{}
+	cfg.DisableHostHeaderFallback = class == networking.ListenerClassSidecarInbound || class == networking.ListenerClassGateway
+	for metricNameEnum, override := range metricsCfg {
+		metricName, f := metricToPrometheusMetric[metricNameEnum]
+		if !f {
+			// Not a predefined metric, must be a custom one
+			metricName = metricNameEnum
+		}
+		mc := &stats.MetricConfig{
+			Dimensions: map[string]string{},
+			Name:       metricName,
+			Drop:       override.Disabled.GetValue(),
+		}
+		for k, v := range override.TagOverrides {
+			switch v.Operation {
+			case tpb.MetricsOverrides_TagOverride_UPSERT:
+				mc.Dimensions[k] = v.GetValue()
+			case tpb.MetricsOverrides_TagOverride_REMOVE:
+				mc.TagsToRemove = append(mc.TagsToRemove, k)
+			}
+		}
+		cfg.Metrics = append(cfg.Metrics, mc)
+	}
+	cfgJson, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cfg)
+	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJson)})
+}
+
+func rootIDForClass(class networking.ListenerClass) string {
+	switch class {
+	case networking.ListenerClassSidecarInbound:
+		return "stats_inbound"
+	default:
+		return "stats_outbound"
+	}
+}
+
+func statsConfigForClass(class networking.ListenerClass) statsConfig {
+	switch class {
+	case networking.ListenerClassSidecarInbound:
+		return statsConfig{
+			Metrics: []*metricsConfig{{
+				Dimensions: map[string]string{
+					"destination_cluster": "node.metadata['CLUSTER_ID']",
+					"source_cluster":      "downstream_peer.cluster_id",
+				},
+			}},
+			DisableHostHeaderFallback: true,
+		}
+	case networking.ListenerClassGateway:
+		return statsConfig{
+			DisableHostHeaderFallback: true,
+		}
+	default:
+		return statsConfig{}
+	}
+}
+
+// TODO: import https://github.com/istio/proxy/blob/master/extensions/stats/config.proto
+// and use directly.
+type statsConfig struct {
+	DisableHostHeaderFallback bool             `json:"disable_host_header_fallback,omitempty"`
+	Metrics                   []*metricsConfig `json:"metrics,omitempty"`
+}
+
+type metricsConfig struct {
+	Dimensions map[string]string `json:"dimensions,omitempty"`
 }
 
 // constructVMConfig constructs a VM config. If WASM is enabled, the wasm plugin at filename will be used.

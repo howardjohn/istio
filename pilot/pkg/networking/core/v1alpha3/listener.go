@@ -1302,6 +1302,7 @@ func buildHTTPConnectionManager(listenerOpts buildListenerOpts, httpOpts *httpLi
 
 	routerFilterCtx := configureTracing(listenerOpts, connectionManager)
 
+	metrics := model.MetricsProviders(listenerOpts.push.Telemetry.EffectiveMetrics(listenerOpts.proxy), listenerOpts.push.Mesh)
 	filters := make([]*hcm.HttpFilter, len(httpFilters))
 	copy(filters, httpFilters)
 
@@ -1322,7 +1323,9 @@ func buildHTTPConnectionManager(listenerOpts buildListenerOpts, httpOpts *httpLi
 		filters = append(filters, xdsfilters.Alpn)
 	}
 
-	filters = append(filters, xdsfilters.Cors, xdsfilters.Fault, xdsfilters.BuildRouterFilter(routerFilterCtx))
+	filters = append(filters, xdsfilters.Cors, xdsfilters.Fault)
+	filters = append(filters, xdsfilters.BuildHTTPStatsFilter(listenerOpts.class, metrics)...)
+	filters = append(filters, xdsfilters.BuildRouterFilter(routerFilterCtx))
 
 	connectionManager.HttpFilters = filters
 

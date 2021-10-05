@@ -15,7 +15,14 @@
 package model
 
 import (
+	"sort"
+	"strings"
+
+	"github.com/gogo/protobuf/types"
+
+	meshconfig "istio.io/api/mesh/v1alpha1"
 	tpb "istio.io/api/telemetry/v1alpha1"
+	"istio.io/istio/pilot/pkg/util/sets"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/collections"
 	istiolog "istio.io/pkg/log"
@@ -64,6 +71,11 @@ func GetTelemetries(env *Environment) (*Telemetries, error) {
 	return telemetries, nil
 }
 
+// AnyTelemetryExists determines if there are any Telemetries present in the entire mesh.
+func (t *Telemetries) AnyTelemetryExists() bool {
+	return len(t.NamespaceToTelemetries) > 0
+}
+
 func (t *Telemetries) EffectiveTelemetry(proxy *Proxy) *tpb.Telemetry {
 	if t == nil {
 		return nil
@@ -97,6 +109,44 @@ func (t *Telemetries) EffectiveTelemetry(proxy *Proxy) *tpb.Telemetry {
 	return effectiveSpec
 }
 
+type (
+	TelemetryMetrics          map[string]map[string]MetricOverride
+	TelemetryMetricsProviders map[*meshconfig.MeshConfig_ExtensionProvider]map[string]MetricOverride
+)
+
+// TODO include class
+func (t *Telemetries) EffectiveMetrics(proxy *Proxy) TelemetryMetrics {
+	if t == nil {
+		return nil
+	}
+
+	namespace := proxy.ConfigNamespace
+	workload := labels.Collection{proxy.Metadata.Labels}
+	// Order here matters. The latter elements will override the first elements
+	ms := []*tpb.Metrics{}
+	if t.RootNamespace != "" {
+		ms = append(ms, t.namespaceWideTelemetry(t.RootNamespace).GetMetrics()...)
+	}
+
+	if namespace != t.RootNamespace {
+		ms = append(ms, t.namespaceWideTelemetry(namespace).GetMetrics()...)
+	}
+
+	for _, telemetry := range t.NamespaceToTelemetries[namespace] {
+		spec := telemetry.Spec
+		if len(spec.GetSelector().GetMatchLabels()) == 0 {
+			continue
+		}
+		selector := labels.Instance(spec.GetSelector().GetMatchLabels())
+		if workload.IsSupersetOf(selector) {
+			ms = append(ms, spec.GetMetrics()...)
+			break
+		}
+	}
+
+	return mergeMetrics(ms)
+}
+
 func (t *Telemetries) namespaceWideTelemetry(namespace string) *tpb.Telemetry {
 	for _, tel := range t.NamespaceToTelemetries[namespace] {
 		spec := tel.Spec
@@ -118,6 +168,65 @@ func shallowMerge(parent, child *tpb.Telemetry) *tpb.Telemetry {
 	shallowMergeTracing(merged, child)
 	shallowMergeAccessLogs(merged, child)
 	return merged
+}
+
+var allMetrics = func() []string {
+	r := []string{}
+	for k := range tpb.MetricSelector_IstioMetric_value {
+		if k != tpb.MetricSelector_IstioMetric_name[int32(tpb.MetricSelector_ALL_METRICS)] {
+			r = append(r, k)
+		}
+	}
+	sort.Strings(r)
+	return r
+}()
+
+type MetricOverride struct {
+	Disabled     *types.BoolValue
+	TagOverrides map[string]*tpb.MetricsOverrides_TagOverride
+}
+
+func mergeMetrics(metrics []*tpb.Metrics) TelemetryMetrics {
+	providers := map[string]map[string]MetricOverride{}
+
+	// TODO this doesn't take into account that if providers is empty we should use the default
+	for _, m := range metrics {
+		for _, p := range m.Providers {
+			if _, f := providers[p.GetName()]; !f {
+				providers[p.GetName()] = map[string]MetricOverride{}
+			}
+			mp := providers[p.GetName()]
+			for _, o := range m.Overrides {
+				for _, metricName := range getMatches(o.Match) {
+					override := mp[metricName]
+					if o.Disabled != nil {
+						override.Disabled = o.Disabled
+					}
+					for k, v := range o.TagOverrides {
+						if override.TagOverrides == nil {
+							override.TagOverrides = map[string]*tpb.MetricsOverrides_TagOverride{}
+						}
+						override.TagOverrides[k] = v
+					}
+					mp[metricName] = override
+				}
+			}
+		}
+	}
+	return providers
+}
+
+func getMatches(match *tpb.MetricSelector) []string {
+	switch m := match.GetMetricMatch().(type) {
+	case *tpb.MetricSelector_CustomMetric:
+		return []string{m.CustomMetric}
+	case *tpb.MetricSelector_Metric:
+		if m.Metric == tpb.MetricSelector_ALL_METRICS {
+			return allMetrics
+		}
+		return []string{m.Metric.String()}
+	}
+	return nil
 }
 
 func shallowMergeTracing(parent, child *tpb.Telemetry) {
@@ -168,4 +277,68 @@ func shallowMergeAccessLogs(parent *tpb.Telemetry, child *tpb.Telemetry) {
 	if childLogging.GetDisabled() != nil {
 		mergedLogging.Disabled = childLogging.Disabled
 	}
+}
+
+// PrometheusEnabled determines if any of the extension providers are for prometheus
+func PrometheusEnabled(providers []*meshconfig.MeshConfig_ExtensionProvider) bool {
+	for _, prov := range providers {
+		if _, ok := prov.Provider.(*meshconfig.MeshConfig_ExtensionProvider_Prometheus); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// MetricsEnabled determines if there is any `metrics` configuration for the provided mesh configuration and Telemetry.
+// Note that this can return `true` even when `spec` is `nil`, in the case there is a default provider.
+func MetricsProviders(metrics TelemetryMetrics, mesh *meshconfig.MeshConfig) TelemetryMetricsProviders {
+	fetchProvider := func(m string) *meshconfig.MeshConfig_ExtensionProvider {
+		for _, p := range mesh.ExtensionProviders {
+			if strings.EqualFold(m, p.Name) {
+				return p
+			}
+		}
+		return nil
+	}
+	res := TelemetryMetricsProviders{}
+	for k, v := range metrics {
+		p := fetchProvider(k)
+		if p == nil {
+			continue
+		}
+		res[p] = v
+	}
+	for _, dp := range mesh.GetDefaultProviders().GetMetrics() {
+		if _, f := metrics[dp]; !f {
+			p := fetchProvider(dp)
+			if p == nil {
+				continue
+			}
+			// Insert default config, no overrides
+			res[p] = map[string]MetricOverride{}
+		}
+	}
+	return res
+}
+
+// MetricsProviders returns a list of all metrics extension providers used by the spec
+// (`metrics.providers`) and mesh configuration (`defaultProviders.metrics`).
+func etricsProviders(metrics TelemetryMetrics, mesh *meshconfig.MeshConfig) []*meshconfig.MeshConfig_ExtensionProvider {
+	providers := sets.NewSet(mesh.GetDefaultProviders().GetMetrics()...)
+	for k := range metrics {
+		providers.Insert(strings.ToLower(k))
+	}
+	if len(providers) == 0 {
+		return nil
+	}
+
+	ret := []*meshconfig.MeshConfig_ExtensionProvider{}
+
+	for _, p := range mesh.ExtensionProviders {
+		name := strings.ToLower(p.Name)
+		if providers.Contains(name) {
+			ret = append(ret, p)
+		}
+	}
+	return ret
 }

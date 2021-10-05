@@ -41,7 +41,7 @@ import (
 // redisOpTimeout is the default operation timeout for the Redis proxy filter.
 var redisOpTimeout = 5 * time.Second
 
-func buildTelemetryNetworkFilters(class istionetworking.ListenerClass) []*listener.Filter {
+func buildMetadataExchangeNetworkFilters(class istionetworking.ListenerClass) []*listener.Filter {
 	filterstack := make([]*listener.Filter, 0)
 
 	// We add metadata exchange on inbound only; outbound is handled in cluster filter
@@ -52,8 +52,17 @@ func buildTelemetryNetworkFilters(class istionetworking.ListenerClass) []*listen
 	return filterstack
 }
 
+func buildMetricsNetworkFilters(push *model.PushContext, proxy *model.Proxy, class istionetworking.ListenerClass) []*listener.Filter {
+	filterstack := make([]*listener.Filter, 0)
+
+	metrics := model.MetricsProviders(push.Telemetry.EffectiveMetrics(proxy), push.Mesh)
+	filterstack = append(filterstack, xdsfilters.BuildTCPStatsFilter(class, metrics)...)
+
+	return filterstack
+}
+
 // buildInboundNetworkFilters generates a TCP proxy network filter on the inbound path
-func buildInboundNetworkFilters(push *model.PushContext, instance *model.ServiceInstance, clusterName string) []*listener.Filter {
+func buildInboundNetworkFilters(push *model.PushContext, proxy *model.Proxy, instance *model.ServiceInstance, clusterName string) []*listener.Filter {
 	statPrefix := clusterName
 	// If stat name is configured, build the stat prefix from configured pattern.
 	if len(push.Mesh.InboundClusterStatName) != 0 {
@@ -66,7 +75,9 @@ func buildInboundNetworkFilters(push *model.PushContext, instance *model.Service
 	}
 	tcpFilter := setAccessLogAndBuildTCPFilter(push, tcpProxy)
 
-	filters := buildTelemetryNetworkFilters(istionetworking.ListenerClassSidecarInbound)
+	var filters []*listener.Filter
+	filters = append(filters, buildMetadataExchangeNetworkFilters(istionetworking.ListenerClassSidecarInbound)...)
+	filters = append(filters, buildMetricsNetworkFilters(push, proxy, istionetworking.ListenerClassSidecarInbound)...)
 	filters = append(filters, buildNetworkFiltersStack(instance.ServicePort, tcpFilter, statPrefix, clusterName)...)
 	return filters
 }
@@ -99,7 +110,9 @@ func buildOutboundNetworkFiltersWithSingleDestination(push *model.PushContext, n
 	maybeSetHashPolicy(destinationRule, tcpProxy, subsetName)
 	tcpFilter := setAccessLogAndBuildTCPFilter(push, tcpProxy)
 
-	filters := buildTelemetryNetworkFilters(model.OutboundListenerClass(node.Type))
+	var filters []*listener.Filter
+	filters = append(filters, buildMetadataExchangeNetworkFilters(model.OutboundListenerClass(node.Type))...)
+	filters = append(filters, buildMetricsNetworkFilters(push, node, model.OutboundListenerClass(node.Type))...)
 	filters = append(filters, buildNetworkFiltersStack(port, tcpFilter, statPrefix, clusterName)...)
 	return filters
 }
@@ -141,7 +154,9 @@ func buildOutboundNetworkFiltersWithWeightedClusters(node *model.Proxy, routes [
 	clusterName := clusterSpecifier.WeightedClusters.Clusters[0].Name
 	tcpFilter := setAccessLogAndBuildTCPFilter(push, tcpProxy)
 
-	filters := buildTelemetryNetworkFilters(model.OutboundListenerClass(node.Type))
+	var filters []*listener.Filter
+	filters = append(filters, buildMetadataExchangeNetworkFilters(model.OutboundListenerClass(node.Type))...)
+	filters = append(filters, buildMetricsNetworkFilters(push, node, model.OutboundListenerClass(node.Type))...)
 	filters = append(filters, buildNetworkFiltersStack(port, tcpFilter, statPrefix, clusterName)...)
 	return filters
 }

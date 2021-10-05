@@ -15,6 +15,8 @@ replace github.com/docker/docker => github.com/moby/moby v17.12.0-ce-rc1.0.20200
 // Client-go does not handle different versions of mergo due to some breaking changes - use the matching version
 replace github.com/imdario/mergo => github.com/imdario/mergo v0.3.5
 
+replace istio.io/api => github.com/howardjohn/api v0.0.0-20211005004308-178e4ac80590
+
 require (
 	cloud.google.com/go v0.94.1
 	cloud.google.com/go/security v0.1.0
