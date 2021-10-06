@@ -303,8 +303,10 @@ func generateStatsConfig(class networking.ListenerClass, metricsCfg map[string]m
 		}
 		cfg.Metrics = append(cfg.Metrics, mc)
 	}
-	cfgJson, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cfg)
-	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJson)})
+	// TODO figure out why proxy does not recognize the proto
+	// return util.MessageToAny(&cfg)
+	cfgJSON, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cfg)
+	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJSON)})
 }
 
 func rootIDForClass(class networking.ListenerClass) string {
@@ -313,27 +315,6 @@ func rootIDForClass(class networking.ListenerClass) string {
 		return "stats_inbound"
 	default:
 		return "stats_outbound"
-	}
-}
-
-func statsConfigForClass(class networking.ListenerClass) statsConfig {
-	switch class {
-	case networking.ListenerClassSidecarInbound:
-		return statsConfig{
-			Metrics: []*metricsConfig{{
-				Dimensions: map[string]string{
-					"destination_cluster": "node.metadata['CLUSTER_ID']",
-					"source_cluster":      "downstream_peer.cluster_id",
-				},
-			}},
-			DisableHostHeaderFallback: true,
-		}
-	case networking.ListenerClassGateway:
-		return statsConfig{
-			DisableHostHeaderFallback: true,
-		}
-	default:
-		return statsConfig{}
 	}
 }
 

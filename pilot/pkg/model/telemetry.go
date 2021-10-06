@@ -22,7 +22,6 @@ import (
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	tpb "istio.io/api/telemetry/v1alpha1"
-	"istio.io/istio/pilot/pkg/util/sets"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/collections"
 	istiolog "istio.io/pkg/log"
@@ -319,26 +318,4 @@ func MetricsProviders(metrics TelemetryMetrics, mesh *meshconfig.MeshConfig) Tel
 		}
 	}
 	return res
-}
-
-// MetricsProviders returns a list of all metrics extension providers used by the spec
-// (`metrics.providers`) and mesh configuration (`defaultProviders.metrics`).
-func etricsProviders(metrics TelemetryMetrics, mesh *meshconfig.MeshConfig) []*meshconfig.MeshConfig_ExtensionProvider {
-	providers := sets.NewSet(mesh.GetDefaultProviders().GetMetrics()...)
-	for k := range metrics {
-		providers.Insert(strings.ToLower(k))
-	}
-	if len(providers) == 0 {
-		return nil
-	}
-
-	ret := []*meshconfig.MeshConfig_ExtensionProvider{}
-
-	for _, p := range mesh.ExtensionProviders {
-		name := strings.ToLower(p.Name)
-		if providers.Contains(name) {
-			ret = append(ret, p)
-		}
-	}
-	return ret
 }
