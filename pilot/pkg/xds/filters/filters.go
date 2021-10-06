@@ -203,11 +203,10 @@ func buildHTTPMxFilter() *hcm.HttpFilter {
 	}
 }
 
-func BuildTCPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig.MeshConfig_ExtensionProvider]model.TelemetryMetricsMode) []*listener.Filter {
+func BuildTCPStatsFilter(class networking.ListenerClass, metrics []model.TelemetryMetricsMode) []*listener.Filter {
 	res := []*listener.Filter{}
-	// TODO map is not ordered!
-	for provider, metricsCfg := range metrics {
-		switch p := provider.GetProvider().(type) {
+	for _, metricsCfg := range metrics {
+		switch p := metricsCfg.Provider.GetProvider().(type) {
 		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
 			cfg := generateStatsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
@@ -253,20 +252,10 @@ func BuildTCPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig
 	return res
 }
 
-func sdVmId(class networking.ListenerClass) string {
-	switch class {
-	case networking.ListenerClassSidecarInbound:
-		return "stackdriver_inbound"
-	default:
-		return "stackdriver_outbound"
-	}
-}
-
-func BuildHTTPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig.MeshConfig_ExtensionProvider]model.TelemetryMetricsMode) []*hcm.HttpFilter {
+func BuildHTTPStatsFilter(class networking.ListenerClass, metrics []model.TelemetryMetricsMode) []*hcm.HttpFilter {
 	res := []*hcm.HttpFilter{}
-	// TODO map is not ordered!
-	for provider, metricsCfg := range metrics {
-		switch p := provider.GetProvider().(type) {
+	for _, metricsCfg := range metrics {
+		switch p := metricsCfg.Provider.GetProvider().(type) {
 		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
 			cfg := generateStatsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
@@ -378,6 +367,15 @@ var metricToSDClientMetrics = map[string]string{
 	"TCP_RECEIVED_BYTES":     "client/received_bytes_count",
 	"GRPC_REQUEST_MESSAGES":  "",
 	"GRPC_RESPONSE_MESSAGES": "",
+}
+
+func sdVmId(class networking.ListenerClass) string {
+	switch class {
+	case networking.ListenerClassSidecarInbound:
+		return "stackdriver_inbound"
+	default:
+		return "stackdriver_outbound"
+	}
 }
 
 func generateSDMetricsConfig(class networking.ListenerClass, stackdriver *meshconfig.MeshConfig_ExtensionProvider_StackdriverProvider, metricsCfg model.TelemetryMetricsMode) *any.Any {

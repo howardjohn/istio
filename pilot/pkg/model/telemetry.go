@@ -116,8 +116,9 @@ func (t *Telemetries) EffectiveTelemetry(proxy *Proxy) *tpb.Telemetry {
 type telemetryProvider string
 
 type TelemetryMetricsMode struct {
-	Client []MetricsOverride
-	Server []MetricsOverride
+	Provider *meshconfig.MeshConfig_ExtensionProvider
+	Client   []MetricsOverride
+	Server   []MetricsOverride
 }
 
 func (t TelemetryMetricsMode) ForClass(c networking.ListenerClass) []MetricsOverride {
@@ -145,7 +146,7 @@ type TagOverride struct {
 	Value  string
 }
 
-func (t *Telemetries) EffectiveMetrics(proxy *Proxy) map[*meshconfig.MeshConfig_ExtensionProvider]TelemetryMetricsMode {
+func (t *Telemetries) EffectiveMetrics(proxy *Proxy) []TelemetryMetricsMode {
 	if t == nil {
 		return nil
 	}
@@ -174,7 +175,7 @@ func (t *Telemetries) EffectiveMetrics(proxy *Proxy) map[*meshconfig.MeshConfig_
 		}
 	}
 
-	tmm := mergeMetrics(ms)
+	tmm := mergeMetrics(ms, t.MeshConfig)
 	fetchProvider := func(m string) *meshconfig.MeshConfig_ExtensionProvider {
 		for _, p := range t.MeshConfig.ExtensionProviders {
 			if strings.EqualFold(m, p.Name) {
@@ -183,24 +184,18 @@ func (t *Telemetries) EffectiveMetrics(proxy *Proxy) map[*meshconfig.MeshConfig_
 		}
 		return nil
 	}
-	res := map[*meshconfig.MeshConfig_ExtensionProvider]TelemetryMetricsMode{}
+	res := []TelemetryMetricsMode{}
 	for k, v := range tmm {
 		p := fetchProvider(string(k))
 		if p == nil {
 			continue
 		}
-		res[p] = v
+		v.Provider = p
+		res = append(res, v)
 	}
-	for _, dp := range t.MeshConfig.GetDefaultProviders().GetMetrics() {
-		if _, f := tmm[telemetryProvider(dp)]; !f {
-			p := fetchProvider(dp)
-			if p == nil {
-				continue
-			}
-			// Insert default config, no overrides
-			res[p] = TelemetryMetricsMode{}
-		}
-	}
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].Provider.GetName() < res[i].Provider.GetName()
+	})
 	return res
 }
 
@@ -243,10 +238,13 @@ type MetricOverride struct {
 	TagOverrides map[string]*tpb.MetricsOverrides_TagOverride
 }
 
-func mergeMetrics(metrics []*tpb.Metrics) map[telemetryProvider]TelemetryMetricsMode {
+func mergeMetrics(metrics []*tpb.Metrics, mesh *meshconfig.MeshConfig) map[telemetryProvider]TelemetryMetricsMode {
 	// provider -> mode -> metric -> overrides
 	providers := map[telemetryProvider]map[string]map[string]MetricOverride{}
 
+	for _, dp := range mesh.GetDefaultProviders().GetMetrics() {
+		providers[telemetryProvider(dp)] = map[string]map[string]MetricOverride{}
+	}
 	for _, m := range metrics {
 		for _, provider := range m.Providers {
 			p := telemetryProvider(provider.GetName())
