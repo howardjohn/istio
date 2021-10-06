@@ -22,6 +22,7 @@ import (
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	tpb "istio.io/api/telemetry/v1alpha1"
+	"istio.io/istio/pilot/pkg/networking"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/collections"
 	istiolog "istio.io/pkg/log"
@@ -43,6 +44,9 @@ type Telemetries struct {
 
 	// The name of the root namespace.
 	RootNamespace string `json:"root_namespace"`
+
+	// Computed MeshConfig
+	MeshConfig *meshconfig.MeshConfig
 }
 
 // GetTelemetries returns the Telemetry configurations for the given environment.
@@ -50,6 +54,7 @@ func GetTelemetries(env *Environment) (*Telemetries, error) {
 	telemetries := &Telemetries{
 		NamespaceToTelemetries: map[string][]Telemetry{},
 		RootNamespace:          env.Mesh().GetRootNamespace(),
+		MeshConfig:             env.Mesh(),
 	}
 
 	fromEnv, err := env.List(collections.IstioTelemetryV1Alpha1Telemetries.Resource().GroupVersionKind(), NamespaceAll)
@@ -108,13 +113,39 @@ func (t *Telemetries) EffectiveTelemetry(proxy *Proxy) *tpb.Telemetry {
 	return effectiveSpec
 }
 
-type (
-	TelemetryMetrics          map[string]map[string]MetricOverride
-	TelemetryMetricsProviders map[*meshconfig.MeshConfig_ExtensionProvider]map[string]MetricOverride
-)
+type telemetryProvider string
 
-// TODO include class
-func (t *Telemetries) EffectiveMetrics(proxy *Proxy) TelemetryMetrics {
+type TelemetryMetricsMode struct {
+	Client []MetricsOverride
+	Server []MetricsOverride
+}
+
+func (t TelemetryMetricsMode) ForClass(c networking.ListenerClass) []MetricsOverride {
+	switch c {
+	case networking.ListenerClassGateway:
+		return t.Client
+	case networking.ListenerClassSidecarInbound:
+		return t.Server
+	case networking.ListenerClassSidecarOutbound:
+		return t.Client
+	default:
+		return t.Client
+	}
+}
+
+type MetricsOverride struct {
+	Name     string
+	Disabled bool
+	Tags     []TagOverride
+}
+
+type TagOverride struct {
+	Name   string
+	Remove bool
+	Value  string
+}
+
+func (t *Telemetries) EffectiveMetrics(proxy *Proxy) map[*meshconfig.MeshConfig_ExtensionProvider]TelemetryMetricsMode {
 	if t == nil {
 		return nil
 	}
@@ -143,7 +174,34 @@ func (t *Telemetries) EffectiveMetrics(proxy *Proxy) TelemetryMetrics {
 		}
 	}
 
-	return mergeMetrics(ms)
+	tmm := mergeMetrics(ms)
+	fetchProvider := func(m string) *meshconfig.MeshConfig_ExtensionProvider {
+		for _, p := range t.MeshConfig.ExtensionProviders {
+			if strings.EqualFold(m, p.Name) {
+				return p
+			}
+		}
+		return nil
+	}
+	res := map[*meshconfig.MeshConfig_ExtensionProvider]TelemetryMetricsMode{}
+	for k, v := range tmm {
+		p := fetchProvider(string(k))
+		if p == nil {
+			continue
+		}
+		res[p] = v
+	}
+	for _, dp := range t.MeshConfig.GetDefaultProviders().GetMetrics() {
+		if _, f := tmm[telemetryProvider(dp)]; !f {
+			p := fetchProvider(dp)
+			if p == nil {
+				continue
+			}
+			// Insert default config, no overrides
+			res[p] = TelemetryMetricsMode{}
+		}
+	}
+	return res
 }
 
 func (t *Telemetries) namespaceWideTelemetry(namespace string) *tpb.Telemetry {
@@ -185,34 +243,97 @@ type MetricOverride struct {
 	TagOverrides map[string]*tpb.MetricsOverrides_TagOverride
 }
 
-func mergeMetrics(metrics []*tpb.Metrics) TelemetryMetrics {
-	providers := map[string]map[string]MetricOverride{}
+func mergeMetrics(metrics []*tpb.Metrics) map[telemetryProvider]TelemetryMetricsMode {
+	// provider -> mode -> metric -> overrides
+	providers := map[telemetryProvider]map[string]map[string]MetricOverride{}
 
-	// TODO this doesn't take into account that if providers is empty we should use the default
 	for _, m := range metrics {
-		for _, p := range m.Providers {
-			if _, f := providers[p.GetName()]; !f {
-				providers[p.GetName()] = map[string]MetricOverride{}
+		for _, provider := range m.Providers {
+			p := telemetryProvider(provider.GetName())
+			if _, f := providers[p]; !f {
+				providers[p] = map[string]map[string]MetricOverride{
+					"client": {},
+					"server": {},
+				}
 			}
-			mp := providers[p.GetName()]
+			mp := providers[p]
 			for _, o := range m.Overrides {
-				for _, metricName := range getMatches(o.Match) {
-					override := mp[metricName]
-					if o.Disabled != nil {
-						override.Disabled = o.Disabled
-					}
-					for k, v := range o.TagOverrides {
-						if override.TagOverrides == nil {
-							override.TagOverrides = map[string]*tpb.MetricsOverrides_TagOverride{}
+				for _, mode := range getModes(o.GetMatch().Mode) {
+					for _, metricName := range getMatches(o.Match) {
+						override := mp[mode][metricName]
+						if o.Disabled != nil {
+							override.Disabled = o.Disabled
 						}
-						override.TagOverrides[k] = v
+						for k, v := range o.TagOverrides {
+							if override.TagOverrides == nil {
+								override.TagOverrides = map[string]*tpb.MetricsOverrides_TagOverride{}
+							}
+							override.TagOverrides[k] = v
+						}
+						mp[mode][metricName] = override
 					}
-					mp[metricName] = override
 				}
 			}
 		}
 	}
-	return providers
+
+	processed := map[telemetryProvider]TelemetryMetricsMode{}
+	for provider, modeMap := range providers {
+		for mode, metricMap := range modeMap {
+			for metric, override := range metricMap {
+				tags := []TagOverride{}
+				for k, v := range override.TagOverrides {
+					o := TagOverride{Name: k}
+					switch v.Operation {
+					case tpb.MetricsOverrides_TagOverride_REMOVE:
+						o.Remove = true
+					case tpb.MetricsOverrides_TagOverride_UPSERT:
+						o.Value = v.GetValue()
+					}
+					tags = append(tags, o)
+				}
+				// Keep order deterministic
+				sort.Slice(tags, func(i, j int) bool {
+					return tags[i].Name < tags[j].Name
+				})
+				mo := MetricsOverride{
+					Name:     metric,
+					Disabled: override.Disabled.GetValue(),
+					Tags:     tags,
+				}
+				tmm := processed[provider]
+				switch mode {
+				case "client":
+					tmm.Client = append(tmm.Client, mo)
+				default:
+					tmm.Server = append(tmm.Server, mo)
+				}
+				processed[provider] = tmm
+			}
+		}
+
+		// Keep order deterministic
+		tmm := processed[provider]
+		sort.Slice(tmm.Server, func(i, j int) bool {
+			return tmm.Server[i].Name < tmm.Server[j].Name
+		})
+		sort.Slice(tmm.Client, func(i, j int) bool {
+			return tmm.Client[i].Name < tmm.Client[j].Name
+		})
+		processed[provider] = tmm
+	}
+	return processed
+}
+
+func getModes(mode tpb.WorkloadMode) []string {
+	switch mode {
+	case tpb.WorkloadMode_CLIENT:
+		return []string{"client"}
+	case tpb.WorkloadMode_SERVER:
+		return []string{"server"}
+	default:
+		return []string{"client", "server"}
+	}
 }
 
 func getMatches(match *tpb.MetricSelector) []string {
@@ -276,46 +397,4 @@ func shallowMergeAccessLogs(parent *tpb.Telemetry, child *tpb.Telemetry) {
 	if childLogging.GetDisabled() != nil {
 		mergedLogging.Disabled = childLogging.Disabled
 	}
-}
-
-// PrometheusEnabled determines if any of the extension providers are for prometheus
-func PrometheusEnabled(providers []*meshconfig.MeshConfig_ExtensionProvider) bool {
-	for _, prov := range providers {
-		if _, ok := prov.Provider.(*meshconfig.MeshConfig_ExtensionProvider_Prometheus); ok {
-			return true
-		}
-	}
-	return false
-}
-
-// MetricsEnabled determines if there is any `metrics` configuration for the provided mesh configuration and Telemetry.
-// Note that this can return `true` even when `spec` is `nil`, in the case there is a default provider.
-func MetricsProviders(metrics TelemetryMetrics, mesh *meshconfig.MeshConfig) TelemetryMetricsProviders {
-	fetchProvider := func(m string) *meshconfig.MeshConfig_ExtensionProvider {
-		for _, p := range mesh.ExtensionProviders {
-			if strings.EqualFold(m, p.Name) {
-				return p
-			}
-		}
-		return nil
-	}
-	res := TelemetryMetricsProviders{}
-	for k, v := range metrics {
-		p := fetchProvider(k)
-		if p == nil {
-			continue
-		}
-		res[p] = v
-	}
-	for _, dp := range mesh.GetDefaultProviders().GetMetrics() {
-		if _, f := metrics[dp]; !f {
-			p := fetchProvider(dp)
-			if p == nil {
-				continue
-			}
-			// Insert default config, no overrides
-			res[p] = map[string]MetricOverride{}
-		}
-	}
-	return res
 }

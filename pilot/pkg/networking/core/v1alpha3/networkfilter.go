@@ -55,7 +55,7 @@ func buildMetadataExchangeNetworkFilters(class istionetworking.ListenerClass) []
 func buildMetricsNetworkFilters(push *model.PushContext, proxy *model.Proxy, class istionetworking.ListenerClass) []*listener.Filter {
 	filterstack := make([]*listener.Filter, 0)
 
-	metrics := model.MetricsProviders(push.Telemetry.EffectiveMetrics(proxy), push.Mesh)
+	metrics := push.Telemetry.EffectiveMetrics(proxy)
 	filterstack = append(filterstack, xdsfilters.BuildTCPStatsFilter(class, metrics)...)
 
 	return filterstack

@@ -42,7 +42,6 @@ import (
 	"istio.io/api/envoy/config/filter/network/metadata_exchange"
 	"istio.io/api/envoy/extensions/stats"
 	meshconfig "istio.io/api/mesh/v1alpha1"
-	tpb "istio.io/api/telemetry/v1alpha1"
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking"
@@ -202,7 +201,7 @@ func buildHTTPMxFilter() *hcm.HttpFilter {
 	}
 }
 
-func BuildTCPStatsFilter(class networking.ListenerClass, metrics model.TelemetryMetricsProviders) []*listener.Filter {
+func BuildTCPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig.MeshConfig_ExtensionProvider]model.TelemetryMetricsMode) []*listener.Filter {
 	res := []*listener.Filter{}
 	// TODO map is not ordered!
 	for provider, metricsCfg := range metrics {
@@ -234,7 +233,7 @@ func BuildTCPStatsFilter(class networking.ListenerClass, metrics model.Telemetry
 	return res
 }
 
-func BuildHTTPStatsFilter(class networking.ListenerClass, metrics model.TelemetryMetricsProviders) []*hcm.HttpFilter {
+func BuildHTTPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig.MeshConfig_ExtensionProvider]model.TelemetryMetricsMode) []*hcm.HttpFilter {
 	res := []*hcm.HttpFilter{}
 	// TODO map is not ordered!
 	for provider, metricsCfg := range metrics {
@@ -279,32 +278,30 @@ var metricToPrometheusMetric = map[string]string{
 	"GRPC_RESPONSE_MESSAGES": "response_messages_total",
 }
 
-func generateStatsConfig(class networking.ListenerClass, metricsCfg map[string]model.MetricOverride) *any.Any {
+func generateStatsConfig(class networking.ListenerClass, metricsCfg model.TelemetryMetricsMode) *any.Any {
 	cfg := stats.PluginConfig{}
 	cfg.DisableHostHeaderFallback = class == networking.ListenerClassSidecarInbound || class == networking.ListenerClassGateway
-	for metricNameEnum, override := range metricsCfg {
-		metricName, f := metricToPrometheusMetric[metricNameEnum]
+	for _, override := range metricsCfg.ForClass(class) {
+		metricName, f := metricToPrometheusMetric[override.Name]
 		if !f {
 			// Not a predefined metric, must be a custom one
-			metricName = metricNameEnum
+			metricName = override.Name
 		}
 		mc := &stats.MetricConfig{
 			Dimensions: map[string]string{},
 			Name:       metricName,
-			Drop:       override.Disabled.GetValue(),
+			Drop:       override.Disabled,
 		}
-		for k, v := range override.TagOverrides {
-			switch v.Operation {
-			case tpb.MetricsOverrides_TagOverride_UPSERT:
-				mc.Dimensions[k] = v.GetValue()
-			case tpb.MetricsOverrides_TagOverride_REMOVE:
-				mc.TagsToRemove = append(mc.TagsToRemove, k)
+		for _, t := range override.Tags {
+			if t.Remove {
+				mc.TagsToRemove = append(mc.TagsToRemove, t.Name)
+			} else {
+				mc.Dimensions[t.Name] = t.Value
 			}
 		}
 		cfg.Metrics = append(cfg.Metrics, mc)
 	}
-	// TODO figure out why proxy does not recognize the proto
-	// return util.MessageToAny(&cfg)
+	// In WASM we are not actually processing protobuf at all, so we need to encode this to JSON
 	cfgJSON, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cfg)
 	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJSON)})
 }
@@ -316,17 +313,6 @@ func rootIDForClass(class networking.ListenerClass) string {
 	default:
 		return "stats_outbound"
 	}
-}
-
-// TODO: import https://github.com/istio/proxy/blob/master/extensions/stats/config.proto
-// and use directly.
-type statsConfig struct {
-	DisableHostHeaderFallback bool             `json:"disable_host_header_fallback,omitempty"`
-	Metrics                   []*metricsConfig `json:"metrics,omitempty"`
-}
-
-type metricsConfig struct {
-	Dimensions map[string]string `json:"dimensions,omitempty"`
 }
 
 // constructVMConfig constructs a VM config. If WASM is enabled, the wasm plugin at filename will be used.
