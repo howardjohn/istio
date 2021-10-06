@@ -111,6 +111,12 @@ func DefaultMeshConfig() meshconfig.MeshConfig {
 				},
 			},
 			{
+				Name: "stackdriver",
+				Provider: &meshconfig.MeshConfig_ExtensionProvider_Stackdriver{
+					Stackdriver: &meshconfig.MeshConfig_ExtensionProvider_StackdriverProvider{},
+				},
+			},
+			{
 				Name: "envoy",
 				Provider: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLog{
 					EnvoyFileAccessLog: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLogProvider{

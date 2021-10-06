@@ -40,6 +40,7 @@ import (
 	alpn "istio.io/api/envoy/config/filter/http/alpn/v2alpha1"
 	"istio.io/api/envoy/config/filter/network/metadata_exchange"
 	"istio.io/api/envoy/config/filter/network/metadata_exchange"
+	sd "istio.io/api/envoy/extensions/stackdriver/config/v1alpha1"
 	"istio.io/api/envoy/extensions/stats"
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	"istio.io/istio/pilot/pkg/features"
@@ -56,8 +57,9 @@ const (
 	TLSTransportProtocol       = "tls"
 	RawBufferTransportProtocol = "raw_buffer"
 
-	MxFilterName    = "istio.metadata_exchange"
-	StatsFilterName = "istio.stats"
+	MxFilterName          = "istio.metadata_exchange"
+	StatsFilterName       = "istio.stats"
+	StackdriverFilterName = "istio.stackdriver"
 )
 
 // Define static filters to be reused across the codebase. This avoids duplicate marshaling/unmarshaling
@@ -205,7 +207,7 @@ func BuildTCPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig
 	res := []*listener.Filter{}
 	// TODO map is not ordered!
 	for provider, metricsCfg := range metrics {
-		switch provider.GetProvider().(type) {
+		switch p := provider.GetProvider().(type) {
 		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
 			cfg := generateStatsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
@@ -225,19 +227,46 @@ func BuildTCPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig
 				ConfigType: &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(wasmConfig)},
 			}
 			res = append(res, f)
+		case *meshconfig.MeshConfig_ExtensionProvider_Stackdriver:
+			cfg := generateSDMetricsConfig(class, p.Stackdriver, metricsCfg)
+			vmConfig := constructVMConfig("", "envoy.wasm.null.stackdriver")
+			vmConfig.VmConfig.VmId = sdVmId(class)
+
+			wasmConfig := &wasmfilter.Wasm{
+				Config: &wasm.PluginConfig{
+					RootId:        vmConfig.VmConfig.VmId,
+					Vm:            vmConfig,
+					Configuration: cfg,
+				},
+			}
+
+			f := &listener.Filter{
+				Name:       StackdriverFilterName,
+				ConfigType: &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(wasmConfig)},
+			}
+			res = append(res, f)
 		default:
-			// Only prometheus supported currently
+			// Only prometheus and SD supported currently
 			continue
 		}
 	}
 	return res
 }
 
+func sdVmId(class networking.ListenerClass) string {
+	switch class {
+	case networking.ListenerClassSidecarInbound:
+		return "stackdriver_inbound"
+	default:
+		return "stackdriver_outbound"
+	}
+}
+
 func BuildHTTPStatsFilter(class networking.ListenerClass, metrics map[*meshconfig.MeshConfig_ExtensionProvider]model.TelemetryMetricsMode) []*hcm.HttpFilter {
 	res := []*hcm.HttpFilter{}
 	// TODO map is not ordered!
 	for provider, metricsCfg := range metrics {
-		switch provider.GetProvider().(type) {
+		switch p := provider.GetProvider().(type) {
 		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
 			cfg := generateStatsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
@@ -257,8 +286,26 @@ func BuildHTTPStatsFilter(class networking.ListenerClass, metrics map[*meshconfi
 				ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: util.MessageToAny(wasmConfig)},
 			}
 			res = append(res, f)
+		case *meshconfig.MeshConfig_ExtensionProvider_Stackdriver:
+			cfg := generateSDMetricsConfig(class, p.Stackdriver, metricsCfg)
+			vmConfig := constructVMConfig("", "envoy.wasm.null.stackdriver")
+			vmConfig.VmConfig.VmId = sdVmId(class)
+
+			wasmConfig := &httpwasm.Wasm{
+				Config: &wasm.PluginConfig{
+					RootId:        vmConfig.VmConfig.VmId,
+					Vm:            vmConfig,
+					Configuration: cfg,
+				},
+			}
+
+			f := &hcm.HttpFilter{
+				Name:       StackdriverFilterName,
+				ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: util.MessageToAny(wasmConfig)},
+			}
+			res = append(res, f)
 		default:
-			// Only prometheus supported currently
+			// Only prometheus and SD supported currently
 			continue
 		}
 	}
@@ -279,8 +326,9 @@ var metricToPrometheusMetric = map[string]string{
 }
 
 func generateStatsConfig(class networking.ListenerClass, metricsCfg model.TelemetryMetricsMode) *any.Any {
-	cfg := stats.PluginConfig{}
-	cfg.DisableHostHeaderFallback = class == networking.ListenerClassSidecarInbound || class == networking.ListenerClassGateway
+	cfg := stats.PluginConfig{
+		DisableHostHeaderFallback: disableHostHeaderFallback(class),
+	}
 	for _, override := range metricsCfg.ForClass(class) {
 		metricName, f := metricToPrometheusMetric[override.Name]
 		if !f {
@@ -306,6 +354,70 @@ func generateStatsConfig(class networking.ListenerClass, metricsCfg model.Teleme
 	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJSON)})
 }
 
+var metricToSDServerMetrics = map[string]string{
+	"REQUEST_COUNT":          "server/request_count",
+	"REQUEST_DURATION":       "server/response_latencies",
+	"REQUEST_SIZE":           "server/request_bytes",
+	"RESPONSE_SIZE":          "server/response_bytes",
+	"TCP_OPENED_CONNECTIONS": "server/connection_open_count",
+	"TCP_CLOSED_CONNECTIONS": "server/connection_close_count",
+	"TCP_SENT_BYTES":         "server/sent_bytes_count",
+	"TCP_RECEIVED_BYTES":     "server/received_bytes_count",
+	"GRPC_REQUEST_MESSAGES":  "",
+	"GRPC_RESPONSE_MESSAGES": "",
+}
+
+var metricToSDClientMetrics = map[string]string{
+	"REQUEST_COUNT":          "client/request_count",
+	"REQUEST_DURATION":       "client/response_latencies",
+	"REQUEST_SIZE":           "client/request_bytes",
+	"RESPONSE_SIZE":          "client/response_bytes",
+	"TCP_OPENED_CONNECTIONS": "client/connection_open_count",
+	"TCP_CLOSED_CONNECTIONS": "client/connection_close_count",
+	"TCP_SENT_BYTES":         "client/sent_bytes_count",
+	"TCP_RECEIVED_BYTES":     "client/received_bytes_count",
+	"GRPC_REQUEST_MESSAGES":  "",
+	"GRPC_RESPONSE_MESSAGES": "",
+}
+
+func generateSDMetricsConfig(class networking.ListenerClass, stackdriver *meshconfig.MeshConfig_ExtensionProvider_StackdriverProvider, metricsCfg model.TelemetryMetricsMode) *any.Any {
+	cfg := sd.PluginConfig{
+		DisableHostHeaderFallback: disableHostHeaderFallback(class),
+	}
+	merticNameMap := metricToSDClientMetrics
+	if class == networking.ListenerClassSidecarInbound {
+		merticNameMap = metricToSDServerMetrics
+	}
+	for _, override := range metricsCfg.ForClass(class) {
+		metricName, f := merticNameMap[override.Name]
+		if !f {
+			// Not a predefined metric, must be a custom one
+			metricName = override.Name
+		}
+		if metricName == "" {
+			continue
+		}
+		cfg.MetricsOverrides[metricName].Drop = override.Disabled
+		for _, t := range override.Tags {
+			if t.Remove {
+				// Remove is not supported by SD
+				continue
+			}
+			if cfg.MetricsOverrides[metricName].TagOverrides == nil {
+				cfg.MetricsOverrides[metricName].TagOverrides = map[string]string{}
+			}
+			cfg.MetricsOverrides[metricName].TagOverrides[t.Name] = t.Value
+		}
+	}
+	// In WASM we are not actually processing protobuf at all, so we need to encode this to JSON
+	cfgJSON, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cfg)
+	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJSON)})
+}
+
+func disableHostHeaderFallback(class networking.ListenerClass) bool {
+	return class == networking.ListenerClassSidecarInbound || class == networking.ListenerClassGateway
+}
+
 func rootIDForClass(class networking.ListenerClass) string {
 	switch class {
 	case networking.ListenerClassSidecarInbound:
@@ -319,7 +431,7 @@ func rootIDForClass(class networking.ListenerClass) string {
 // If not, the builtin (null vm) extension, name, will be used.
 func constructVMConfig(filename, name string) *wasm.PluginConfig_VmConfig {
 	var vmConfig *wasm.PluginConfig_VmConfig
-	if features.EnableWasmTelemetry {
+	if features.EnableWasmTelemetry && filename != "" {
 		vmConfig = &wasm.PluginConfig_VmConfig{
 			VmConfig: &wasm.VmConfig{
 				Runtime:          "envoy.wasm.runtime.v8",
