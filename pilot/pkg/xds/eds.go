@@ -405,7 +405,7 @@ func (eds *EdsGenerator) Generate(proxy *model.Proxy, push *model.PushContext, w
 		builder := NewEndpointBuilder(clusterName, proxy, push)
 		if marshalledEndpoint, f := eds.Server.Cache.Get(builder); f && !features.EnableUnsafeAssertions {
 			// We skip cache if assertions are enabled, so that the cache will assert our eviction logic is correct
-			resources = append(resources, marshalledEndpoint)
+			resources = append(resources, marshalledEndpoint.(*discovery.Resource))
 			cached++
 		} else {
 			l := eds.Server.generateEndpoints(builder)

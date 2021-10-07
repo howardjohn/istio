@@ -29,6 +29,7 @@ import (
 	adminapi "github.com/envoyproxy/go-control-plane/envoy/admin/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	tls "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
+	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
@@ -318,8 +319,9 @@ func (s *DiscoveryServer) cachez(w http.ResponseWriter, req *http.Request) {
 		snapshot := s.Cache.Snapshot()
 		res := make(map[string]string, len(snapshot))
 		totalSize := 0
-		for _, resource := range snapshot {
-			if resource == nil {
+		for _, raw := range snapshot {
+			resource, ok := raw.(*discovery.Resource)
+			if !ok || resource == nil {
 				continue
 			}
 			resourceType := resource.Resource.TypeUrl
@@ -333,7 +335,11 @@ func (s *DiscoveryServer) cachez(w http.ResponseWriter, req *http.Request) {
 	}
 	snapshot := s.Cache.Snapshot()
 	resources := make(map[string][]string, len(snapshot)) // Key is typeUrl and value is resource names.
-	for key, resource := range snapshot {
+	for key, raw := range snapshot {
+		resource, ok := raw.(*discovery.Resource)
+		if !ok || resource == nil {
+			continue
+		}
 		if resource == nil {
 			continue
 		}

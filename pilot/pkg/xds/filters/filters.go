@@ -39,7 +39,6 @@ import (
 
 	alpn "istio.io/api/envoy/config/filter/http/alpn/v2alpha1"
 	"istio.io/api/envoy/config/filter/network/metadata_exchange"
-	"istio.io/api/envoy/config/filter/network/metadata_exchange"
 	sd "istio.io/api/envoy/extensions/stackdriver/config/v1alpha1"
 	"istio.io/api/envoy/extensions/stats"
 	meshconfig "istio.io/api/mesh/v1alpha1"
@@ -206,7 +205,7 @@ func buildHTTPMxFilter() *hcm.HttpFilter {
 func BuildTCPStatsFilter(class networking.ListenerClass, metrics []model.TelemetryMetricsMode) []*listener.Filter {
 	res := []*listener.Filter{}
 	for _, metricsCfg := range metrics {
-		switch p := metricsCfg.Provider.GetProvider().(type) {
+		switch metricsCfg.Provider.GetProvider().(type) {
 		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
 			cfg := generateStatsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
@@ -227,7 +226,7 @@ func BuildTCPStatsFilter(class networking.ListenerClass, metrics []model.Telemet
 			}
 			res = append(res, f)
 		case *meshconfig.MeshConfig_ExtensionProvider_Stackdriver:
-			cfg := generateSDMetricsConfig(class, p.Stackdriver, metricsCfg)
+			cfg := generateSDMetricsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("", "envoy.wasm.null.stackdriver")
 			vmConfig.VmConfig.VmId = sdVmId(class)
 
@@ -255,7 +254,7 @@ func BuildTCPStatsFilter(class networking.ListenerClass, metrics []model.Telemet
 func BuildHTTPStatsFilter(class networking.ListenerClass, metrics []model.TelemetryMetricsMode) []*hcm.HttpFilter {
 	res := []*hcm.HttpFilter{}
 	for _, metricsCfg := range metrics {
-		switch p := metricsCfg.Provider.GetProvider().(type) {
+		switch metricsCfg.Provider.GetProvider().(type) {
 		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
 			cfg := generateStatsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("/etc/istio/extensions/stats-filter.compiled.wasm", "envoy.wasm.stats")
@@ -276,7 +275,7 @@ func BuildHTTPStatsFilter(class networking.ListenerClass, metrics []model.Teleme
 			}
 			res = append(res, f)
 		case *meshconfig.MeshConfig_ExtensionProvider_Stackdriver:
-			cfg := generateSDMetricsConfig(class, p.Stackdriver, metricsCfg)
+			cfg := generateSDMetricsConfig(class, metricsCfg)
 			vmConfig := constructVMConfig("", "envoy.wasm.null.stackdriver")
 			vmConfig.VmConfig.VmId = sdVmId(class)
 
@@ -339,7 +338,7 @@ func generateStatsConfig(class networking.ListenerClass, metricsCfg model.Teleme
 		cfg.Metrics = append(cfg.Metrics, mc)
 	}
 	// In WASM we are not actually processing protobuf at all, so we need to encode this to JSON
-	cfgJSON, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cfg)
+	cfgJSON, _ := protojson.Marshal(&cfg)
 	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJSON)})
 }
 
@@ -378,7 +377,7 @@ func sdVmId(class networking.ListenerClass) string {
 	}
 }
 
-func generateSDMetricsConfig(class networking.ListenerClass, stackdriver *meshconfig.MeshConfig_ExtensionProvider_StackdriverProvider, metricsCfg model.TelemetryMetricsMode) *any.Any {
+func generateSDMetricsConfig(class networking.ListenerClass,  metricsCfg model.TelemetryMetricsMode) *any.Any {
 	cfg := sd.PluginConfig{
 		DisableHostHeaderFallback: disableHostHeaderFallback(class),
 	}
@@ -408,7 +407,7 @@ func generateSDMetricsConfig(class networking.ListenerClass, stackdriver *meshco
 		}
 	}
 	// In WASM we are not actually processing protobuf at all, so we need to encode this to JSON
-	cfgJSON, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cfg)
+	cfgJSON, _ := protojson.Marshal(&cfg)
 	return util.MessageToAny(&protobuf.StringValue{Value: string(cfgJSON)})
 }
 

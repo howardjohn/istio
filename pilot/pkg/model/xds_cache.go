@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -118,6 +117,8 @@ type XdsCacheEntry interface {
 
 type CacheToken uint64
 
+type CacheValue interface{}
+
 // XdsCache interface defines a store for caching XDS responses.
 // All operations are thread safe.
 type XdsCache interface {
@@ -125,10 +126,10 @@ type XdsCache interface {
 	// If the cache has been updated to a newer push context, the write will be dropped silently.
 	// This ensures stale data does not overwrite fresh data when dealing with concurrent
 	// writers.
-	Add(entry XdsCacheEntry, pushRequest *PushRequest, value *discovery.Resource)
+	Add(entry XdsCacheEntry, pushRequest *PushRequest, value CacheValue)
 	// Get retrieves the cached value if it exists. The boolean indicates
 	// whether the entry exists in the cache.
-	Get(entry XdsCacheEntry) (*discovery.Resource, bool)
+	Get(entry XdsCacheEntry) (CacheValue, bool)
 	// Clear removes the cache entries that are dependent on the configs passed.
 	Clear(map[ConfigKey]struct{})
 	// ClearAll clears the entire cache.
@@ -136,7 +137,7 @@ type XdsCache interface {
 	// Keys returns all currently configured keys. This is for testing/debug only
 	Keys() []string
 	// Snapshot returns a snapshot of all keys and values. This is for testing/debug only
-	Snapshot() map[string]*discovery.Resource
+	Snapshot() map[string]CacheValue
 }
 
 // NewXdsCache returns an instance of a cache.
@@ -190,7 +191,7 @@ func newLru() simplelru.LRUCache {
 // because multiple writers may get cache misses concurrently, but they ought to generate identical
 // configuration. This also checks that our XDS config generation is deterministic, which is a very
 // important property.
-func (l *lruCache) assertUnchanged(key string, existing *discovery.Resource, replacement *discovery.Resource) {
+func (l *lruCache) assertUnchanged(key string, existing CacheValue, replacement CacheValue) {
 	if l.enableAssertions {
 		if existing == nil {
 			// This is a new addition, not an update
@@ -219,7 +220,7 @@ func (l *lruCache) assertInvalidPushRequest(entry XdsCacheEntry, req *PushReques
 	}
 }
 
-func (l *lruCache) Add(entry XdsCacheEntry, pushReq *PushRequest, value *discovery.Resource) {
+func (l *lruCache) Add(entry XdsCacheEntry, pushReq *PushRequest, value CacheValue) {
 	l.assertInvalidPushRequest(entry, pushReq)
 	if !entry.Cacheable() || pushReq == nil || pushReq.Start.Equal(time.Time{}) {
 		return
@@ -255,11 +256,11 @@ func (l *lruCache) Add(entry XdsCacheEntry, pushReq *PushRequest, value *discove
 }
 
 type cacheValue struct {
-	value *discovery.Resource
+	value CacheValue
 	token CacheToken
 }
 
-func (l *lruCache) Get(entry XdsCacheEntry) (*discovery.Resource, bool) {
+func (l *lruCache) Get(entry XdsCacheEntry) (CacheValue, bool) {
 	if !entry.Cacheable() {
 		return nil, false
 	}
@@ -320,11 +321,11 @@ func (l *lruCache) Keys() []string {
 	return keys
 }
 
-func (l *lruCache) Snapshot() map[string]*discovery.Resource {
+func (l *lruCache) Snapshot() map[string]CacheValue {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	iKeys := l.store.Keys()
-	res := make(map[string]*discovery.Resource, len(iKeys))
+	res := make(map[string]CacheValue, len(iKeys))
 	for _, ik := range iKeys {
 		v, ok := l.store.Get(ik)
 		if !ok {
@@ -341,9 +342,9 @@ type DisabledCache struct{}
 
 var _ XdsCache = &DisabledCache{}
 
-func (d DisabledCache) Add(key XdsCacheEntry, pushReq *PushRequest, value *discovery.Resource) {}
+func (d DisabledCache) Add(key XdsCacheEntry, pushReq *PushRequest, value CacheValue) {}
 
-func (d DisabledCache) Get(XdsCacheEntry) (*discovery.Resource, bool) {
+func (d DisabledCache) Get(XdsCacheEntry) (CacheValue, bool) {
 	return nil, false
 }
 
@@ -353,4 +354,4 @@ func (d DisabledCache) ClearAll() {}
 
 func (d DisabledCache) Keys() []string { return nil }
 
-func (d DisabledCache) Snapshot() map[string]*discovery.Resource { return nil }
+func (d DisabledCache) Snapshot() map[string]CacheValue { return nil }

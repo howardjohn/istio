@@ -326,7 +326,7 @@ func BuildSidecarOutboundVirtualHosts(node *model.Proxy, push *model.PushContext
 
 	resource, exist := xdsCache.Get(routeCache)
 	if exist {
-		return nil, resource, routeCache
+		return nil, resource.(*discovery.Resource), routeCache
 	}
 
 	vHostPortMap := make(map[int][]*route.VirtualHost)

@@ -18,7 +18,11 @@ import (
 	"sort"
 	"strings"
 
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"github.com/gogo/protobuf/types"
+	"istio.io/istio/pkg/config"
+	"istio.io/istio/pkg/config/schema/gvk"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	tpb "istio.io/api/telemetry/v1alpha1"
@@ -146,21 +150,61 @@ type TagOverride struct {
 	Value  string
 }
 
+type TelemetryKey struct {
+	Root      ConfigKey
+	Namespace ConfigKey
+	Workload  ConfigKey
+}
+
+func (t TelemetryKey) Key() string {
+	return t.Root.String() + "~" + t.Namespace.String() + "~" + t.Workload.String()
+}
+
+func (t TelemetryKey) DependentTypes() []config.GroupVersionKind {
+	return nil
+}
+
+func (t TelemetryKey) DependentConfigs() []ConfigKey {
+	return []ConfigKey{t.Root, t.Namespace, t.Workload}
+}
+
+func (t TelemetryKey) Cacheable() bool {
+	return true
+}
+
+var telemetryCache = NewXdsCache()
+
+type MetricsFilters struct {
+	HTTPClient []*hcm.HttpFilter
+	HTTPServer []*hcm.HttpFilter
+	TCPClient []*listener.Filter
+	TCPServer []*listener.Filter
+}
+
 func (t *Telemetries) EffectiveMetrics(proxy *Proxy) []TelemetryMetricsMode {
 	if t == nil {
 		return nil
 	}
 
+	key := TelemetryKey{}
 	namespace := proxy.ConfigNamespace
 	workload := labels.Collection{proxy.Metadata.Labels}
 	// Order here matters. The latter elements will override the first elements
 	ms := []*tpb.Metrics{}
 	if t.RootNamespace != "" {
-		ms = append(ms, t.namespaceWideTelemetry(t.RootNamespace).GetMetrics()...)
+		telemetry := t.namespaceWideTelemetryConfig(t.RootNamespace)
+		if telemetry != nil {
+			key.Root = ConfigKey{Kind: gvk.Telemetry, Name: telemetry.Name, Namespace: telemetry.Namespace}
+			ms = append(ms, telemetry.Spec.GetMetrics()...)
+		}
 	}
 
 	if namespace != t.RootNamespace {
-		ms = append(ms, t.namespaceWideTelemetry(namespace).GetMetrics()...)
+		telemetry := t.namespaceWideTelemetryConfig(namespace)
+		if telemetry != nil {
+			key.Root = ConfigKey{Kind: gvk.Telemetry, Name: telemetry.Name, Namespace: telemetry.Namespace}
+			ms = append(ms, telemetry.Spec.GetMetrics()...)
+		}
 	}
 
 	for _, telemetry := range t.NamespaceToTelemetries[namespace] {
@@ -170,9 +214,19 @@ func (t *Telemetries) EffectiveMetrics(proxy *Proxy) []TelemetryMetricsMode {
 		}
 		selector := labels.Instance(spec.GetSelector().GetMatchLabels())
 		if workload.IsSupersetOf(selector) {
+			key.Root = ConfigKey{Kind: gvk.Telemetry, Name: telemetry.Name, Namespace: telemetry.Namespace}
 			ms = append(ms, spec.GetMetrics()...)
 			break
 		}
+	}
+
+	// TODO:
+	//  inline the filters code here.
+	precomputed, f := telemetryCache.Get(key)
+	if f {
+		 _ = precomputed
+		return nil
+		//return precomputed.(*MetricsFilters)
 	}
 
 	tmm := mergeMetrics(ms, t.MeshConfig)
@@ -196,6 +250,8 @@ func (t *Telemetries) EffectiveMetrics(proxy *Proxy) []TelemetryMetricsMode {
 	sort.Slice(res, func(i, j int) bool {
 		return res[i].Provider.GetName() < res[i].Provider.GetName()
 	})
+
+
 	return res
 }
 
@@ -204,6 +260,15 @@ func (t *Telemetries) namespaceWideTelemetry(namespace string) *tpb.Telemetry {
 		spec := tel.Spec
 		if len(spec.GetSelector().GetMatchLabels()) == 0 {
 			return spec
+		}
+	}
+	return nil
+}
+
+func (t *Telemetries) namespaceWideTelemetryConfig(namespace string) *Telemetry {
+	for _, tel := range t.NamespaceToTelemetries[namespace] {
+		if len(tel.Spec.GetSelector().GetMatchLabels()) == 0 {
+			return &tel
 		}
 	}
 	return nil

@@ -183,3 +183,19 @@ const (
 	ListenerClassSidecarOutbound
 	ListenerClassGateway
 )
+
+type TelemetryMode int
+
+const (
+	TelemetryModeServer TelemetryMode = iota
+	TelemetryModeClient
+)
+
+func TelemetryModeForClass(class ListenerClass) TelemetryMode {
+	switch class {
+	case ListenerClassSidecarInbound:
+		return TelemetryModeServer
+	default:
+		return TelemetryModeClient
+	}
+}

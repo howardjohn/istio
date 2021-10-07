@@ -1214,7 +1214,7 @@ func (cb *ClusterBuilder) getAllCachedSubsetClusters(clusterKey clusterCache) ([
 	res := make([]*discovery.Resource, 0, 1+len(destinationRule.GetSubsets()))
 	cachedCluster, f := cb.cache.Get(&clusterKey)
 	allFound := f
-	res = append(res, cachedCluster)
+	res = append(res, cachedCluster.(*discovery.Resource))
 	dir, _, host, port := model.ParseSubsetKey(clusterKey.clusterName)
 	for _, ss := range destinationRule.GetSubsets() {
 		clusterKey.clusterName = model.BuildSubsetKey(dir, ss.Name, host, port)
@@ -1222,7 +1222,7 @@ func (cb *ClusterBuilder) getAllCachedSubsetClusters(clusterKey clusterCache) ([
 		if !f {
 			allFound = false
 		}
-		res = append(res, cachedCluster)
+		res = append(res, cachedCluster.(*discovery.Resource))
 	}
 	return res, allFound
 }
