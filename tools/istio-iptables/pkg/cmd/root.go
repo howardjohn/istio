@@ -87,7 +87,6 @@ var configureRoutesCommand = &cobra.Command{
 	PreRun: bindFlags,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := constructConfig()
-		log.Errorf("howardjohn: in routing with %s", cfg.String())
 		if !cfg.SkipRuleApply {
 			if err := configureRoutes(cfg, nil); err != nil {
 				handleErrorWithCode(err, 1)
