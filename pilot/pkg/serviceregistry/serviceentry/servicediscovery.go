@@ -262,6 +262,8 @@ func (s *ServiceEntryStore) workloadEntryHandler(_, curr config.Config, event mo
 	s.XdsUpdater.ConfigUpdate(pushReq)
 }
 
+var Trigger = make(chan struct{})
+
 // getUpdatedConfigs returns related service entries when full push
 func getUpdatedConfigs(services []*model.Service) map[model.ConfigKey]struct{} {
 	configsUpdated := map[model.ConfigKey]struct{}{}
@@ -359,8 +361,11 @@ func (s *ServiceEntryStore) serviceEntryHandler(_, curr config.Config, event mod
 	}
 
 	oldInstances := s.serviceInstances.getServiceEntryInstances(key)
+	log.Errorf("howardjohn: old %v", oldInstances)
 	for configKey, old := range oldInstances {
 		s.deleteExistingInstances(configKey, old)
+		Trigger <- struct{}{}
+		<-Trigger
 	}
 	if event == model.EventDelete {
 		s.serviceInstances.deleteAllServiceEntryInstances(key)

@@ -515,6 +515,41 @@ func TestServiceDiscoveryServiceUpdate(t *testing.T) {
 	})
 }
 
+func TestServiceDiscoveryRace(t *testing.T) {
+	store, sd, events, stopFn := initServiceDiscovery()
+	log.Scopes()["default"].SetOutputLevel(log.DebugLevel)
+	defer stopFn()
+
+	// Setup a couple workload entries for test. These will be selected by the `selector` SE
+	wle := createWorkloadEntry("wl", selector.Name,
+		&networking.WorkloadEntry{
+			Address:        "2.2.2.2",
+			Labels:         map[string]string{"app": "wle"},
+			ServiceAccount: "default",
+		})
+	wle2 := createWorkloadEntry("wl", selector.Name,
+		&networking.WorkloadEntry{
+			Address:        "2.2.2.",
+			Labels:         map[string]string{"app": "wle"},
+			ServiceAccount: "other",
+		})
+	t.Run("service entry", func(t *testing.T) {
+		// Add just the ServiceEntry with selector. We should see no instances
+		createConfigs([]*config.Config{selector}, store, t)
+		createConfigs([]*config.Config{wle}, store, t)
+		expectProxyInstances2(t, sd, 2, "2.2.2.2")
+		createConfigs([]*config.Config{selector2}, store, t)
+		createConfigs([]*config.Config{wle2}, store, t)
+		createConfigs([]*config.Config{selector3}, store, t)
+		<-Trigger
+		expectProxyInstances2(t, sd, 2, "2.2.2.2")
+		// Trigger <- struct{}{}
+		_ = sd
+		_ = events
+		time.Sleep(time.Second)
+	})
+}
+
 func TestServiceDiscoveryWorkloadUpdate(t *testing.T) {
 	store, sd, events, stopFn := initServiceDiscovery()
 	defer stopFn()
@@ -933,6 +968,18 @@ func expectProxyInstances(t testing.TB, sd *ServiceEntryStore, expected []*model
 		}
 		return nil
 	}, retry.Converge(2), retry.Timeout(time.Second*5))
+}
+
+func expectProxyInstances2(t testing.TB, sd *ServiceEntryStore, n int, ip string) {
+	t.Helper()
+	// The system is eventually consistent, so add some retries
+	retry.UntilSuccessOrFail(t, func() error {
+		instances := sd.GetProxyServiceInstances(&model.Proxy{IPAddresses: []string{ip}, Metadata: &model.NodeMetadata{}})
+		if err := compare(t, len(instances), n); err != nil {
+			return err
+		}
+		return nil
+	}, retry.Converge(2), retry.Timeout(time.Second*1))
 }
 
 func expectEvents(t testing.TB, ch chan Event, events ...Event) {
@@ -1535,6 +1582,42 @@ func BenchmarkWorkloadInstanceHandler(b *testing.B) {
 		waitUntilEvent(b, eventCh, Event{kind: "eds", host: "dns.selector.com", namespace: dnsSelector.Namespace, endpoints: 2})
 
 		stopFn()
+	}
+}
+
+func BenchmarkWorkloadEntryHandlerNew(b *testing.B) {
+	// Setup a couple workload entries for test. These will be selected by the `selector` SE
+	wle := createWorkloadEntry("wl", selector.Namespace,
+		&networking.WorkloadEntry{
+			Address:        "2.2.2.2",
+			Labels:         map[string]string{"app": "wle"},
+			ServiceAccount: "default",
+		})
+	store, sd, events, stopFn := initServiceDiscovery()
+	sd.AppendWorkloadHandler(func(instance *model.WorkloadInstance, event model.Event) {
+		// NOP, but make sure the code path is hit
+	})
+	b.Cleanup(stopFn)
+	sd.workloadEntryHandler(config.Config{}, *wle, model.EventAdd)
+	createConfigs([]*config.Config{selector}, store, b)
+	waitUntilEvent(b, events,
+		Event{kind: "svcupdate", host: "selector.com", namespace: selector.Namespace})
+
+	stop := make(chan struct{})
+	defer func() { close(stop) }()
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-events: // drain
+			}
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		old := *wle
+		wle.Generation++
+		sd.workloadEntryHandler(old, *wle, model.EventUpdate)
 	}
 }
 

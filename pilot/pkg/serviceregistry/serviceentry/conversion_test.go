@@ -430,6 +430,49 @@ var selector = &config.Config{
 	},
 }
 
+var selector2 = &config.Config{
+	Meta: config.Meta{
+		GroupVersionKind:  gvk.ServiceEntry,
+		Name:              "selector",
+		Namespace:         "selector",
+		CreationTimestamp: GlobalTime,
+	},
+	Spec: &networking.ServiceEntry{
+		Hosts: []string{"selector.com"},
+		Ports: []*networking.Port{
+			{Number: 444, Name: "tcp-444", Protocol: "tcp"},
+			{Number: 445, Name: "http-445", Protocol: "http"},
+			{Number: 446, Name: "http-446", Protocol: "http"},
+		},
+		WorkloadSelector: &networking.WorkloadSelector{
+			Labels: map[string]string{"app": "wle"},
+		},
+		Resolution: networking.ServiceEntry_STATIC,
+	},
+}
+
+var selector3 = &config.Config{
+	Meta: config.Meta{
+		GroupVersionKind:  gvk.ServiceEntry,
+		Name:              "selector",
+		Namespace:         "selector",
+		CreationTimestamp: GlobalTime,
+	},
+	Spec: &networking.ServiceEntry{
+		Hosts: []string{"selector.com"},
+		Ports: []*networking.Port{
+			{Number: 444, Name: "tcp-444", Protocol: "tcp"},
+			{Number: 445, Name: "http-445", Protocol: "http"},
+			{Number: 446, Name: "http-446", Protocol: "http"},
+			{Number: 447, Name: "http-447", Protocol: "http"},
+		},
+		WorkloadSelector: &networking.WorkloadSelector{
+			Labels: map[string]string{"app": "wle"},
+		},
+		Resolution: networking.ServiceEntry_STATIC,
+	},
+}
+
 // DNS ServiceEntry with a selector
 var dnsSelector = &config.Config{
 	Meta: config.Meta{
