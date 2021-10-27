@@ -175,10 +175,10 @@ func getRequest(url string) (*proto.ForwardEchoRequest, error) {
 	}
 
 	for _, header := range headers {
-		parts := strings.Split(header, ":")
+		parts := strings.SplitN(header, ":", 2)
 
 		// require name:value format
-		if len(parts) != 2 {
+		if len(parts) < 2 {
 			return nil, fmt.Errorf("invalid header format: %q (want name:value)", header)
 		}
 
