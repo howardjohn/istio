@@ -161,6 +161,10 @@ if [[ -z "${SKIP_SETUP:-}" ]]; then
     export INTEGRATION_TEST_KUBECONFIG
     INTEGRATION_TEST_KUBECONFIG=NONE
   fi
+
+  if [ "${IP_FAMILY}" == "ipv6" ]; then
+    su-exec 0:0 ip6tables -t nat -A POSTROUTING -s $(docker network inspect kind | jq .[0].IPAM.Config[1].Subnet -r) ! -o docker0 -j MASQUERADE
+  fi
 fi
 
 if [[ -z "${SKIP_BUILD:-}" ]]; then
