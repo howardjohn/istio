@@ -32,6 +32,7 @@ import (
 	"istio.io/istio/pkg/test/util/retry"
 	"istio.io/istio/pkg/test/util/tmpl"
 	"istio.io/istio/pkg/test/util/yml"
+	"istio.io/pkg/log"
 )
 
 // callsPerCluster is used to ensure cross-cluster load balancing has a chance to work
@@ -236,6 +237,7 @@ func (c TrafficTestCase) Run(t framework.TestContext, namespace string) {
 
 func RunAllTrafficTests(t framework.TestContext, i istio.Instance, apps *EchoDeployments) {
 	cases := map[string][]TrafficTestCase{}
+	log.Errorf("howardjohn: exclude ipv4?", t.Settings().Selector.Excludes(label.NewSet(label.IPv4)))
 	if !t.Settings().Selector.Excludes(label.NewSet(label.IPv4)) { // https://github.com/istio/istio/issues/35835
 		cases["jwt-claim-route"] = jwtClaimRoute(apps)
 	}
