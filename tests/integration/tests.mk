@@ -33,11 +33,11 @@ ifneq ($(TAG),)
 endif
 
 _INTEGRATION_TEST_SELECT_FLAGS ?= --istio.test.select=$(TEST_SELECT)
-ifeq ($(JOB_TYPE),postsubmit)
-_INTEGRATION_TEST_SELECT_FLAGS += ",-postsubmit"
+ifneq ($(JOB_TYPE),postsubmit)
+_INTEGRATION_TEST_SELECT_FLAGS:="$(_INTEGRATION_TEST_SELECT_FLAGS),-postsubmit"
 endif
 ifeq ($(IP_FAMILY),ipv6)
-_INTEGRATION_TEST_SELECT_FLAGS += ",-ipv4"
+_INTEGRATION_TEST_SELECT_FLAGS:="$(_INTEGRATION_TEST_SELECT_FLAGS),-ipv4"
 endif
 
 # $(INTEGRATION_TEST_KUBECONFIG) overrides all kube config settings.
