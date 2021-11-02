@@ -30,6 +30,7 @@ import (
 	gogojsonpb "github.com/gogo/protobuf/jsonpb"
 	"github.com/hashicorp/go-multierror"
 	kubeApiCore "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	kubeApiMeta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -252,7 +253,7 @@ func cleanupInClusterCRs(t framework.TestContext, cs cluster.Cluster) {
 				t.Logf("failed to delete existing CR: %v", err)
 			}
 		}
-	} else {
+	} else if !errors.IsNotFound(err) {
 		t.Logf("failed to list existing CR: %v", err.Error())
 	}
 
