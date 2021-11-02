@@ -170,6 +170,32 @@ EOF
   if [[ -z "${NOMETALBINSTALL}" ]]; then
     install_metallb ""
   fi
+
+  # IPv6 clusters need some CoreDNS changes in order to work in CI:
+  # 1. Istio CI doesn't offer IPv6 connectivity, so CoreDNS should be configured
+  # to work in an offline environment:
+  # https://github.com/coredns/coredns/issues/2494#issuecomment-457215452
+  # 2. k8s CI adds some internal domains to resolv.conf search field;
+  # CoreDNS should handle those domains and answer with NXDOMAIN instead of SERVFAIL
+  # otherwise pods stops trying to resolve the domain.
+  if [ "${IP_FAMILY}" = "ipv6" ]; then
+      # Get the current config
+      original_coredns=$(kubectl get -oyaml -n=kube-system configmap/coredns)
+      echo "Original CoreDNS config:"
+      echo "${original_coredns}"
+      # Patch it
+      fixed_coredns=$(
+        printf '%s' "${original_coredns}" | sed \
+          -e 's/^.*kubernetes cluster\.local/& internal/' \
+          -e '/^.*upstream$/d' \
+          -e '/^.*fallthrough.*$/d' \
+          -e '/^.*forward . \/etc\/resolv.conf$/d' \
+          -e '/^.*loop$/d' \
+      )
+      echo "Patched CoreDNS config:"
+      echo "${fixed_coredns}"
+      printf '%s' "${fixed_coredns}" | kubectl apply -f -
+    fi
 }
 
 ###############################################################################
