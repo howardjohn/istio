@@ -56,6 +56,7 @@ const (
 
 func TestCustomizeMetrics(t *testing.T) {
 	framework.NewTest(t).
+		Label(label.IPv4). // https://github.com/istio/istio/issues/35835
 		Features("observability.telemetry.stats.prometheus.customize-metric").
 		Features("observability.telemetry.request-classification").
 		Features("extensibility.wasm.remote-load").

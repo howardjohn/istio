@@ -33,8 +33,11 @@ ifneq ($(TAG),)
 endif
 
 _INTEGRATION_TEST_SELECT_FLAGS ?= --istio.test.select=$(TEST_SELECT)
-ifeq ($(TEST_SELECT),)
-    _INTEGRATION_TEST_SELECT_FLAGS = --istio.test.select=-postsubmit,-flaky
+ifeq ($(JOB_TYPE),postsubmit)
+_INTEGRATION_TEST_SELECT_FLAGS += ",-postsubmit"
+endif
+ifeq ($(IP_FAMILY),ipv6)
+_INTEGRATION_TEST_SELECT_FLAGS += ",-ipv4"
 endif
 
 # $(INTEGRATION_TEST_KUBECONFIG) overrides all kube config settings.
@@ -98,7 +101,7 @@ test.integration.kube.presubmit: | $(JUNIT_REPORT) check-go-tag
 .PHONY: test.integration.kube.reachability
 test.integration.kube.reachability: | $(JUNIT_REPORT) check-go-tag
 	$(GO) test -p 1 ${T} -tags=integ ./tests/integration/... -timeout 30m \
-	${_INTEGRATION_TEST_FLAGS} \
+	${_INTEGRATION_TEST_FLAGS} ${_INTEGRATION_TEST_SELECT_FLAGS} \
 	2>&1 | tee >($(JUNIT_REPORT) > $(JUNIT_OUT))
 
 # Defines a target to run a minimal reachability testing basic traffic
