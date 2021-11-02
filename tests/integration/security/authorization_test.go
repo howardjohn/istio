@@ -697,6 +697,7 @@ func TestAuthorization_IngressGateway(t *testing.T) {
 // TestAuthorization_EgressGateway tests v1beta1 authorization on egress gateway.
 func TestAuthorization_EgressGateway(t *testing.T) {
 	framework.NewTest(t).
+		Label(label.IPv4). // https://github.com/istio/istio/issues/35835
 		Features("security.authorization.egress-gateway").
 		Run(func(t framework.TestContext) {
 			ns := apps.Namespace1
