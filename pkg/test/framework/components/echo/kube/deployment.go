@@ -337,10 +337,13 @@ spec:
       dnsPolicy: None
       dnsConfig:
         nameservers:
-        - "8.8.8.8"
-        - "2001:4860:4860::8888"
+        # Unintuitive, set DNS servers to something that is a valid IP but will refuse connection
+        # This ensures that DNS traffic doesn't hang for clusters that do not have external connectivity
+        # In particular, our CI cannot send external IPv6 requests.
+        - "127.0.0.6"
+        - "::6"
         searches:
-        - "com"
+        - "example.com"
         options:
         - name: "ndots"
           value: "1"

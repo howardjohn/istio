@@ -105,8 +105,10 @@ func (c *dnsProtocol) makeRequest(ctx context.Context, rreq *request) (string, e
 	}()
 	ctx, cancel := context.WithTimeout(ctx, rreq.Timeout)
 	defer cancel()
-	ips, _ := r.LookupIP(ctx, nt, req.hostname)
-
+	ips, err := r.LookupIP(ctx, nt, req.hostname)
+	if err != nil {
+		return "", err
+	}
 	var outBuffer bytes.Buffer
 	outBuffer.WriteString(fmt.Sprintf("[%d] Hostname=%s\n", rreq.RequestID, req.hostname))
 	outBuffer.WriteString(fmt.Sprintf("[%d] Protocol=%s\n", rreq.RequestID, req.protocol))
@@ -115,6 +117,7 @@ func (c *dnsProtocol) makeRequest(ctx context.Context, rreq *request) (string, e
 	for n, i := range ips {
 		outBuffer.WriteString(fmt.Sprintf("[%d body] Response%d=%s\n", rreq.RequestID, n, i.String()))
 	}
+
 	return outBuffer.String(), nil
 }
 
