@@ -345,18 +345,36 @@ function install_metallb() {
   kubectl apply --kubeconfig="$KUBECONFIG" -f "${COMMON_SCRIPTS}/metallb.yaml"
   kubectl create --kubeconfig="$KUBECONFIG" secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
 
-  if [ -z "${METALLB_IPS[*]}" ]; then
+  if [ -z "${METALLB_IPS4[*]}" ]; then
     # Take IPs from the end of the docker kind network subnet to use for MetalLB IPs
     DOCKER_KIND_SUBNET="$(docker inspect kind | jq '.[0].IPAM.Config[0].Subnet' -r)"
-    METALLB_IPS=()
+    METALLB_IPS4=()
     while read -r ip; do
-      METALLB_IPS+=("$ip")
+      METALLB_IPS4+=("$ip")
     done < <(cidr_to_ips "$DOCKER_KIND_SUBNET" | tail -n 100)
+    METALLB_IPS6=()
+    if [[ "$(docker inspect kind | jq '.[0].IPAM.Config | length' -r)" == 2 ]]; then
+      # Two configs? Must be dual stack.
+      DOCKER_KIND_SUBNET="$(docker inspect kind | jq '.[0].IPAM.Config[1].Subnet' -r)"
+      while read -r ip; do
+        METALLB_IPS6+=("$ip")
+      done < <(cidr_to_ips "$DOCKER_KIND_SUBNET" | tail -n 100)
+    fi
   fi
 
   # Give this cluster of those IPs
   RANGE="${METALLB_IPS[0]}-${METALLB_IPS[9]}"
   METALLB_IPS=("${METALLB_IPS[@]:10}")
+  RANGE="["
+  for i in {0..9}; do
+    RANGE+="${METALLB_IPS4[1]},"
+    METALLB_IPS4=("${METALLB_IPS4[@]:1}")
+    if [[ "${#METALLB_IPS6[@]}" != 0 ]]; then
+      RANGE+="${METALLB_IPS6[1]},"
+      METALLB_IPS6=("${METALLB_IPS6[@]:1}")
+    fi
+  done
+  RANGE="${RANGE%?}]"
 
   echo 'apiVersion: v1
 kind: ConfigMap
@@ -368,8 +386,7 @@ data:
     address-pools:
     - name: default
       protocol: layer2
-      addresses:
-      - '"$RANGE" | kubectl apply --kubeconfig="$KUBECONFIG" -f -
+      addresses: '"$RANGE" | kubectl apply --kubeconfig="$KUBECONFIG" -f -
 }
 
 function connect_metallb() {
@@ -389,7 +406,9 @@ function connect_metallb() {
 function cidr_to_ips() {
     CIDR="$1"
     python3 - <<EOF
-from ipaddress import IPv4Network; [print(str(ip)) for ip in IPv4Network('$CIDR').hosts()]
+from ipaddress import ip_network;
+from itertools import islice;
+[print(str(ip) + "/" + str(ip.max_prefixlen)) for ip in islice(ip_network('$CIDR').hosts(), 100)]
 EOF
 }
 
