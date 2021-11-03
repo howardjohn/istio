@@ -334,10 +334,6 @@ function connect_kind_clusters() {
     docker exec "${C2_NODE}" ip route add "${C1_POD_CIDR}" via "${C1_DOCKER_IP}"
     docker exec "${C2_NODE}" ip route add "${C1_SVC_CIDR}" via "${C1_DOCKER_IP}"
   fi
-
-  # Set up routing rules for inter-cluster pod to MetalLB LoadBalancer communication
-  connect_metallb "$C1_NODE" "$C2_KUBECONFIG" "$C2_DOCKER_IP"
-  connect_metallb "$C2_NODE" "$C1_KUBECONFIG" "$C1_DOCKER_IP"
 }
 
 function install_metallb() {
@@ -363,8 +359,6 @@ function install_metallb() {
   fi
 
   # Give this cluster of those IPs
-  RANGE="${METALLB_IPS[0]}-${METALLB_IPS[9]}"
-  METALLB_IPS=("${METALLB_IPS[@]:10}")
   RANGE="["
   for i in {0..9}; do
     RANGE+="${METALLB_IPS4[1]},"
