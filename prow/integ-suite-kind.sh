@@ -159,7 +159,7 @@ if [[ -z "${SKIP_SETUP:-}" ]]; then
   fi
 
   if [ "${IP_FAMILY}" == "ipv6" ]; then
-    su-exec 0:0 ip6tables -t nat -A POSTROUTING -s $(docker network inspect kind | jq .[0].IPAM.Config[1].Subnet -r) ! -o docker0 -j MASQUERADE
+    su-exec 0:0 ip6tables -t nat -A POSTROUTING -s "$(docker network inspect kind | jq .[0].IPAM.Config[1].Subnet -r)" ! -o docker0 -j MASQUERADE
   fi
 fi
 
