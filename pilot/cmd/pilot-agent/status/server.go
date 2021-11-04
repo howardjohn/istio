@@ -76,6 +76,9 @@ var (
 
 var PrometheusScrapingConfig = env.RegisterStringVar("ISTIO_PROMETHEUS_ANNOTATIONS", "", "")
 
+var disableAppProbeKeepAlives = env.RegisterBoolVar("DISABLE_APP_PROBE_KEEP_ALIVES", true,
+	"If true, app probes will not use keepalives. This mirrors kubelets behavior").Get()
+
 var (
 	appProberPattern = regexp.MustCompile(`^/app-health/[^/]+/(livez|readyz|startupz)$`)
 
@@ -235,6 +238,7 @@ func NewServer(config Options) (*Server, error) {
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 					DialContext:     d.DialContext,
+					DisableKeepAlives: disableAppProbeKeepAlives,
 				},
 				CheckRedirect: redirectChecker(),
 			}
