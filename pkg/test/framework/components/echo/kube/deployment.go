@@ -42,6 +42,7 @@ import (
 	"istio.io/istio/pkg/test/framework/components/istio"
 	"istio.io/istio/pkg/test/framework/components/istioctl"
 	"istio.io/istio/pkg/test/framework/image"
+	testlabel "istio.io/istio/pkg/test/framework/label"
 	"istio.io/istio/pkg/test/framework/resource"
 	"istio.io/istio/pkg/test/scopes"
 	"istio.io/istio/pkg/test/shell"
@@ -340,8 +341,11 @@ spec:
         # Unintuitive, set DNS servers to something that is a valid IP but will refuse connection
         # This ensures that DNS traffic doesn't hang for clusters that do not have external connectivity
         # In particular, our CI cannot send external IPv6 requests.
-        - "127.0.0.6"
+        {{- if $.VM.IPv6 }}
         - "::6"
+        {{- else }}
+        - "127.0.0.6"
+        {{- end }}
         searches:
         - "example.com"
         options:
@@ -699,6 +703,7 @@ func templateParams(cfg echo.Config, imgSettings *image.Settings, settings *reso
 		"ReadinessTCPPort":   cfg.ReadinessTCPPort,
 		"VM": map[string]interface{}{
 			"Image": vmImage,
+			"IPv6":  settings.Selector.Excludes(testlabel.NewSet(testlabel.IPv4)),
 		},
 		"StartupProbe":      supportStartupProbe,
 		"IncludeExtAuthz":   cfg.IncludeExtAuthz,
