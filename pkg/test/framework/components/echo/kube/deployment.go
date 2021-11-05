@@ -342,9 +342,9 @@ spec:
         # This ensures that DNS traffic doesn't hang for clusters that do not have external connectivity
         # In particular, our CI cannot send external IPv6 requests.
         {{- if $.VM.IPv6 }}
-        - "::6"
+        - "::7"
         {{- else }}
-        - "127.0.0.6"
+        - "127.0.0.7"
         {{- end }}
         searches:
         - "example.com"
@@ -371,6 +371,9 @@ spec:
         - bash
         - -c
         - |-
+          {{- if $.VM.IPv6 }} # Add a fake address for IPv6 so we can blackhole DNS requests
+          ip -6 addr add "::7/128" dev lo
+          {{- end }}
           # Read root cert from and place signed certs here (can't mount directly or the dir would be unwritable)
           sudo mkdir -p /var/run/secrets/istio
 
