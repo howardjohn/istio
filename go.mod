@@ -51,6 +51,7 @@ require (
 	github.com/miekg/dns v1.1.47
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/moby/buildkit v0.9.3
 	github.com/onsi/gomega v1.18.1
 	github.com/openshift/api v0.0.0-20200713203337-b2494ecb17dd
 	github.com/pmezard/go-difflib v1.0.0
@@ -126,6 +127,7 @@ require (
 	github.com/cheekybits/genny v1.0.0 // indirect
 	github.com/cncf/udpa/go v0.0.0-20210930031921-04548b0d99d4 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.10.1 // indirect
+	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.1 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.0-20210816181553-5444fa50b93d // indirect

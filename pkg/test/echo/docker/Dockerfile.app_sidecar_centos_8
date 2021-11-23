@@ -3,7 +3,7 @@ FROM gcr.io/istio-release/app_sidecar_base_centos_8:${BASE_VERSION}
 
 # Install the certs.
 COPY certs/                           /var/lib/istio/
-COPY certs/default/*                  /var/run/secrets/istio/
+COPY certs/default/                  /var/run/secrets/istio/
 
 # Install the sidecar components
 COPY istio-sidecar.rpm  /tmp/istio-sidecar.rpm
