@@ -17,10 +17,12 @@ package profile
 import (
 	"flag"
 	"os"
+	"runtime/pprof"
 
 	"github.com/felixge/fgprof"
 
 	"istio.io/istio/pkg/test"
+	"istio.io/pkg/log"
 )
 
 var fprof string
@@ -52,4 +54,48 @@ func FullProfile(t test.Failer) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func FullProfileBinary(fprof string) func() {
+	if fprof == "" {
+		return func() {}
+	}
+	f, err := os.Create(fprof)
+	if err != nil {
+		log.Errorf("failed to create profile path")
+		return func() {}
+	}
+	stop := fgprof.Start(f, fgprof.FormatPprof)
+
+	return func() {
+		if err := stop(); err != nil {
+			log.Errorf("failed to stop profile: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			log.Errorf("failed to close profile: %v", err)
+		}
+	}
+}
+
+func CPUProfileBinary(prof string) func() {
+	if prof == "" {
+		return func() {}
+	}
+	f, err := os.Create(prof)
+	if err != nil {
+		log.Errorf("failed to create profile path: %v", err)
+		return func() {}
+	}
+	if err := pprof.StartCPUProfile(f); err != nil {
+		log.Errorf("failed to start profile: %v", err)
+		return func() {}
+	}
+
+	return func() {
+		pprof.StopCPUProfile()
+		if err := f.Close(); err != nil {
+			log.Errorf("failed to close profile: %v", err)
+			return
+		}
+	}
 }
