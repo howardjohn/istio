@@ -69,6 +69,7 @@ type Args struct {
 	IstioVersion  string
 	Tags          []string
 	Hubs          []string
+	CraneEnabled  bool
 }
 
 // Define variants, which control the base image of an image.
