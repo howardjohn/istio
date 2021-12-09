@@ -324,6 +324,11 @@ func getConfigs(t test.Failer, opts TestOptions) []config.Config {
 
 type FakeXdsUpdater struct{}
 
+func (f *FakeXdsUpdater) ProxyKill(clusterID cluster2.ID, ip string) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (f *FakeXdsUpdater) ConfigUpdate(*model.PushRequest) {}
 
 func (f *FakeXdsUpdater) EDSUpdate(_ model.ShardKey, _, _ string, _ []*model.IstioEndpoint) {}

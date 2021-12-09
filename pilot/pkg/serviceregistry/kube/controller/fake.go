@@ -38,6 +38,11 @@ type FakeXdsUpdater struct {
 	Events chan FakeXdsEvent
 }
 
+func (fx *FakeXdsUpdater) ProxyKill(clusterID cluster.ID, ip string) {
+	//TODO implement me
+	panic("implement me")
+}
+
 var _ model.XDSUpdater = &FakeXdsUpdater{}
 
 func (fx *FakeXdsUpdater) ConfigUpdate(req *model.PushRequest) {

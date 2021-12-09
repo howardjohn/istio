@@ -75,6 +75,20 @@ func shouldPodBeInEndpoints(pod *v1.Pod) bool {
 }
 
 // IsPodReady is copied from kubernetes/pkg/api/v1/pod/utils.go
+func IsPodReadyToKill(pod *v1.Pod) bool {
+	allDone := true
+	for _, c := range pod.Status.ContainerStatuses {
+		if c.Name == "istio-proxy" {
+			continue
+		}
+		if !(c.State.Terminated != nil && c.State.Terminated.Reason == "Completed") {
+			allDone = false
+		}
+	}
+	return allDone
+}
+
+// IsPodReady is copied from kubernetes/pkg/api/v1/pod/utils.go
 func IsPodReady(pod *v1.Pod) bool {
 	return IsPodReadyConditionTrue(pod.Status)
 }
@@ -137,6 +151,10 @@ func (pc *PodCache) onEvent(curr interface{}, ev model.Event) error {
 		key := kube.KeyFunc(pod.Name, pod.Namespace)
 		switch ev {
 		case model.EventAdd:
+			if IsPodReadyToKill(pod) {
+				log.Errorf("howardjohn: ready to kill pod %v", pod.Name)
+				pc.kill(ip)
+			}
 			// can happen when istiod just starts
 			if pod.DeletionTimestamp != nil || !IsPodReady(pod) {
 				return nil
@@ -148,6 +166,10 @@ func (pc *PodCache) onEvent(curr interface{}, ev model.Event) error {
 				return nil
 			}
 		case model.EventUpdate:
+			if IsPodReadyToKill(pod) {
+				log.Errorf("howardjohn: ready to kill pod %v", pod.Name)
+				pc.kill(ip)
+			}
 			if pod.DeletionTimestamp != nil || !IsPodReady(pod) {
 				// delete only if this pod was in the cache
 				if pc.podsByIP[ip] == key {
@@ -203,6 +225,12 @@ func (pc *PodCache) deleteIP(ip string) {
 	pod := pc.podsByIP[ip]
 	delete(pc.podsByIP, ip)
 	delete(pc.IPByPods, pod)
+}
+
+func (pc *PodCache) kill(ip string) {
+	if pc.c != nil && pc.c.opts.XDSUpdater != nil {
+		pc.c.opts.XDSUpdater.ProxyKill(pc.c.Cluster(), ip)
+	}
 }
 
 func (pc *PodCache) update(ip, key string) {

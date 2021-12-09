@@ -492,6 +492,11 @@ type FakeXdsUpdater struct {
 	Delegate model.XDSUpdater
 }
 
+func (fx *FakeXdsUpdater) ProxyKill(clusterID cluster.ID, ip string) {
+	//TODO implement me
+	panic("implement me")
+}
+
 var _ model.XDSUpdater = &FakeXdsUpdater{}
 
 func (fx *FakeXdsUpdater) EDSUpdate(s model.ShardKey, hostname string, namespace string, entry []*model.IstioEndpoint) {

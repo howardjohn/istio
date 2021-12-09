@@ -822,6 +822,33 @@ func (s *DiscoveryServer) ProxyUpdate(clusterID cluster.ID, ip string) {
 	})
 }
 
+func (s *DiscoveryServer) ProxyKill(clusterID cluster.ID, ip string) {
+	var connection *Connection
+
+	for _, v := range s.Clients() {
+		if v.proxy.Metadata.ClusterID == clusterID && v.proxy.IPAddresses[0] == ip {
+			connection = v
+			break
+		}
+	}
+
+	// It is possible that the envoy has not connected to this pilot, maybe connected to another pilot
+	if connection == nil {
+		log.Errorf("howardjohn: not connected to me: %v", ip)
+		return
+	}
+	if connection.proxy.Type == model.Router {
+		return
+	}
+	resp := &discovery.DiscoveryResponse{
+		TypeUrl: "istio.io/kill",
+	}
+	if err := connection.send(resp); err != nil {
+		log.Errorf("failed to send %v", err)
+	}
+	log.Errorf("howardjohn: sent kill to %v", connection.ConID)
+}
+
 // AdsPushAll will send updates to all nodes, for a full config or incremental EDS.
 func AdsPushAll(s *DiscoveryServer) {
 	s.AdsPushAll(versionInfo(), &model.PushRequest{

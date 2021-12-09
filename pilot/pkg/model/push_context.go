@@ -298,6 +298,7 @@ type XDSUpdater interface {
 	// ProxyUpdate is called to notify the XDS server to send a push to the specified proxy.
 	// The requests may be collapsed and throttled.
 	ProxyUpdate(clusterID cluster.ID, ip string)
+	ProxyKill(clusterID cluster.ID, ip string)
 }
 
 // shardRegistry is a simplified interface for registries that can produce a shard key

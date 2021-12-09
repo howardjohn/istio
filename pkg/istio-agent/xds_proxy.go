@@ -484,6 +484,10 @@ func (p *XdsProxy) handleUpstreamResponse(con *ProxyConnection) {
 			// TODO: separate upstream response handling from requests sending, which are both time costly
 			proxyLog.Debugf("response for type url %s", resp.TypeUrl)
 			metrics.XdsProxyResponses.Increment()
+			if resp.TypeUrl == "istio.io/kill" {
+				log.Errorf("howardjohn: KILL")
+				os.Exit(0)
+			}
 			if h, f := p.handlers[resp.TypeUrl]; f {
 				if len(resp.Resources) == 0 {
 					// Empty response, nothing to do
