@@ -189,6 +189,7 @@ func setConditions(generation int64, existingConditions []metav1.Condition, cond
 }
 
 func reportGatewayCondition(obj config.Config, conditions map[string]*condition) {
+	log.Errorf("howardjohn: report %+v", conditions)
 	obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
 		gs := s.(*k8s.GatewayStatus)
 		gs.Conditions = setConditions(obj.Generation, gs.Conditions, conditions)

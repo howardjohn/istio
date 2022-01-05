@@ -80,6 +80,7 @@ type Reference struct {
 // on KubernetesResources inputs.
 func convertResources(r *KubernetesResources) OutputResources {
 	result := OutputResources{}
+	log.Errorf("howardjohn: convert gws: %v", len(r.Gateway))
 	gw, gwMap, nsReferences := convertGateways(r)
 	result.Gateway = gw
 	result.VirtualService = convertVirtualService(r, gwMap)
@@ -1046,6 +1047,7 @@ func convertGateways(r *KubernetesResources) ([]config.Config, map[parentKey]map
 		// Extract the addresses. A gateway will bind to a specific Service
 		gatewayServices, skippedAddresses := extractGatewayServices(r, kgw, obj)
 		invalidListeners := []k8s.SectionName{}
+		log.Errorf("howardjohn: listeners %v", len(kgw.Listeners))
 		for i, l := range kgw.Listeners {
 			i := i
 			namespaceLabelReferences.Insert(getNamespaceLabelReferences(l.AllowedRoutes)...)

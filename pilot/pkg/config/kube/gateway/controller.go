@@ -236,6 +236,7 @@ func (c *Controller) handleStatusUpdates(configs []config.Config) {
 	}
 	for _, cfg := range configs {
 		ws := cfg.Status.(*kstatus.WrappedStatus)
+		log.Errorf("howardjohn: dirty? %v %+v", ws.Dirty, ws.Status)
 		if ws.Dirty {
 			res := status.ResourceFromModelConfig(cfg)
 			log.Errorf("howardjohn: update status")

@@ -23,12 +23,14 @@ import (
 	"testing"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"istio.io/istio/pilot/pkg/config/kube/crd"
 	"istio.io/istio/pilot/pkg/config/kube/crdclient"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	"istio.io/istio/pilot/pkg/status"
 	"istio.io/istio/pilot/pkg/xds"
+	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/schema/collections"
 	"istio.io/istio/pkg/config/schema/resource"
 	"istio.io/istio/pkg/test"
@@ -37,8 +39,10 @@ import (
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	metadatafake "k8s.io/client-go/metadata/fake"
 	"sigs.k8s.io/gateway-api/apis/v1alpha2"
+	k8s "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	"sigs.k8s.io/yaml"
 
 	"istio.io/istio/pilot/test/util"
@@ -46,14 +50,11 @@ import (
 	istiolog "istio.io/pkg/log"
 )
 
-
-
 func TestEndToEnd(t *testing.T) {
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop) })
 	//fake, _ := kube.NewDefaultClient()
 	fake := kube.NewFakeClient()
-
 
 	for _, s := range collections.All.All() {
 		createCRD(t, fake, s.Resource())
@@ -72,9 +73,46 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil || len(cfgs) == 0 {
 			return nil
 		}
-		// TODO: get current config, apply on top of it so we do not overwrite
-		_, e := configClient.UpdateStatus(cfgs[0])
-		return e
+		gvk := status.GVRtoGVK(gvr)
+		cur := configClient.Get(gvk, name, namespace)
+		if cur == nil {
+			_, err := configClient.Create(cfgs[0])
+			return err
+		}
+		orig := &k8s.Gateway{
+			ObjectMeta: getObjectMetadata(*cur),
+		}
+		if cur.Status != nil {
+			orig.Status = *(cur.Status.(*k8s.GatewayStatus))
+		}
+		if cur.Spec != nil {
+			orig.Spec = *(cur.Spec.(*k8s.GatewaySpec))
+		}
+		cj, err := json.Marshal(orig)
+		if err != nil {
+			return err
+		}
+		merged, err := jsonpatch.MergePatch(cj, data)
+		if err != nil {
+			return err
+		}
+		log.Errorf("howardjohn xx:\n%v\n%v", string(cj), string(data))
+		cfgsPatched, _, err := crd.ParseInputs(string(merged))
+		if err != nil || len(cfgsPatched) == 0 {
+			return nil
+		}
+
+		//if _, err := configClient.UpdateStatus(cfgsPatched[0]); err != nil {
+		//	return err
+		//}
+		if _, err := configClient.Update(cfgsPatched[0]); err != nil {
+			return err
+		}
+		debug, _ := json.MarshalIndent(cfgsPatched[0], "howardjohn", "  ")
+		log.Errorf("howardjohn: dep before %s", debug)
+		debug, _ = json.MarshalIndent(configClient.Get(gvk, name, namespace), "howardjohn", "  ")
+		log.Errorf("howardjohn dep after: %s", debug)
+		return nil
 	}
 	fake.RunAndWait(stop)
 	go dc.Run(stop)
@@ -83,7 +121,6 @@ func TestEndToEnd(t *testing.T) {
 	ds := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{KubeClientModifier: func(c *kube.Client) {
 		*c = fake
 	}})
-
 
 	c := NewController(fake, configClient, controller.Options{DomainSuffix: "cluster.local"})
 	c.SetStatusWrite(true, status.NewManager(configClient))
@@ -121,6 +158,17 @@ func TestEndToEnd(t *testing.T) {
 	log.Errorf("howardjohn: %s", debug)
 }
 
+func getObjectMetadata(config config.Config) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:            config.Name,
+		Namespace:       config.Namespace,
+		Labels:          config.Labels,
+		Annotations:     config.Annotations,
+		ResourceVersion: config.ResourceVersion,
+		OwnerReferences: config.OwnerReferences,
+		UID:             types.UID(config.UID),
+	}
+}
 func TestConfigureIstioGateway(t *testing.T) {
 	tests := []struct {
 		name string
@@ -210,7 +258,6 @@ func TestConfigureIstioGateway(t *testing.T) {
 		})
 	}
 }
-
 
 func createCRD(t test.Failer, client kube.Client, r resource.Schema) {
 	t.Helper()
