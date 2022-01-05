@@ -406,6 +406,15 @@ func NewExtendedClient(clientConfig clientcmd.ClientConfig, revision string) (Ex
 	return newClientInternal(newClientFactory(clientConfig), revision)
 }
 
+func NewDefaultClient() (Client, error) {
+	kubeRestConfig, err := DefaultRestConfig("", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed creating kube config: %v", err)
+	}
+
+	return NewClient(NewClientConfigForRestConfig(kubeRestConfig))
+}
+
 // NewClient creates a Kubernetes client from the given rest config.
 func NewClient(clientConfig clientcmd.ClientConfig) (Client, error) {
 	return newClientInternal(newClientFactory(clientConfig), "")

@@ -294,8 +294,8 @@ func TestGenerate(t *testing.T) {
 func TestCaching(t *testing.T) {
 	s := NewFakeDiscoveryServer(t, FakeOptions{
 		KubernetesObjects: []runtime.Object{genericCert},
-		KubeClientModifier: func(c kube.Client) {
-			cc := c.Kube().(*fake.Clientset)
+		KubeClientModifier: func(c *kube.Client) {
+			cc := (*c).Kube().(*fake.Clientset)
 			credentials.DisableAuthorizationForTest(cc)
 		},
 	})

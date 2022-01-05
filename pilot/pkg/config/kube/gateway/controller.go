@@ -152,6 +152,7 @@ func (c *Controller) SetStatusWrite(enabled bool, statusManager *status.Manager)
 // Recompute takes in a current snapshot of the gateway-api configs, and regenerates our internal state.
 // Any status updates required will be enqueued as well.
 func (c *Controller) Recompute(context model.GatewayContext) error {
+
 	t0 := time.Now()
 	defer func() {
 		log.Debugf("recompute complete in %v", time.Since(t0))
@@ -237,6 +238,7 @@ func (c *Controller) handleStatusUpdates(configs []config.Config) {
 		ws := cfg.Status.(*kstatus.WrappedStatus)
 		if ws.Dirty {
 			res := status.ResourceFromModelConfig(cfg)
+			log.Errorf("howardjohn: update status")
 			c.statusController.EnqueueStatusUpdateResource(ws.Unwrap(), res)
 		}
 	}

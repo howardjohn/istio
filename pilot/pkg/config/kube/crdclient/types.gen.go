@@ -24,6 +24,7 @@ package crdclient
 import (
 	"context"
 	"fmt"
+
 	metav1alpha1 "istio.io/api/meta/v1alpha1"
 
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
@@ -393,11 +394,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioExtensionsV1Alpha1Wasmplugins.Resource().GroupVersionKind():
 		oldRes := &clientextensionsv1alpha1.WasmPlugin{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*extensionsv1alpha1.WasmPlugin)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*extensionsv1alpha1.WasmPlugin))
 		}
 		modRes := &clientextensionsv1alpha1.WasmPlugin{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*extensionsv1alpha1.WasmPlugin)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*extensionsv1alpha1.WasmPlugin))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -408,11 +413,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Destinationrules.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.DestinationRule{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.DestinationRule)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.DestinationRule))
 		}
 		modRes := &clientnetworkingv1alpha3.DestinationRule{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.DestinationRule)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.DestinationRule))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -423,11 +432,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Envoyfilters.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.EnvoyFilter{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.EnvoyFilter)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.EnvoyFilter))
 		}
 		modRes := &clientnetworkingv1alpha3.EnvoyFilter{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.EnvoyFilter)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.EnvoyFilter))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -438,11 +451,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Gateways.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.Gateway{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.Gateway)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.Gateway))
 		}
 		modRes := &clientnetworkingv1alpha3.Gateway{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.Gateway)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.Gateway))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -453,11 +470,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Serviceentries.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.ServiceEntry{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.ServiceEntry)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.ServiceEntry))
 		}
 		modRes := &clientnetworkingv1alpha3.ServiceEntry{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.ServiceEntry)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.ServiceEntry))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -468,11 +489,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Sidecars.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.Sidecar{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.Sidecar)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.Sidecar))
 		}
 		modRes := &clientnetworkingv1alpha3.Sidecar{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.Sidecar)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.Sidecar))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -483,11 +508,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Virtualservices.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.VirtualService{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.VirtualService)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.VirtualService))
 		}
 		modRes := &clientnetworkingv1alpha3.VirtualService{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.VirtualService)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.VirtualService))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -498,11 +527,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Workloadentries.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.WorkloadEntry{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.WorkloadEntry)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.WorkloadEntry))
 		}
 		modRes := &clientnetworkingv1alpha3.WorkloadEntry{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.WorkloadEntry)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.WorkloadEntry))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -513,11 +546,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Alpha3Workloadgroups.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1alpha3.WorkloadGroup{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1alpha3.WorkloadGroup)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1alpha3.WorkloadGroup))
 		}
 		modRes := &clientnetworkingv1alpha3.WorkloadGroup{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1alpha3.WorkloadGroup)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1alpha3.WorkloadGroup))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -528,11 +565,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioNetworkingV1Beta1Proxyconfigs.Resource().GroupVersionKind():
 		oldRes := &clientnetworkingv1beta1.ProxyConfig{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*networkingv1beta1.ProxyConfig)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*networkingv1beta1.ProxyConfig))
 		}
 		modRes := &clientnetworkingv1beta1.ProxyConfig{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*networkingv1beta1.ProxyConfig)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*networkingv1beta1.ProxyConfig))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -543,11 +584,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioSecurityV1Beta1Authorizationpolicies.Resource().GroupVersionKind():
 		oldRes := &clientsecurityv1beta1.AuthorizationPolicy{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*securityv1beta1.AuthorizationPolicy)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*securityv1beta1.AuthorizationPolicy))
 		}
 		modRes := &clientsecurityv1beta1.AuthorizationPolicy{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*securityv1beta1.AuthorizationPolicy)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*securityv1beta1.AuthorizationPolicy))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -558,11 +603,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioSecurityV1Beta1Peerauthentications.Resource().GroupVersionKind():
 		oldRes := &clientsecurityv1beta1.PeerAuthentication{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*securityv1beta1.PeerAuthentication)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*securityv1beta1.PeerAuthentication))
 		}
 		modRes := &clientsecurityv1beta1.PeerAuthentication{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*securityv1beta1.PeerAuthentication)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*securityv1beta1.PeerAuthentication))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -573,11 +622,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioSecurityV1Beta1Requestauthentications.Resource().GroupVersionKind():
 		oldRes := &clientsecurityv1beta1.RequestAuthentication{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*securityv1beta1.RequestAuthentication)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*securityv1beta1.RequestAuthentication))
 		}
 		modRes := &clientsecurityv1beta1.RequestAuthentication{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*securityv1beta1.RequestAuthentication)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*securityv1beta1.RequestAuthentication))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -588,11 +641,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.IstioTelemetryV1Alpha1Telemetries.Resource().GroupVersionKind():
 		oldRes := &clienttelemetryv1alpha1.Telemetry{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*telemetryv1alpha1.Telemetry)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*telemetryv1alpha1.Telemetry))
 		}
 		modRes := &clienttelemetryv1alpha1.Telemetry{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*telemetryv1alpha1.Telemetry)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*telemetryv1alpha1.Telemetry))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -603,11 +660,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.K8SGatewayApiV1Alpha2Gatewayclasses.Resource().GroupVersionKind():
 		oldRes := &gatewayv1alpha2.GatewayClass{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*gatewayv1alpha2.GatewayClassSpec)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*gatewayv1alpha2.GatewayClassSpec))
 		}
 		modRes := &gatewayv1alpha2.GatewayClass{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*gatewayv1alpha2.GatewayClassSpec)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*gatewayv1alpha2.GatewayClassSpec))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -618,11 +679,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.K8SGatewayApiV1Alpha2Gateways.Resource().GroupVersionKind():
 		oldRes := &gatewayv1alpha2.Gateway{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*gatewayv1alpha2.GatewaySpec)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*gatewayv1alpha2.GatewaySpec))
 		}
 		modRes := &gatewayv1alpha2.Gateway{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*gatewayv1alpha2.GatewaySpec)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*gatewayv1alpha2.GatewaySpec))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -633,11 +698,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.K8SGatewayApiV1Alpha2Httproutes.Resource().GroupVersionKind():
 		oldRes := &gatewayv1alpha2.HTTPRoute{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*gatewayv1alpha2.HTTPRouteSpec)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*gatewayv1alpha2.HTTPRouteSpec))
 		}
 		modRes := &gatewayv1alpha2.HTTPRoute{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*gatewayv1alpha2.HTTPRouteSpec)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*gatewayv1alpha2.HTTPRouteSpec))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -648,11 +717,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.K8SGatewayApiV1Alpha2Referencepolicies.Resource().GroupVersionKind():
 		oldRes := &gatewayv1alpha2.ReferencePolicy{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*gatewayv1alpha2.ReferencePolicySpec)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*gatewayv1alpha2.ReferencePolicySpec))
 		}
 		modRes := &gatewayv1alpha2.ReferencePolicy{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*gatewayv1alpha2.ReferencePolicySpec)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*gatewayv1alpha2.ReferencePolicySpec))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -663,11 +736,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.K8SGatewayApiV1Alpha2Tcproutes.Resource().GroupVersionKind():
 		oldRes := &gatewayv1alpha2.TCPRoute{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*gatewayv1alpha2.TCPRouteSpec)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*gatewayv1alpha2.TCPRouteSpec))
 		}
 		modRes := &gatewayv1alpha2.TCPRoute{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*gatewayv1alpha2.TCPRouteSpec)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*gatewayv1alpha2.TCPRouteSpec))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {
@@ -678,11 +755,15 @@ func patch(ic versionedclient.Interface, sc gatewayapiclient.Interface, orig con
 	case collections.K8SGatewayApiV1Alpha2Tlsroutes.Resource().GroupVersionKind():
 		oldRes := &gatewayv1alpha2.TLSRoute{
 			ObjectMeta: origMeta,
-			Spec:       *(orig.Spec.(*gatewayv1alpha2.TLSRouteSpec)),
+		}
+		if orig.Spec != nil {
+			oldRes.Spec = *(orig.Spec.(*gatewayv1alpha2.TLSRouteSpec))
 		}
 		modRes := &gatewayv1alpha2.TLSRoute{
 			ObjectMeta: modMeta,
-			Spec:       *(mod.Spec.(*gatewayv1alpha2.TLSRouteSpec)),
+		}
+		if mod.Spec != nil {
+			mod.Spec = *(mod.Spec.(*gatewayv1alpha2.TLSRouteSpec))
 		}
 		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
 		if err != nil {

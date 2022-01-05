@@ -87,7 +87,7 @@ type FakeOptions struct {
 	// Callback to modify the server before it is started
 	DiscoveryServerModifier func(s *DiscoveryServer)
 	// Callback to modify the kube client before it is started
-	KubeClientModifier func(c kubelib.Client)
+	KubeClientModifier func(c *kubelib.Client)
 
 	// ListenerBuilder, if specified, allows making the server use the given
 	// listener instead of a buffered conn.
@@ -173,9 +173,9 @@ func NewFakeDiscoveryServer(t test.Failer, opts FakeOptions) *FakeDiscoveryServe
 	creds := kubesecrets.NewMulticluster(opts.DefaultClusterName)
 	s.Generators[v3.SecretType] = NewSecretGen(creds, s.Cache, opts.DefaultClusterName)
 	for k8sCluster, objs := range k8sObjects {
-		client := kubelib.NewFakeClientWithVersion(opts.KubernetesVersion, objs...)
+		var client kubelib.Client = kubelib.NewFakeClientWithVersion(opts.KubernetesVersion, objs...)
 		if opts.KubeClientModifier != nil {
-			opts.KubeClientModifier(client)
+			opts.KubeClientModifier(&client)
 		}
 		k8s, _ := kube.NewFakeControllerWithOptions(kube.FakeControllerOptions{
 			ServiceHandler:  serviceHandler,

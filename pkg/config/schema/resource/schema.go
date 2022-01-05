@@ -65,6 +65,9 @@ type Schema interface {
 	// NewInstance returns a new instance of the protocol buffer message for this resource.
 	NewInstance() (config.Spec, error)
 
+	// NewStatusInstance returns a new instance of the protocol buffer message for this resource.
+	NewStatusInstance() (config.Status, error)
+
 	// Status returns the associated status of the schema
 	Status() (config.Status, error)
 
@@ -166,6 +169,7 @@ func (b Builder) BuildNoValidate() Schema {
 		goPackage:      b.ProtoPackage,
 		reflectType:    b.ReflectType,
 		validateConfig: b.ValidateProto,
+		statusProto: b.StatusProto,
 		statusType:     b.StatusType,
 		statusPackage:  b.StatusPackage,
 	}
@@ -182,6 +186,7 @@ type schemaImpl struct {
 	reflectType    reflect.Type
 	statusType     reflect.Type
 	statusPackage  string
+	statusProto    string
 }
 
 func (s *schemaImpl) GroupVersionKind() config.GroupVersionKind {
@@ -263,6 +268,25 @@ func (s *schemaImpl) NewInstance() (config.Spec, error) {
 	if !ok {
 		return nil, fmt.Errorf(
 			"newInstance: message is not an instance of config.Spec. kind:%s, type:%v, value:%v",
+			s.Kind(), rt, instance)
+	}
+	return p, nil
+}
+
+func (s *schemaImpl) NewStatusInstance() (config.Status, error) {
+	rt := s.statusType
+	if rt == nil {
+		rt = getProtoMessageType(s.statusProto)
+	}
+	if rt == nil {
+		return nil, errors.New("failed to find reflect type")
+	}
+	instance := reflect.New(rt).Interface()
+
+	p, ok := instance.(config.Status)
+	if !ok {
+		return nil, fmt.Errorf(
+			"newInstance: message is not an instance of config.Status. kind:%s, type:%v, value:%v",
 			s.Kind(), rt, instance)
 	}
 	return p, nil

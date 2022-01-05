@@ -154,6 +154,7 @@ func (d *DeploymentController) Reconcile(req types.NamespacedName) error {
 		// on deleted requests.
 		return controllers.IgnoreNotFound(err)
 	}
+	log.Infof("reconcile %v", gw)
 
 	gc, _ := d.gatewayClassLister.Get(string(gw.Spec.GatewayClassName))
 	if gc != nil {

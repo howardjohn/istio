@@ -26,7 +26,6 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	"istio.io/api/meta/v1alpha1"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/schema/collection"
 	"istio.io/istio/pkg/config/schema/collections"
@@ -46,20 +45,19 @@ func FromJSON(s collection.Schema, js string) (config.Spec, error) {
 	return c, nil
 }
 
-func IstioStatusJSONFromMap(jsonMap map[string]interface{}) (config.Status, error) {
-	if jsonMap == nil {
-		return nil, nil
-	}
-	js, err := json.Marshal(jsonMap)
+func StatusFromMap(s collection.Schema, status map[string]interface{}) (config.Status, error) {
+	js, err := json.Marshal(status)
 	if err != nil {
 		return nil, err
 	}
-	var status v1alpha1.IstioStatus
-	err = json.Unmarshal(js, &status)
+	c, err := s.Resource().NewStatusInstance()
 	if err != nil {
 		return nil, err
 	}
-	return &status, nil
+	if err = config.ApplyJSON(c, string(js)); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // FromYAML converts a canonical YAML to a proto message
@@ -99,7 +97,7 @@ func ConvertObject(schema collection.Schema, object IstioObject, domain string) 
 	if err != nil {
 		return nil, err
 	}
-	status, err := IstioStatusJSONFromMap(object.GetStatus())
+	status, err := StatusFromMap(schema, object.GetStatus())
 	if err != nil {
 		log.Errorf("could not get istio status from map %v, err %v", object.GetStatus(), err)
 	}
