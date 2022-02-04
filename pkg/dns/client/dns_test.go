@@ -29,10 +29,8 @@ import (
 	"istio.io/istio/pkg/test"
 )
 
-var testAgentDNSAddr = "127.0.0.1:15053"
-
 func TestDNS(t *testing.T) {
-	initDNS(t)
+	dnsClients := initDNS(t)
 	testCases := []struct {
 		name                     string
 		host                     string
@@ -261,7 +259,9 @@ func TestDNS(t *testing.T) {
 					currentID.Store(int32(tt.id))
 					defer func() { currentID.Store(0) }()
 				}
-				res, _, err := clients[i].Exchange(m, testAgentDNSAddr)
+				addr := address(dnsClients, clients[i].Net)
+
+				res, _, err := clients[i].Exchange(m, addr)
 				if res != nil {
 					t.Log("size: ", len(res.Answer))
 				}
@@ -294,6 +294,23 @@ func TestDNS(t *testing.T) {
 	}
 }
 
+func address(clients *LocalDNSServer, n string) string {
+	if n == "tcp" {
+		for _, p := range clients.dnsProxies {
+			if p.server.Listener != nil {
+				return p.server.Listener.Addr().String()
+			}
+		}
+	} else {
+		for _, p := range clients.dnsProxies {
+			if p.server.PacketConn != nil {
+				return p.server.PacketConn.LocalAddr().String()
+			}
+		}
+	}
+	return "unknown"
+}
+
 // Baseline:
 //      ~150us via agent if cached for A/AAAA
 //      ~300us via agent when doing the cname redirect
@@ -303,15 +320,15 @@ func TestDNS(t *testing.T) {
 //   docker run -v $PWD:$PWD -w $PWD --network host quay.io/ssro/dnsperf dnsperf -p 15053 -d input -c 100 -l 30
 // where `input` contains dns queries to run, such as `echo.default. A`
 func BenchmarkDNS(t *testing.B) {
-	initDNS(t)
+	addr := address(initDNS(t), "tcp")
 	t.Run("via-agent-cache-miss", func(b *testing.B) {
-		bench(b, testAgentDNSAddr, "www.bing.com.")
+		bench(b, addr, "www.bing.com.")
 	})
 	t.Run("via-agent-cache-hit-fqdn", func(b *testing.B) {
-		bench(b, testAgentDNSAddr, "www.google.com.")
+		bench(b, addr, "www.google.com.")
 	})
 	t.Run("via-agent-cache-hit-cname", func(b *testing.B) {
-		bench(b, testAgentDNSAddr, "www.google.com.ns1.svc.cluster.local.")
+		bench(b, addr, "www.google.com.ns1.svc.cluster.local.")
 	})
 }
 
@@ -459,7 +476,7 @@ func makeUpstream(t test.Failer, responses map[string]string) string {
 
 func initDNS(t test.Failer) *LocalDNSServer {
 	srv := makeUpstream(t, map[string]string{"www.bing.com.": "1.1.1.1"})
-	testAgentDNS, err := NewLocalDNSServer("ns1", "ns1.svc.cluster.local", "localhost:15053")
+	testAgentDNS, err := NewLocalDNSServer("ns1", "ns1.svc.cluster.local", "localhost:0")
 	if err != nil {
 		t.Fatal(err)
 	}
