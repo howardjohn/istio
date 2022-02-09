@@ -163,11 +163,18 @@ func UntilComplete(fn RetriableFunc, options ...Option) (interface{}, error) {
 	attempts := 0
 	var lasterr error
 	to := time.After(cfg.timeout)
+	reportError := func() error {
+		convergeStr := ""
+		if cfg.converge > 1 {
+			convergeStr = fmt.Sprintf(", %d/%d successes", successes, cfg.converge)
+		}
+		return fmt.Errorf("timeout while waiting after %d attempts%s (last error: %v)", attempts, convergeStr, lasterr)
+	}
 	delay := cfg.delay
 	for {
 		select {
 		case <-to:
-			return nil, fmt.Errorf("timeout while waiting after %d attempts (last error: %v)", attempts, lasterr)
+			return nil, reportError()
 		default:
 		}
 
@@ -195,11 +202,7 @@ func UntilComplete(fn RetriableFunc, options ...Option) (interface{}, error) {
 
 		select {
 		case <-to:
-			convergeStr := ""
-			if cfg.converge > 1 {
-				convergeStr = fmt.Sprintf(", %d/%d successes", successes, cfg.converge)
-			}
-			return nil, fmt.Errorf("timeout while waiting after %d attempts%s (last error: %v)", attempts, convergeStr, lasterr)
+			return nil, reportError()
 		case <-time.After(delay):
 			delay *= 2
 			if delay > cfg.delayMax {
