@@ -792,6 +792,16 @@ func (ps *PushContext) Services(proxy *Proxy) []*Service {
 	return out
 }
 
+
+func (ps *PushContext) ServiceForNamespacedHostname(namespace string, hostname host.Name) *Service {
+	for _, service := range ps.ServiceIndex.HostnameAndNamespace[hostname] {
+		if service.Attributes.Namespace == namespace {
+			return service
+		}
+	}
+	return nil
+}
+
 // ServiceForHostname returns the service associated with a given hostname following SidecarScope
 func (ps *PushContext) ServiceForHostname(proxy *Proxy, hostname host.Name) *Service {
 	if proxy != nil && proxy.SidecarScope != nil {
@@ -2014,6 +2024,10 @@ type GatewayContext struct {
 
 func NewGatewayContext(ps *PushContext) GatewayContext {
 	return GatewayContext{ps}
+}
+
+func (gc GatewayContext) Push() *PushContext {
+	return gc.ps
 }
 
 // ResolveGatewayInstances attempts to resolve all instances that a gateway will be exposed on.

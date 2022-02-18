@@ -167,14 +167,14 @@ func convertVirtualService(r *KubernetesResources, gatewayMap map[parentKey]map[
 	}
 
 	for _, obj := range r.HTTPRoute {
-		if vsConfig := buildHTTPVirtualServices(obj, gatewayMap, r.Domain); vsConfig != nil {
-			result = append(result, *vsConfig)
+		if vsConfig := buildHTTPVirtualServices(r.Context, obj, gatewayMap, r.Domain); vsConfig != nil {
+			result = append(result, vsConfig...)
 		}
 	}
 	return result
 }
 
-func buildHTTPVirtualServices(obj config.Config, gateways map[parentKey]map[k8s.SectionName]*parentInfo, domain string) *config.Config {
+func buildHTTPVirtualServices(context model.GatewayContext, obj config.Config, gateways map[parentKey]map[k8s.SectionName]*parentInfo, domain string) []config.Config {
 	route := obj.Spec.(*k8s.HTTPRouteSpec)
 
 	parentRefs := extractParentReferenceInfo(gateways, route.ParentRefs, route.Hostnames, gvk.HTTPRoute, obj.Namespace)
@@ -187,10 +187,7 @@ func buildHTTPVirtualServices(obj config.Config, gateways map[parentKey]map[k8s.
 		})
 	}
 
-	name := fmt.Sprintf("%s-%s", obj.Name, constants.KubernetesGatewayName)
-
 	httproutes := []*istio.HTTPRoute{}
-	hosts := hostnameToStringList(route.Hostnames)
 	for _, r := range route.Rules {
 		// TODO: implement rewrite, timeout, mirror, corspolicy, retries
 		vs := &istio.HTTPRoute{}
@@ -277,22 +274,29 @@ func buildHTTPVirtualServices(obj config.Config, gateways map[parentKey]map[k8s.
 	if len(gatewayNames) == 0 {
 		return nil
 	}
-	vsConfig := config.Config{
-		Meta: config.Meta{
-			CreationTimestamp: obj.CreationTimestamp,
-			GroupVersionKind:  gvk.VirtualService,
-			Name:              name,
-			Annotations:       parentMeta(obj, nil),
-			Namespace:         obj.Namespace,
-			Domain:            domain,
-		},
-		Spec: &istio.VirtualService{
-			Hosts:    hosts,
-			Gateways: gatewayNames,
-			Http:     httproutes,
-		},
+
+	cfgs := []config.Config{}
+	for i, h := range route.Hostnames {
+		name := fmt.Sprintf("%s-%d-%s", obj.Name, i, constants.KubernetesGatewayName)
+		context.Push().ServiceForNamespacedHostname(obj.Namespace, ) // TODO this becomes hard with wildcards
+		vsConfig := config.Config{
+			Meta: config.Meta{
+				CreationTimestamp: obj.CreationTimestamp,
+				GroupVersionKind:  gvk.VirtualService,
+				Name:              name,
+				Annotations:       parentMeta(obj, nil),
+				Namespace:         obj.Namespace,
+				Domain:            domain,
+			},
+			Spec: &istio.VirtualService{
+				Hosts:    []string{string(h)},
+				Gateways: gatewayNames,
+				Http:     httproutes,
+			},
+		}
+		cfgs = append(cfgs, vsConfig)
 	}
-	return &vsConfig
+	return cfgs
 }
 
 func parentMeta(obj config.Config, sectionName *k8s.SectionName) map[string]string {

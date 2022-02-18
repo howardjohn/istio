@@ -1,0 +1,44 @@
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: HTTPRoute
+metadata:
+  name: same
+  namespace: default
+spec:
+  parentRefs:
+  - kind: Mesh
+    name: istio
+  hostnames: ["echo.default.svc.cluster.local"]
+  rules:
+  - backendRefs:
+    - name: echo
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: HTTPRoute
+metadata:
+  name: other
+  namespace: default
+spec:
+  parentRefs:
+  - kind: Mesh
+    name: istio
+  hostnames: ["echo.other.svc.cluster.local"]
+  rules:
+  - backendRefs:
+    - name: example
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: HTTPRoute
+metadata:
+  name: dual
+  namespace: default
+spec:
+  parentRefs:
+  - kind: Mesh
+    name: istio
+  hostnames: ["echo.default.svc.cluster.local", "echo.other.svc.cluster.local"]
+  rules:
+  - backendRefs:
+    - name: example
+      port: 80
