@@ -187,6 +187,7 @@ type ADSC struct {
 
 	// Updates includes the type of the last update received from the server.
 	Updates     chan string
+	CDSVersion  chan string
 	errChan     chan error
 	XDSUpdates  chan *discovery.DiscoveryResponse
 	VersionInfo map[string]string
@@ -270,6 +271,7 @@ func New(discoveryAddr string, opts *Config) (*ADSC, error) {
 	}
 	adsc := &ADSC{
 		Updates:     make(chan string, 100),
+		CDSVersion:  make(chan string, 100),
 		XDSUpdates:  make(chan *discovery.DiscoveryResponse, 100),
 		VersionInfo: map[string]string{},
 		url:         discoveryAddr,
@@ -554,6 +556,11 @@ func (a *ADSC) handleRecv() {
 				clusters = append(clusters, cl)
 			}
 			a.handleCDS(clusters)
+
+			select {
+			case a.CDSVersion <- msg.VersionInfo:
+			default:
+			}
 		case v3.EndpointType:
 			eds := make([]*endpoint.ClusterLoadAssignment, 0, len(msg.Resources))
 			for _, rsc := range msg.Resources {
@@ -1117,6 +1124,14 @@ func (a *ADSC) Watch() {
 	})
 }
 
+func (a *ADSC) Watch2() {
+	a.watchTime = time.Now()
+	_ = a.stream.Send(&discovery.DiscoveryRequest{
+		Node:    a.node(),
+		TypeUrl: "fake",
+	})
+}
+
 func ConfigInitialRequests() []*discovery.DiscoveryRequest {
 	out := make([]*discovery.DiscoveryRequest, 0, len(collections.Pilot.All())+1)
 	out = append(out, &discovery.DiscoveryRequest{
@@ -1166,6 +1181,9 @@ func (a *ADSC) sendRsc(typeurl string, rsc []string) {
 }
 
 func (a *ADSC) ack(msg *discovery.DiscoveryResponse) {
+	if msg.TypeUrl == "fake" {
+		return
+	}
 	var resources []string
 	if msg.TypeUrl == v3.EndpointType {
 		for c := range a.edsClusters {

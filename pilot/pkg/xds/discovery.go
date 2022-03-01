@@ -17,6 +17,7 @@ package xds
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -511,6 +512,8 @@ func doSendPushes(stopCh <-chan struct{}, semaphore chan struct{}, queue *PushQu
 			if shuttingdown {
 				return
 			}
+			log.Errorf("howardjohn: start push %v", push.Push.PushVersion)
+			time.Sleep(time.Millisecond * time.Duration(rand.Intn(500)))
 			recordPushTriggers(push.Reason...)
 			// Signals that a push is done by reading from the semaphore, allowing another send on it.
 			doneFunc := func() {

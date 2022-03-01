@@ -85,7 +85,7 @@ var (
 
 	DebounceAfter = env.RegisterDurationVar(
 		"PILOT_DEBOUNCE_AFTER",
-		100*time.Millisecond,
+		10*time.Millisecond,
 		"The delay added to config/registry events for debouncing. This will delay the push by "+
 			"at least this interval. If no change is detected within this period, the push will happen, "+
 			" otherwise we'll keep delaying until things settle, up to a max of PILOT_DEBOUNCE_MAX.",

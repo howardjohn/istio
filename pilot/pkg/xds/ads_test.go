@@ -15,6 +15,7 @@ package xds_test
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"testing"
 	"time"
@@ -42,6 +43,78 @@ const (
 	routeA = "http.80"
 	routeB = "https.443.https.my-gateway.testns"
 )
+
+func TestRace(t *testing.T) {
+	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{ConfigString: mustReadfolder(t, "tests/testdata/config")})
+	c1 := s.Connect(s.SetupProxy(nil), nil, watchAll)
+	// c2 := s.Connect(s.SetupProxy(nil), nil, watchAll)
+
+	go func() {
+		for {
+			r := <-c1.CDSVersion
+			t.Log("c1", r)
+		}
+	}()
+
+	//go func() {
+	//	for {
+	//		r := <-c2.CDSVersion
+	//		t.Log("c2", r)
+	//	}
+	//}()
+	//_ = c2
+	t.Log("init")
+	cfg := config.Config{
+		Meta: config.Meta{
+			GroupVersionKind: gvk.DestinationRule,
+			Name:             "foo",
+			Namespace:        "istio-system",
+		},
+		Spec: &networking.DestinationRule{
+			Host:    "*.bar.com",
+			Subsets: []*networking.Subset{{Name: "mysubset"}},
+		},
+	}
+	if _, err := s.Store().Create(cfg); err != nil {
+		t.Fatal(err)
+	}
+	mustHave := func() {
+		retry.UntilOrFail(t, func() bool {
+			_, f := c1.GetClusters()["outbound|8000|mysubset|foo.bar.com"]
+			f2 := f
+			//_, f2 := c2.GetClusters()["outbound|8000|mysubset|foo.bar.com"]
+			return f && f2
+		}, retry.Timeout(time.Second*2), retry.BackoffDelay(time.Millisecond*10))
+	}
+	mustNotHave := func() {
+		retry.UntilOrFail(t, func() bool {
+			_, f := c1.GetClusters()["outbound|8000|mysubset|foo.bar.com"]
+			f2 := f
+			//_, f2 := c2.GetClusters()["outbound|8000|mysubset|foo.bar.com"]
+			return !f && !f2
+		}, retry.Timeout(time.Second*2), retry.BackoffDelay(time.Millisecond*10))
+	}
+	mustHave()
+	go func() {
+		for {
+			c1.Watch2()
+			time.Sleep(time.Millisecond * time.Duration(rand.Intn(600)))
+		}
+	}()
+	i := 0
+	for i < 1000 {
+		i++
+		if err := s.Store().Delete(gvk.DestinationRule, cfg.Name, cfg.Namespace, nil); err != nil {
+			t.Fatal(err)
+		}
+		mustNotHave()
+		if _, err := s.Store().Create(cfg); err != nil {
+			t.Fatal(err)
+		}
+		mustHave()
+		t.Log("complete iter", i)
+	}
+}
 
 func TestStatusEvents(t *testing.T) {
 	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})

@@ -61,6 +61,16 @@ func checkProxyDependencies(proxy *model.Proxy, config model.ConfigKey) bool {
 	// Detailed config dependencies check.
 	switch proxy.Type {
 	case model.SidecarProxy:
+		if proxy.PrevSidecarScope != nil {
+			log.Errorf("howardjohn: compare %v vs %v", proxy.SidecarScope.Version, proxy.PrevSidecarScope.Version)
+			if proxy.SidecarScope.Version == proxy.PrevSidecarScope.Version {
+				log.Errorf("howardjohn: !!!")
+				log.Errorf("howardjohn: !!!")
+				log.Errorf("howardjohn: !!!")
+				log.Errorf("howardjohn: !!!")
+			}
+
+		}
 		if proxy.SidecarScope.DependsOnConfig(config) {
 			return true
 		} else if proxy.PrevSidecarScope != nil && proxy.PrevSidecarScope.DependsOnConfig(config) {

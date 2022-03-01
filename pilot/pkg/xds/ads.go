@@ -211,6 +211,10 @@ func (s *DiscoveryServer) processRequest(req *discovery.DiscoveryRequest, con *C
 
 	var request *model.PushRequest
 	push := s.globalPushContext()
+	log.Errorf("howardjohn: begin request %v %v", push.PushVersion, req.TypeUrl)
+	if req.TypeUrl == "fake" {
+		shouldRespond = true
+	}
 	if shouldRespond {
 		// This is a request, trigger a full push for this type. Override the blocked push (if it exists),
 		// as this full push is guaranteed to be a superset of what we would have pushed from the blocked push.
@@ -239,7 +243,10 @@ func (s *DiscoveryServer) processRequest(req *discovery.DiscoveryRequest, con *C
 	// It can happen when `processRequest` comes after push context has been updated(s.initPushContext),
 	// but before proxy's SidecarScope has been updated(s.updateProxy).
 	if con.proxy.SidecarScope != nil && con.proxy.SidecarScope.Version != push.PushVersion {
+		log.Errorf("howardjohn: compute state for push request (%v != %v)", con.proxy.SidecarScope.Version, push.PushVersion)
 		s.computeProxyState(con.proxy, request)
+	} else {
+		log.Errorf("howardjohn: no compute (%v = %v)", con.proxy.SidecarScope.Version, push.PushVersion)
 	}
 	return s.pushXds(con, push, con.Watched(req.TypeUrl), request)
 }
@@ -328,6 +335,7 @@ func (s *DiscoveryServer) Stream(stream DiscoveryStream) error {
 				return <-con.errorChan
 			}
 		case pushEv := <-con.pushChannel:
+			log.Errorf("howardjohn: begin real push %v", pushEv.pushRequest.Push.PushVersion)
 			err := s.pushConnection(con, pushEv)
 			pushEv.done()
 			if err != nil {
@@ -643,6 +651,7 @@ func (s *DiscoveryServer) computeProxyState(proxy *model.Proxy, request *model.P
 		}
 	}
 	// compute the sidecarscope for both proxy types whenever it changes.
+	log.Errorf("howardjohn: compute proxy state: %v/%v", push.PushVersion, sidecar)
 	if sidecar {
 		proxy.SetSidecarScope(push)
 	}
@@ -689,6 +698,7 @@ func (s *DiscoveryServer) pushConnection(con *Connection, pushEv *Event) error {
 	}
 
 	if !s.ProxyNeedsPush(con.proxy, pushRequest) {
+		log.Errorf("howardjohn: Skipping push to %v, no updates required", con.ConID)
 		log.Debugf("Skipping push to %v, no updates required", con.ConID)
 		if pushRequest.Full {
 			// Only report for full versions, incremental pushes do not have a new version.
