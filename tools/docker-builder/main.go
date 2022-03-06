@@ -19,10 +19,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -106,12 +104,11 @@ var rootCmd = &cobra.Command{
 				basesMu.Unlock()
 			}()
 		}
-		if err := RunMake(args, targets...); err != nil {
-			return err
-		}
+		//if err := RunMake(args, targets...); err != nil {
+		//	return err
+		//}
 		if args.CraneEnabled {
-			RunCrane(args)
-			return nil
+			return RunCrane(args)
 		}
 		if err := RunBake(args); err != nil {
 			return err
@@ -124,76 +121,33 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func RunCrane(a Args) {
+func RunCrane(a Args) error {
 	g := errgroup.Group{}
 	for _, t := range a.Targets {
 		t := t
 		g.Go(func() error {
-			switch t {
-			case "pilot":
-				base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", t))
-				df := filepath.Join(base, "Dockerfile."+"pilot")
-				parseDockerFile(df)
-				dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", t))
-				destTar := filepath.Join(dest, "data.tar")
-				if err := CopyFile(filepath.Join(base, "amd64", "pilot-discovery"), filepath.Join(dest, "usr/local/bin/pilot-discovery")); err != nil {
-					return err
-				}
-				if err := VerboseCommand("tar", "cf", destTar, "-C", dest, "--exclude", "data.tar", ".").Run(); err != nil {
-					return err
-				}
-				if err := build(buildArgs{
-					Env:        nil,
-					User:       "1337:1337",
-					Entrypoint: "/usr/local/bin/pilot-discovery",
-					Base:       "gcr.io/istio-release/base:" + a.BaseVersion,
-					Dest:       fmt.Sprintf("%v/pilot:%v", a.Hubs[0], a.Tags[0]),
-					Data:       destTar,
-				}); err != nil {
-					return err
-				}
-			case "proxyv2":
-				base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", t))
-				dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", t))
-				destTar := filepath.Join(dest, "data.tar")
-				if err := CopyFile(filepath.Join(base, "amd64", "pilot-agent"), filepath.Join(dest, "usr/local/bin/pilot-agent")); err != nil {
-					return err
-				}
-				if err := CopyFile(filepath.Join(base, "amd64", "envoy"), filepath.Join(dest, "usr/local/bin/envoy")); err != nil {
-					return err
-				}
-				if err := CopyFile(filepath.Join(base, "stats-filter.wasm"), filepath.Join(dest, "/etc/istio/extensions/stats-filter.wasm")); err != nil {
-					return err
-				}
-				if err := CopyFile(filepath.Join(base, "stats-filter.compiled.wasm"), filepath.Join(dest, "/etc/istio/extensions/stats-filter.compiled.wasm")); err != nil {
-					return err
-				}
-				if err := CopyFile(filepath.Join(base, "metadata-exchange-filter.wasm"), filepath.Join(dest, "/etc/istio/extensions/metadata-exchange-filter.wasm")); err != nil {
-					return err
-				}
-				if err := CopyFile(filepath.Join(base, "metadata-exchange-filter.compiled.wasm"), filepath.Join(dest, "/etc/istio/extensions/metadata-exchange-filter.compiled.wasm")); err != nil {
-					return err
-				}
-				if err := VerboseCommand("tar", "cf", destTar, "-C", dest, "--exclude", "data.tar", ".").Run(); err != nil {
-					return err
-				}
-				if err := build(buildArgs{
-					Env:        nil,
-					User:       "1337:1337",
-					Entrypoint: "/usr/local/bin/pilot-agent",
-					Base:       "gcr.io/istio-release/base:" + a.BaseVersion,
-					Dest:       fmt.Sprintf("%v/proxyv2:%v", a.Hubs[0], a.Tags[0]),
-					Data:       destTar,
-				}); err != nil {
-					return err
-				}
+			base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", t))
+			df := filepath.Join(base, "Dockerfile."+t)
+			args := createArgs(a, t, a.Variants[0])
+			state, err := parseDockerFile(df, args)
+			if err != nil {
+				return err
 			}
+			craneArg, err := state.ToCraneArgs(t, fmt.Sprintf("%v/pilot:%v", a.Hubs[0], a.Tags[0]))
+			if err != nil {
+				return err
+			}
+			if err := build(craneArg); err != nil {
+				return err
+			}
+
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
-		log.Error(err)
+		return err
 	}
+	return nil
 }
 
 func RunBake(args Args) error {
@@ -266,34 +220,10 @@ func RunSave(a Args, files map[string]string) error {
 		}
 		// If it has an alias (ie pilot-debug -> pilot), copy it over. Copy after gzip to avoid double compute.
 		if alias != "" {
-			if err := CopyFile(filepath.Join(root, name+".tar.gz"), filepath.Join(root, alias+".tar.gz")); err != nil {
+			if err := Copy(filepath.Join(root, name+".tar.gz"), filepath.Join(root, alias+".tar.gz")); err != nil {
 				return err
 			}
 		}
-	}
-
-	return nil
-}
-
-func CopyFile(src, dst string) error {
-	log.Infof("Copying %v -> %v", src, dst)
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("failed to open file %v to copy: %v", src, err)
-	}
-	defer in.Close()
-
-	if err := os.MkdirAll(path.Join(dst, ".."), 0o750); err != nil {
-		return fmt.Errorf("failed to make destination directory %v: %v", dst, err)
-	}
-	out, err := os.Create(dst)
-	if err != nil {
-		return fmt.Errorf("failed to create file %v to copy to: %v", dst, err)
-	}
-	defer out.Close()
-
-	if _, err = io.Copy(out, in); err != nil {
-		return fmt.Errorf("failed to copy %v to %v: %v", src, dst, err)
 	}
 
 	return nil
@@ -344,18 +274,8 @@ func ConstructBakeFile(a Args) (map[string]string, error) {
 			t := Target{
 				Context:    sp(p),
 				Dockerfile: sp(fmt.Sprintf("Dockerfile.%s", target)),
-				Args: map[string]string{
-					// Base version defines the tag of the base image to use. Typically, set in the Makefile and not overridden.
-					"BASE_VERSION": args.BaseVersion,
-					// Base distribution picks which variant to build
-					"BASE_DISTRIBUTION": baseDist,
-					// Additional metadata injected into some images
-					"proxy_version":    args.ProxyVersion,
-					"istio_version":    args.IstioVersion,
-					"VM_IMAGE_NAME":    vmImageName(target),
-					"VM_IMAGE_VERSION": vmImageVersion(target),
-				},
-				Platforms: args.Architectures,
+				Args:       createArgs(args, target, variant),
+				Platforms:  args.Architectures,
 			}
 
 			for _, h := range a.Hubs {
@@ -436,6 +356,24 @@ func ConstructBakeFile(a Args) (map[string]string, error) {
 	}
 
 	return tarFiles, os.WriteFile(out, j, 0o644)
+}
+
+func createArgs(args Args, target string, variant string) map[string]string {
+	baseDist := variant
+	if baseDist == DefaultVariant {
+		baseDist = PrimaryVariant
+	}
+	return map[string]string{
+		// Base version defines the tag of the base image to use. Typically, set in the Makefile and not overridden.
+		"BASE_VERSION": args.BaseVersion,
+		// Base distribution picks which variant to build
+		"BASE_DISTRIBUTION": baseDist,
+		// Additional metadata injected into some images
+		"proxy_version":    args.ProxyVersion,
+		"istio_version":    args.IstioVersion,
+		"VM_IMAGE_NAME":    vmImageName(target),
+		"VM_IMAGE_VERSION": vmImageVersion(target),
+	}
 }
 
 func assertImageNonExisting(i string) error {
