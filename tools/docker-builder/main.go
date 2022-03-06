@@ -132,6 +132,8 @@ func RunCrane(a Args) {
 			switch t {
 			case "pilot":
 				base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", t))
+				df := filepath.Join(base, "Dockerfile."+"pilot")
+				parseDockerFile(df)
 				dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", t))
 				destTar := filepath.Join(dest, "data.tar")
 				if err := CopyFile(filepath.Join(base, "amd64", "pilot-discovery"), filepath.Join(dest, "usr/local/bin/pilot-discovery")); err != nil {

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/asottile/dockerfile"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -27,6 +28,26 @@ var (
 	bases   = map[string]v1.Image{}
 	basesMu sync.RWMutex
 )
+
+type state struct {
+	args map[string]string
+}
+
+func parseDockerFile(f string) {
+	cmds, err := dockerfile.ParseFile(f)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s := state{}
+	for _, c := range cmds {
+		switch c.Cmd {
+		case "ARG":
+			s.args[c.Value]
+		}
+		log.Printf("%+v\n",c)
+	}
+	log.Println(s)
+}
 
 func loadBase(b string) error {
 	ref, err := name.ParseReference(b)
