@@ -88,8 +88,6 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("pushing to official registry only supported in CI")
 		}
 
-
-
 		tarFiles, err := ConstructBakeFile(args)
 		if err != nil {
 			return err
@@ -97,6 +95,16 @@ var rootCmd = &cobra.Command{
 		targets := []string{}
 		for _, t := range args.Targets {
 			targets = append(targets, fmt.Sprintf("build.docker.%s", t))
+		}
+		if args.CraneEnabled {
+			// Pre-Load base image in background
+			basesMu.Lock()
+			go func() {
+				if err := loadBase("gcr.io/istio-release/base:" + args.BaseVersion); err != nil {
+					log.Error(err)
+				}
+				basesMu.Unlock()
+			}()
 		}
 		if err := RunMake(args, targets...); err != nil {
 			return err
@@ -121,53 +129,64 @@ func RunCrane(a Args) {
 	for _, t := range a.Targets {
 		t := t
 		g.Go(func() error {
-
-		switch t {
-		case "pilot":
-			base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s", t))
-			dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", t))
-			destTar := filepath.Join(dest, "data.tar")
-			if err := CopyFile(filepath.Join(base, "amd64", "pilot-discovery"), filepath.Join(dest, "usr/local/bin/pilot-discovery")); err != nil {
-				log.Error(err)
+			switch t {
+			case "pilot":
+				base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", t))
+				dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", t))
+				destTar := filepath.Join(dest, "data.tar")
+				if err := CopyFile(filepath.Join(base, "amd64", "pilot-discovery"), filepath.Join(dest, "usr/local/bin/pilot-discovery")); err != nil {
+					return err
+				}
+				if err := VerboseCommand("tar", "cf", destTar, "-C", dest, "--exclude", "data.tar", ".").Run(); err != nil {
+					return err
+				}
+				if err := build(buildArgs{
+					Env:        nil,
+					User:       "1337:1337",
+					Entrypoint: "/usr/local/bin/pilot-discovery",
+					Base:       "gcr.io/istio-release/base:" + a.BaseVersion,
+					Dest:       fmt.Sprintf("%v/pilot:%v", a.Hubs[0], a.Tags[0]),
+					Data:       destTar,
+				}); err != nil {
+					return err
+				}
+			case "proxyv2":
+				base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", t))
+				dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", t))
+				destTar := filepath.Join(dest, "data.tar")
+				if err := CopyFile(filepath.Join(base, "amd64", "pilot-agent"), filepath.Join(dest, "usr/local/bin/pilot-agent")); err != nil {
+					return err
+				}
+				if err := CopyFile(filepath.Join(base, "amd64", "envoy"), filepath.Join(dest, "usr/local/bin/envoy")); err != nil {
+					return err
+				}
+				if err := CopyFile(filepath.Join(base, "stats-filter.wasm"), filepath.Join(dest, "/etc/istio/extensions/stats-filter.wasm")); err != nil {
+					return err
+				}
+				if err := CopyFile(filepath.Join(base, "stats-filter.compiled.wasm"), filepath.Join(dest, "/etc/istio/extensions/stats-filter.compiled.wasm")); err != nil {
+					return err
+				}
+				if err := CopyFile(filepath.Join(base, "metadata-exchange-filter.wasm"), filepath.Join(dest, "/etc/istio/extensions/metadata-exchange-filter.wasm")); err != nil {
+					return err
+				}
+				if err := CopyFile(filepath.Join(base, "metadata-exchange-filter.compiled.wasm"), filepath.Join(dest, "/etc/istio/extensions/metadata-exchange-filter.compiled.wasm")); err != nil {
+					return err
+				}
+				if err := VerboseCommand("tar", "cf", destTar, "-C", dest, "--exclude", "data.tar", ".").Run(); err != nil {
+					return err
+				}
+				if err := build(buildArgs{
+					Env:        nil,
+					User:       "1337:1337",
+					Entrypoint: "/usr/local/bin/pilot-agent",
+					Base:       "gcr.io/istio-release/base:" + a.BaseVersion,
+					Dest:       fmt.Sprintf("%v/proxyv2:%v", a.Hubs[0], a.Tags[0]),
+					Data:       destTar,
+				}); err != nil {
+					return err
+				}
 			}
-			VerboseCommand("tar", "cf", destTar, "-C", dest, "--exclude", "data.tar", ".").Run()
-			VerboseCommand("crane-dockerfile",
-			"--base", "gcr.io/istio-release/base:"+ a.BaseVersion,
-			"--user", "1337:1337",
-			"--entrypoint", "/usr/local/bin/pilot-discovery",
-			"--dest", fmt.Sprintf("%v/pilot:%v", a.Hubs[0], a.Tags[0]),
-			"--data", destTar).Run()
-		case "proxyv2":
-			base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s", t))
-			dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", t))
-			destTar := filepath.Join(dest, "data.tar")
-			if err := CopyFile(filepath.Join(base, "amd64", "pilot-agent"), filepath.Join(dest, "usr/local/bin/pilot-agent")); err != nil {
-				log.Error(err)
-			}
-			if err := CopyFile(filepath.Join(base, "amd64", "envoy"), filepath.Join(dest, "usr/local/bin/envoy")); err != nil {
-				log.Error(err)
-			}
-			if err := CopyFile(filepath.Join(base, "stats-filter.wasm"), filepath.Join(dest, "/etc/istio/extensions/stats-filter.wasm")); err != nil {
-				log.Error(err)
-			}
-			if err := CopyFile(filepath.Join(base, "stats-filter.compiled.wasm"), filepath.Join(dest, "/etc/istio/extensions/stats-filter.compiled.wasm")); err != nil {
-				log.Error(err)
-			}
-			if err := CopyFile(filepath.Join(base, "metadata-exchange-filter.wasm"), filepath.Join(dest, "/etc/istio/extensions/metadata-exchange-filter.wasm")); err != nil {
-				log.Error(err)
-			}
-			if err := CopyFile(filepath.Join(base, "metadata-exchange-filter.compiled.wasm"), filepath.Join(dest, "/etc/istio/extensions/metadata-exchange-filter.compiled.wasm")); err != nil {
-				log.Error(err)
-			}
-			VerboseCommand("tar", "cf", destTar, "-C", dest, "--exclude", "data.tar", ".").Run()
-			VerboseCommand("crane-dockerfile",
-			"--base", "gcr.io/istio-release/base:"+ a.BaseVersion,
-			"--user", "1337:1337",
-			"--entrypoint", "/usr/local/bin/pilot-agent",
-			"--dest", fmt.Sprintf("%v/proxyv2:%v", a.Hubs[0], a.Tags[0]),
-			"--data", destTar).Run()
-		}
-		return nil
+			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
