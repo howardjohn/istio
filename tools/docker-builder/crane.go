@@ -46,6 +46,10 @@ type state struct {
 }
 
 func (s state) ToCraneArgs(target, destHub string) (buildArgs, error) {
+	t0 := time.Now()
+	defer func() {
+		log.WithLabels("image", target, "total", time.Since(t0), "step", time.Since(t0)).Info("copy")
+	}()
 	base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", target))
 	dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", target))
 	destTar := filepath.Join(dest, "data.tar")
@@ -82,6 +86,10 @@ func Cut(s, sep string) (before, after string) {
 var parseLog = log.RegisterScope("parse", "", 0)
 
 func parseDockerFile(f string, args map[string]string) (state, error) {
+	t0 := time.Now()
+	defer func() {
+		log.WithLabels("image", f, "total", time.Since(t0), "step", time.Since(t0)).Info("parse")
+	}()
 	cmds, err := dockerfile.ParseFile(f)
 	if err != nil {
 		return state{}, err
@@ -212,7 +220,7 @@ func build(args buildArgs) error {
 	}
 	trace("config")
 
-	l, err := tarball.LayerFromFile(args.Data, tarball.WithCompressedCaching, tarball.WithCompressionLevel(gzip.NoCompression))
+	l, err := tarball.LayerFromFile(args.Data, tarball.WithCompressionLevel(gzip.NoCompression))
 	if err != nil {
 		return err
 	}
