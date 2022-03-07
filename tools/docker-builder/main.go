@@ -153,7 +153,7 @@ func RunCrane(a Args) error {
 			if err != nil {
 				return err
 			}
-			craneArg, err := state.ToCraneArgs(t, fmt.Sprintf("%v/pilot:%v", a.Hubs[0], a.Tags[0]))
+			craneArg, err := state.ToCraneArgs(t, fmt.Sprintf("%v/%v:%v", a.Hubs[0], t, a.Tags[0]))
 			if err != nil {
 				return err
 			}
