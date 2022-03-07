@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -129,6 +130,7 @@ func parseDockerFile(f string, args map[string]string) (state, error) {
 }
 
 func loadBase(b string) error {
+	t0 := time.Now()
 	ref, err := name.ParseReference(b)
 	if err != nil {
 		return err
@@ -137,12 +139,18 @@ func loadBase(b string) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("base loaded")
+	log.WithLabels("step", time.Since(t0)).Infof("base loaded")
 	bases[b] = bi
 	return nil
 }
 
 func build(args buildArgs) error {
+	t0 := time.Now()
+	lt := t0
+	trace := func(d string) {
+		log.WithLabels("image", args.Dest, "total", time.Since(t0), "step", time.Since(lt)).Info(d)
+		lt = time.Now()
+	}
 	if args.Dest == "" {
 		return fmt.Errorf("dest required")
 	}
@@ -160,7 +168,6 @@ func build(args buildArgs) error {
 		}
 	}()
 
-	t0 := time.Now()
 	baseImage := empty.Image
 	if args.Base != "" {
 		basesMu.RLock()
@@ -173,20 +180,20 @@ func build(args buildArgs) error {
 		if err != nil {
 			return err
 		}
-		bi, err := remote.Image(ref)
+		bi, err := remote.Image(ref, remote.WithProgress(updates))
 		if err != nil {
 			return err
 		}
 		baseImage = bi
 	}
-	log.Infof("create base in %v", time.Since(t0))
+	trace("create base")
 
 	cfgFile, err := baseImage.ConfigFile()
 	if err != nil {
 		return err
 	}
 
-	log.Infof("base config in %v", time.Since(t0))
+	trace("base config")
 
 	cfg := cfgFile.Config
 	for k, v := range args.Env {
@@ -203,20 +210,20 @@ func build(args buildArgs) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("config in %v", time.Since(t0))
+	trace("config")
 
-	l, err := tarball.LayerFromFile(args.Data, tarball.WithCompressedCaching)
+	l, err := tarball.LayerFromFile(args.Data, tarball.WithCompressedCaching, tarball.WithCompressionLevel(gzip.NoCompression))
 	if err != nil {
 		return err
 	}
-	log.Infof("read layer in %v", time.Since(t0))
+	trace("read layer")
 
 	files, err := mutate.AppendLayers(updated, l)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("layer in %v", time.Since(t0))
+	trace("layer")
 
 	destRef, err := name.ParseReference(args.Dest)
 	if err != nil {
@@ -227,6 +234,6 @@ func build(args buildArgs) error {
 		return err
 	}
 
-	log.Infof("write in %v", time.Since(t0))
+	trace("write")
 	return nil
 }

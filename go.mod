@@ -14,6 +14,7 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.0
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20220128185157-8216dc216151
 	github.com/Masterminds/sprig/v3 v3.2.2
+	github.com/asottile/dockerfile v3.1.0+incompatible
 	github.com/aws/aws-sdk-go v1.43.3
 	github.com/cenkalti/backoff/v4 v4.1.2
 	github.com/census-instrumentation/opencensus-proto v0.3.0
@@ -26,6 +27,7 @@ require (
 	github.com/envoyproxy/go-control-plane v0.10.2-0.20220119144013-5ce31a86d483
 	github.com/evanphx/json-patch/v5 v5.6.0
 	github.com/fatih/color v1.13.0
+	github.com/felixge/fgprof v0.9.2
 	github.com/florianl/go-nflog/v2 v2.0.1
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/gogo/protobuf v1.3.2
@@ -50,6 +52,7 @@ require (
 	github.com/miekg/dns v1.1.46
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/moby/buildkit v0.9.3
 	github.com/onsi/gomega v1.18.1
 	github.com/openshift/api v0.0.0-20200713203337-b2494ecb17dd
 	github.com/pmezard/go-difflib v1.0.0
@@ -118,7 +121,6 @@ require (
 	github.com/VividCortex/ewma v1.1.1 // indirect
 	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20211230233453-7135d1f0fd15 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 // indirect
-	github.com/asottile/dockerfile v3.1.0+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
@@ -152,6 +154,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.0.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/btree v1.0.1 // indirect
+	github.com/google/pprof v0.0.0-20211214055906-6f57359322fd // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
@@ -188,7 +191,6 @@ require (
 	github.com/mitchellh/go-wordwrap v1.0.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/moby/buildkit v0.9.3 // indirect
 	github.com/moby/spdystream v0.2.0 // indirect
 	github.com/moby/term v0.0.0-20210610120745-9d4ed1856297 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

@@ -13,7 +13,7 @@ import (
 )
 
 func CopyDirectory(scrDir, dest string) error {
-	log.Infof("CopyDir %v -> %v", scrDir, dest)
+	log.Debugf("CopyDir %v -> %v", scrDir, dest)
 	if err := os.MkdirAll(dest, 0o755); err != nil && os.IsExist(err) {
 		return fmt.Errorf("mkdir: %v", err)
 	}
@@ -82,7 +82,7 @@ func CopyGeneric(srcFile, dstFile string) error {
 	return Copy(srcFile, dstFile)
 }
 func Copy(srcFile, dstFile string) error {
-	log.Infof("Copy %v -> %v", srcFile, dstFile)
+	log.Debugf("Copy %v -> %v", srcFile, dstFile)
 	in, err := os.Open(srcFile)
 	defer in.Close()
 	if err != nil {

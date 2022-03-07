@@ -22,11 +22,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
+	"time"
 
+	"github.com/felixge/fgprof"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
-
 	"istio.io/istio/pilot/pkg/util/sets"
 	testenv "istio.io/istio/pkg/test/env"
 	"istio.io/pkg/log"
@@ -68,11 +70,29 @@ var rootCmd = &cobra.Command{
 	SilenceUsage: true,
 	Short:        "Builds Istio docker images",
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		f, err := os.Create("prof")
+		f2, err := os.Create("prof2")
+		pprof.StartCPUProfile(f2)
+
+		defer func() {
+			pprof.StopCPUProfile()
+			f2.Close()
+		}()
+		fgprof.Handler()
+		log.Info(err)
+		defer func() {
+			log.Info(fgprof.Start(f, fgprof.FormatPprof)())
+			f.Close()
+		}()
+		t0 := time.Now()
+		defer func() {
+			log.WithLabels("runtime", time.Since(t0)).Infof("build complete")
+		}()
 		if version {
 			fmt.Println(pkgversion.Info.GitRevision)
 			os.Exit(0)
 		}
-		log.Infof("Args: %+v", args)
+		log.Infof("Args: %s", args)
 		if len(args.Targets) == 0 {
 			return fmt.Errorf("no targets specified")
 		}

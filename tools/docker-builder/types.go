@@ -15,6 +15,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,6 +71,25 @@ type Args struct {
 	Tags          []string
 	Hubs          []string
 	CraneEnabled  bool
+}
+
+func (a Args) String() string {
+	var b strings.Builder
+	b.WriteString("Push:           " + fmt.Sprint(a.Push) + "\n")
+	b.WriteString("Save:           " + fmt.Sprint(a.Save) + "\n")
+	b.WriteString("BuildxEnabled:  " + fmt.Sprint(a.BuildxEnabled) + "\n")
+	b.WriteString("NoClobber:      " + fmt.Sprint(a.NoClobber) + "\n")
+	b.WriteString("NoCache:        " + fmt.Sprint(a.NoCache) + "\n")
+	b.WriteString("Targets:        " + fmt.Sprint(a.Targets) + "\n")
+	b.WriteString("Variants:       " + fmt.Sprint(a.Variants) + "\n")
+	b.WriteString("Architectures:  " + fmt.Sprint(a.Architectures) + "\n")
+	b.WriteString("BaseVersion:    " + fmt.Sprint(a.BaseVersion) + "\n")
+	b.WriteString("ProxyVersion:   " + fmt.Sprint(a.ProxyVersion) + "\n")
+	b.WriteString("IstioVersion:   " + fmt.Sprint(a.IstioVersion) + "\n")
+	b.WriteString("Tags:           " + fmt.Sprint(a.Tags) + "\n")
+	b.WriteString("Hubs:           " + fmt.Sprint(a.Hubs) + "\n")
+	b.WriteString("CraneEnabled:   " + fmt.Sprint(a.CraneEnabled) + "\n")
+	return b.String()
 }
 
 // Define variants, which control the base image of an image.
