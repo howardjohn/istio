@@ -124,9 +124,9 @@ var rootCmd = &cobra.Command{
 				basesMu.Unlock()
 			}()
 		}
-		//if err := RunMake(args, targets...); err != nil {
-		//	return err
-		//}
+		if err := RunMake(args, targets...); err != nil {
+			return err
+		}
 		if args.CraneEnabled {
 			return RunCrane(args)
 		}
