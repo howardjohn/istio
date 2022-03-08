@@ -51,7 +51,7 @@ func main() {
 	rootCmd.Flags().BoolVar(&args.NoCache, "no-cache", args.NoCache, "disable caching")
 	rootCmd.Flags().BoolVar(&args.BuildxEnabled, "buildx", args.BuildxEnabled, "use buildx for builds")
 	rootCmd.Flags().BoolVar(&args.NoClobber, "no-clobber", args.NoClobber, "do not allow pushing images that already exist")
-	rootCmd.Flags().BoolVar(&args.CraneEnabled, "crane", args.CraneEnabled, "use crane for builds")
+	rootCmd.Flags().BoolVar(&args.CraneEnabled, "crane", true, "use crane for builds")
 	rootCmd.Flags().BoolVar(&version, "version", version, "show build version")
 
 	if err := rootCmd.Execute(); err != nil {
