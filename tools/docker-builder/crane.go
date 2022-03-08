@@ -152,6 +152,20 @@ func loadBase(b string) error {
 	return nil
 }
 
+func ByteCount(b int64) string {
+	const unit = 1000
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB",
+		float64(b)/float64(div), "kMGTPE"[exp])
+}
+
 func build(args buildArgs) error {
 	t0 := time.Now()
 	lt := t0
@@ -166,12 +180,18 @@ func build(args buildArgs) error {
 		return fmt.Errorf("data required")
 	}
 
-	updates := make(chan v1.Update)
+	updates := make(chan v1.Update, 1000)
 	go func() {
 		for {
+			lastLog := time.Now()
 			select {
 			case u := <-updates:
-				log.Infof(u)
+				if time.Since(lastLog) < time.Second {
+					// Limit to 1 log per image per second
+					continue
+				}
+				lastLog = time.Now()
+				log.WithLabels("image", args.Dest).Infof("%s/%s", ByteCount(u.Complete), ByteCount(u.Total))
 			}
 		}
 	}()
