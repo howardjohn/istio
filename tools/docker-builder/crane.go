@@ -238,7 +238,7 @@ func build(args buildArgs) error {
 		return err
 	}
 
-	if err := remote.Write(destRef, files); err != nil {
+	if err := remote.Write(destRef, files, remote.WithProgress(updates)); err != nil {
 		return err
 	}
 
