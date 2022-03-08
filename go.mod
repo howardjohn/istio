@@ -170,6 +170,7 @@ require (
 	github.com/josharian/native v0.0.0-20200817173448-b6b71def0850 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.4 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.0 // indirect
@@ -188,6 +189,7 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mdlayher/netlink v1.4.1 // indirect
 	github.com/mdlayher/socket v0.0.0-20210307095302-262dc9984e00 // indirect
+	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
@@ -247,3 +249,5 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.13.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 )
+
+replace github.com/google/go-containerregistry => ./replace/github.com/google/go-containerregistry
