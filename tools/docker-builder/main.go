@@ -109,18 +109,25 @@ var rootCmd = &cobra.Command{
 				basesMu.Unlock()
 			}()
 		}
+		makeStart := time.Now()
 		if err := RunMake(args, targets...); err != nil {
 			return err
 		}
+		log.WithLabels("runtime", time.Since(makeStart)).Infof("make complete")
+		dockerStart := time.Now()
 		if args.CraneEnabled {
-			return RunCrane(args)
+			if err := RunCrane(args); err != nil {
+				return err
+			}
+		} else {
+			if err := RunBake(args); err != nil {
+				return err
+			}
+			if err := RunSave(args, tarFiles); err != nil {
+				return err
+			}
 		}
-		if err := RunBake(args); err != nil {
-			return err
-		}
-		if err := RunSave(args, tarFiles); err != nil {
-			return err
-		}
+		log.WithLabels("runtime", time.Since(dockerStart)).Infof("images complete")
 
 		return nil
 	},

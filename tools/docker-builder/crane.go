@@ -3,6 +3,8 @@ package main
 import (
 	"compress/gzip"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/stream"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 
@@ -24,10 +27,12 @@ import (
 type buildArgs struct {
 	Env        map[string]string
 	User       string
+	WorkDir    string
 	Entrypoint []string
 	Base       string
 	Dest       string
 	Data       string
+	DataDir    string
 }
 
 var (
@@ -37,12 +42,22 @@ var (
 
 type state struct {
 	args       map[string]string
+	env        map[string]string
 	bases      map[string]string
 	copies     map[string]string
 	user       string
+	workdir    string
 	base       string
 	shlex      *shell.Lex
 	entrypoint []string
+}
+
+func Symlink(oldname, newname string) error {
+	if err := os.MkdirAll(filepath.Dir(newname), 0o755); err != nil {
+		return err
+	}
+	_ = os.Remove(newname)
+	return os.Symlink(oldname, newname)
 }
 
 func (s state) ToCraneArgs(target, destHub string) (buildArgs, error) {
@@ -52,27 +67,31 @@ func (s state) ToCraneArgs(target, destHub string) (buildArgs, error) {
 	}()
 	base := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("build.docker.%s", target))
 	dest := filepath.Join(testenv.LocalOut, "dockerx_build", fmt.Sprintf("docker.%s-tar", target))
-	destTar := filepath.Join(dest, "data.tar")
 	for orig, dst := range s.copies {
-		if err := CopyGeneric(filepath.Join(base, orig), filepath.Join(dest, dst)); err != nil {
+		if err := Symlink(filepath.Join(base, orig), filepath.Join(dest, dst)); err != nil {
 			return buildArgs{}, err
 		}
 	}
-	if err := VerboseCommand("tar", "cf", destTar, "-C", dest, "--exclude", "data.tar", ".").Run(); err != nil {
-		return buildArgs{}, err
-	}
 	return buildArgs{
-		Env:        nil,
+		Env:        s.env,
 		User:       s.user,
+		WorkDir:    s.workdir,
 		Entrypoint: s.entrypoint,
 		Base:       s.base,
 		Dest:       destHub,
-		Data:       destTar,
+		DataDir:    dest,
 	}, nil
 }
 
 func (s state) Expand(i string) string {
-	r, _ := s.shlex.ProcessWordWithMap(i, s.args)
+	avail := map[string]string{}
+	for k, v := range s.args {
+		avail[k] = v
+	}
+	for k, v := range s.env {
+		avail[k] = v
+	}
+	r, _ := s.shlex.ProcessWordWithMap(i, avail)
 	return r
 }
 
@@ -96,6 +115,7 @@ func parseDockerFile(f string, args map[string]string) (state, error) {
 	}
 	s := state{
 		args:   map[string]string{},
+		env:    map[string]string{},
 		bases:  map[string]string{},
 		copies: map[string]string{},
 	}
@@ -129,10 +149,17 @@ func parseDockerFile(f string, args map[string]string) (state, error) {
 			s.user = c.Value[0]
 		case "ENTRYPOINT":
 			s.entrypoint = c.Value
+		case "ENV":
+			k := s.Expand(c.Value[0])
+			v := s.Expand(c.Value[1])
+			s.env[k] = v
+		case "WORKDIR":
+			v := s.Expand(c.Value[0])
+			s.workdir = v
 		default:
 			parseLog.Warnf("did not handle %+v", c)
 		}
-		parseLog.Debugf("%v: %+v", c.Original, s)
+		parseLog.Debugf("%v: %+v", filepath.Base(c.Original), s)
 	}
 	return s, nil
 }
@@ -176,8 +203,8 @@ func build(args buildArgs) error {
 	if args.Dest == "" {
 		return fmt.Errorf("dest required")
 	}
-	if args.Data == "" {
-		return fmt.Errorf("data required")
+	if args.Data == "" && args.DataDir == "" {
+		return fmt.Errorf("data or datadir required")
 	}
 
 	updates := make(chan v1.Update, 1000)
@@ -208,7 +235,8 @@ func build(args buildArgs) error {
 		if err != nil {
 			return err
 		}
-		bi, err := remote.Image(ref, remote.WithProgress(updates))
+		bi, err := remote.Image(ref)
+		// bi, err := remote.Image(ref, remote.WithProgress(updates))
 		if err != nil {
 			return err
 		}
@@ -233,6 +261,9 @@ func build(args buildArgs) error {
 	if len(args.Entrypoint) > 0 {
 		cfg.Entrypoint = args.Entrypoint
 	}
+	if args.WorkDir != "" {
+		cfg.WorkingDir = args.WorkDir
+	}
 
 	updated, err := mutate.Config(baseImage, cfg)
 	if err != nil {
@@ -240,11 +271,27 @@ func build(args buildArgs) error {
 	}
 	trace("config")
 
-	l, err := tarball.LayerFromFile(args.Data, tarball.WithCompressionLevel(gzip.NoCompression))
-	if err != nil {
-		return err
+	var l v1.Layer
+	if args.Data != "" {
+		l, err = tarball.LayerFromFile(args.Data, tarball.WithCompressionLevel(gzip.NoCompression))
+		if err != nil {
+			return err
+		}
+		trace("read layer")
+	} else {
+
+		pr, pw := io.Pipe()
+		go func() {
+			err := WriteArchive(args.DataDir, pw, time.Now())
+			_ = pw.Close()
+			if err != nil {
+				log.Errorf("failed to construct tar:v", err)
+			}
+			trace("stream layer")
+		}()
+
+		l = stream.NewLayer(pr, stream.WithCompressionLevel(gzip.NoCompression))
 	}
-	trace("read layer")
 
 	files, err := mutate.AppendLayers(updated, l)
 	if err != nil {
@@ -258,7 +305,8 @@ func build(args buildArgs) error {
 		return err
 	}
 
-	if err := remote.Write(destRef, files, remote.WithProgress(updates)); err != nil {
+	if err := remote.Write(destRef, files); err != nil {
+		// if err := remote.Write(destRef, files, remote.WithProgress(updates)); err != nil {
 		return err
 	}
 

@@ -44,4 +44,4 @@ if [[ -f out/${LOCAL_TARGET_OS}_${LOCAL_TARGET_ARCH}/docker-builder ]]; then
 else
   GOOS=${LOCAL_TARGET_OS} GOARCH=${LOCAL_TARGET_ARCH} ./common/scripts/gobuild.sh out/${LOCAL_TARGET_OS}_${LOCAL_TARGET_ARCH}/docker-builder ./tools/docker-builder
 fi
-out/${LOCAL_TARGET_OS}_${LOCAL_TARGET_ARCH}/docker-builder "$@"
+GOGC=off out/${LOCAL_TARGET_OS}_${LOCAL_TARGET_ARCH}/docker-builder "$@"
