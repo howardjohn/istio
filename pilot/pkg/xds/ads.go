@@ -23,9 +23,11 @@ import (
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	uatomic "go.uber.org/atomic"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"istio.io/istio/pilot/pkg/controller/workloadentry"
 	"istio.io/istio/pilot/pkg/features"
@@ -67,7 +69,7 @@ type DiscoveryClient = discovery.AggregatedDiscoveryService_StreamAggregatedReso
 type DeltaDiscoveryClient = discovery.AggregatedDiscoveryService_DeltaAggregatedResourcesClient
 
 // Connection holds information about connected client.
-type Connection struct {
+type Connection[T Requester, Stream Streamer[T]] struct {
 	// PeerAddr is the address of the client, from network layer.
 	PeerAddr string
 
@@ -85,9 +87,7 @@ type Connection struct {
 	pushChannel chan *Event
 
 	// Both ADS and SDS streams implement this interface
-	stream DiscoveryStream
-	// deltaStream is used for Delta XDS. Only one of deltaStream or stream will be set
-	deltaStream DeltaDiscoveryStream
+	stream Stream
 
 	// Original node metadata, to avoid unmarshal/marshal.
 	// This is included in internal events.
@@ -101,8 +101,7 @@ type Connection struct {
 	stop chan struct{}
 
 	// reqChan is used to receive discovery requests for this connection.
-	reqChan      chan *discovery.DiscoveryRequest
-	deltaReqChan chan *discovery.DeltaDiscoveryRequest
+	reqChan      chan T
 
 	// errorChan is used to process error during discovery request processing.
 	errorChan chan error
@@ -122,18 +121,29 @@ type Event struct {
 	done func()
 }
 
-func newConnection(peerAddr string, stream DiscoveryStream) *Connection {
-	return &Connection{
+type Streamer[T proto.Message] interface {
+	Send(T) error
+	Recv() (T, error)
+	grpc.ServerStream
+}
+
+func newConnection[T any, Stream Streamer[T]](peerAddr string, stream Streamer[T]) *Connection[T, Stream] {
+	return &Connection[T, Stream]{
 		pushChannel:   make(chan *Event),
 		initialized:   make(chan struct{}),
 		stop:          make(chan struct{}),
-		reqChan:       make(chan *discovery.DiscoveryRequest, 1),
+		reqChan:       make(chan T, 1),
 		errorChan:     make(chan error, 1),
 		PeerAddr:      peerAddr,
 		Connect:       time.Now(),
 		stream:        stream,
 		blockedPushes: map[string]*model.PushRequest{},
 	}
+}
+
+type Requester interface {
+GetTypeUrl() string
+	GetNode() *core.Node
 }
 
 func (s *DiscoveryServer) receive(con *Connection, identities []string) {
@@ -150,7 +160,7 @@ func (s *DiscoveryServer) receive(con *Connection, identities []string) {
 
 	firstRequest := true
 	for {
-		req, err := con.stream.Recv()
+		rreq, err := con.stream.Recv()
 		if err != nil {
 			if istiogrpc.IsExpectedGRPCError(err) {
 				log.Infof("ADS: %q %s terminated %v", con.PeerAddr, con.ConID, err)
@@ -161,19 +171,21 @@ func (s *DiscoveryServer) receive(con *Connection, identities []string) {
 			totalXDSInternalErrors.Increment()
 			return
 		}
+		req := rreq.(Requester)
 		// This should be only set for the first request. The node id may not be set - for example malicious clients.
 		if firstRequest {
+			req.(*discovery.DiscoveryRequest).GetNode()
 			// probe happens before envoy sends first xDS request
-			if req.TypeUrl == v3.HealthInfoType {
+			if req.GetTypeUrl() == v3.HealthInfoType {
 				log.Warnf("ADS: %q %s send health check probe before normal xDS request", con.PeerAddr, con.ConID)
 				continue
 			}
 			firstRequest = false
-			if req.Node == nil || req.Node.Id == "" {
+			if req.GetNode() == nil || req.GetNode().Id == "" {
 				con.errorChan <- status.New(codes.InvalidArgument, "missing node information").Err()
 				return
 			}
-			if err := s.initConnection(req.Node, con, identities); err != nil {
+			if err := s.initConnection(req.GetNode(), con, identities); err != nil {
 				con.errorChan <- err
 				return
 			}
