@@ -977,8 +977,8 @@ github.com/hashicorp/serf v0.8.2/go.mod h1:6hOLApaqBFA1NXqRQAsxw9QxuDEvNxSQRwA/J
 github.com/hashicorp/serf v0.9.5/go.mod h1:UWDWwZeL5cuWDJdl0C6wrvrUwEqtQ4ZKBKKENpqIUyk=
 github.com/hashicorp/serf v0.9.6/go.mod h1:TXZNMjZQijwlDvp+r0b63xZ45H7JmCmgg4gpTwn9UV4=
 github.com/hashicorp/uuid v0.0.0-20160311170451-ebb0a03e909c/go.mod h1:fHzc09UnyJyqyW+bFuq864eh+wC7dj65aXmXLRe5to0=
-github.com/howardjohn/go-containerregistry v0.0.0-20220331002301-0fe2b08d558b h1:UsngyU0HZxGeC0vRJPAWElC187zGA456kgoAI7La1vE=
-github.com/howardjohn/go-containerregistry v0.0.0-20220331002301-0fe2b08d558b/go.mod h1:ka1eavnPDUhPQnRaMtnV/q6EBYlhbLi+/nOBToCC9lM=
+github.com/howardjohn/go-containerregistry v0.0.0-20220331003030-e8aadec151ac h1:vV27lHiA/P2Rj2NeLF4H/sMOd73f3mUibAZRG5qdw08=
+github.com/howardjohn/go-containerregistry v0.0.0-20220331003030-e8aadec151ac/go.mod h1:ka1eavnPDUhPQnRaMtnV/q6EBYlhbLi+/nOBToCC9lM=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/huandu/xstrings v1.0.0/go.mod h1:4qWG/gcEcfX4z/mBDHJ++3ReCw9ibxbsNJbcucJdbSo=
 github.com/huandu/xstrings v1.2.0/go.mod h1:DvyZB1rfVYsBIigL8HwpZgxHwXozlTgGqn63UyNX5k4=
