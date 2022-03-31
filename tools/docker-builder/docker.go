@@ -206,7 +206,7 @@ func ConstructBakeFile(a Args) (map[string]string, error) {
 			}
 
 			t.Tags = append(t.Tags, extractTags(a, target, variant, hasDoubleDefault)...)
-			allDestinations.Insert(t.Tags...)
+			allDestinations.InsertAll(t.Tags...)
 
 			// See https://docs.docker.com/engine/reference/commandline/buildx_build/#output
 			if a.Push {
