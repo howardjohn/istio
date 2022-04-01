@@ -24,24 +24,35 @@
 package registry
 
 import (
+	"bytes"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
+
+type readGetter func() (io.ReadCloser, error)
 
 type registry struct {
 	log       *log.Logger
 	blobs     blobs
 	manifests manifests
+	images    []NamedIndex
 }
 
 // https://docs.docker.com/registry/spec/api/#api-version-check
 // https://github.com/opencontainers/distribution-spec/blob/master/spec.md#api-version-check
 func (r *registry) v2(resp http.ResponseWriter, req *http.Request) *regError {
 	if isBlob(req) {
+		r.log.Println("is blob")
 		return r.blobs.handle(resp, req)
 	}
 	if isManifest(req) {
+		r.log.Println("is manifest")
 		return r.manifests.handle(resp, req)
 	}
 	if isTags(req) {
@@ -79,6 +90,7 @@ func New(opts ...Option) http.Handler {
 		blobs: blobs{
 			blobHandler: &memHandler{m: map[string][]byte{}},
 			uploads:     map[string][]byte{},
+			known:       map[string]readGetter{},
 		},
 		manifests: manifests{
 			manifests: map[string]map[string]manifest{},
@@ -100,5 +112,58 @@ func Logger(l *log.Logger) Option {
 	return func(r *registry) {
 		r.log = l
 		r.manifests.log = l
+	}
+}
+
+type NamedIndex struct {
+	Name  name.Tag
+	Index v1.ImageIndex
+	Image v1.Image
+}
+
+// WithImages preloads some images
+func WithImages(imgs ...NamedIndex) Option {
+	return func(r *registry) {
+		r.images = imgs
+		r.manifests.images = imgs
+		for _, i := range imgs {
+			d, _ := i.Image.Digest()
+			m, _ := i.Image.MediaType()
+			rm, _ := i.Image.RawManifest()
+
+			r.manifests.manifests[i.Name.RepositoryStr()] = map[string]manifest{
+				d.String(): {
+					contentType: string(m),
+					blob:        rm,
+				},
+				i.Name.TagStr(): {
+					contentType: string(m),
+					blob:        rm,
+				},
+			}
+
+			layers, _ := i.Image.Layers()
+			for _, layer := range layers {
+				d, _ := layer.Digest()
+				r.blobs.known[d.String()] = layer.Compressed
+				//cr, _ := layer.Compressed()
+				//r.log.Println("insert blob", d, r.blobs.blobHandler.(*memHandler).Put(nil, "", d, cr))
+			}
+			// Write the config.
+			cfgName, _ := i.Image.ConfigName()
+			cfgBlob, _ := i.Image.RawConfigFile()
+			r.blobs.known[cfgName.String()] = func() (io.ReadCloser, error) {
+				return ioutil.NopCloser(bytes.NewReader(cfgBlob)), nil
+			}
+			//r.log.Println("insert config blob", d, r.blobs.blobHandler.(*memHandler).Put(nil, "", cfgName, ioutil.NopCloser(bytes.NewReader(cfgBlob))))
+
+			// Write the img manifest.
+			dd, _ := i.Image.Digest()
+			md, _ := i.Image.RawManifest()
+			r.blobs.known[dd.String()] = func() (io.ReadCloser, error) {
+				return ioutil.NopCloser(bytes.NewReader(md)), nil
+			}
+			//r.log.Println("insert manifest blob", d, r.blobs.blobHandler.(*memHandler).Put(nil, "", dd, ioutil.NopCloser(bytes.NewReader(md))))
+		}
 	}
 }

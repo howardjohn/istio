@@ -51,6 +51,7 @@ type manifests struct {
 	manifests map[string]map[string]manifest
 	lock      sync.Mutex
 	log       *log.Logger
+	images    []NamedIndex
 }
 
 func isManifest(req *http.Request) bool {
@@ -88,7 +89,13 @@ func (m *manifests) handle(resp http.ResponseWriter, req *http.Request) *regErro
 	elem = elem[1:]
 	target := elem[len(elem)-1]
 	repo := strings.Join(elem[1:len(elem)-2], "/")
-
+	m.log.Println("manifest for ", repo, target)
+	for _, v := range m.images {
+		m.log.Println("have image", v.Name)
+	}
+	for k, v := range m.manifests {
+		m.log.Println("have manifest", k, len(v))
+	}
 	switch req.Method {
 	case http.MethodGet:
 		m.lock.Lock()

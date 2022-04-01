@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"sync"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -213,14 +213,28 @@ func Build(args Args, dests []string) error {
 		remoteTargets[repo][destRef] = files
 	}
 
-	for repo, mw := range remoteTargets {
-		prog := CreateProgress(fmt.Sprintf("upload %v", repo.String()))
-		if err := remote.MultiWrite(mw, remote.WithProgress(prog), remote.WithAuthFromKeychain(authn.DefaultKeychain)); err != nil {
-			return err
-		}
-		trace("upload %v", repo.String())
-	}
+	//for repo, mw := range remoteTargets {
+	//	prog := CreateProgress(fmt.Sprintf("upload %v", repo.String()))
+	//	if err := remote.MultiWrite(mw, remote.WithProgress(prog), remote.WithAuthFromKeychain(authn.DefaultKeychain)); err != nil {
+	//		return err
+	//	}
+	//	trace("upload %v", repo.String())
+	//}
 
+	n, _ := name.NewTag(dests[0])
+	idx := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+		Add:        files,
+		Descriptor: v1.Descriptor{},
+	})
+	reg := registry.New(registry.WithImages(registry.NamedIndex{Name: n, Index: idx, Image: files}))
+	s := &http.Server{
+		Addr:    fmt.Sprintf(":5051"),
+		Handler: reg,
+	}
+	_ = s
+	trace("registry created")
+go func() { time.Sleep(time.Second * 5); s.Close() }()
+	log.Errorf(s.ListenAndServe())
 	return nil
 }
 

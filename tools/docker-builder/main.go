@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	testenv "istio.io/istio/pkg/test/env"
+	"istio.io/istio/pkg/test/profile"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/pkg/log"
 	pkgversion "istio.io/pkg/version"
@@ -52,6 +53,7 @@ func main() {
 
 	rootCmd.Flags().BoolVar(&globalArgs.KindLoad, "kind-load", globalArgs.KindLoad, "kind cluster to load into")
 
+	defer profile.CpuProfile("/tmp/profile")()
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(-1)
 	}

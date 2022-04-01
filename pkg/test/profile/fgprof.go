@@ -17,8 +17,10 @@ package profile
 import (
 	"flag"
 	"os"
+	"runtime/pprof"
 
 	"github.com/felixge/fgprof"
+	"istio.io/pkg/log"
 
 	"istio.io/istio/pkg/test"
 )
@@ -52,4 +54,20 @@ func FullProfile(t test.Failer) {
 			t.Fatal(err)
 		}
 	})
+}
+
+// FullProfile runs a "Full" profile (https://github.com/felixge/fgprof). This differs from standard
+// CPU profile, as it includes both IO blocking and CPU usage in one profile, giving a full view of
+// the application.
+func CpuProfile(path string) func() {
+	f, err := os.Create(path)
+	if err != nil {
+		log.Errorf("howardjohn: failed to create: %v", err)
+		return func() {}
+	}
+	log.Infof("profile: %v", pprof.StartCPUProfile(f))
+	return func() {
+		pprof.StopCPUProfile()
+		f.Close()
+	}
 }

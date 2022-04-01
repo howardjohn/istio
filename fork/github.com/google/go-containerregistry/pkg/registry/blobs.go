@@ -107,6 +107,7 @@ func (m *memHandler) Stat(_ context.Context, _ string, h v1.Hash) (int64, error)
 	}
 	return int64(len(b)), nil
 }
+
 func (m *memHandler) Get(_ context.Context, _ string, h v1.Hash) (io.ReadCloser, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
@@ -117,12 +118,35 @@ func (m *memHandler) Get(_ context.Context, _ string, h v1.Hash) (io.ReadCloser,
 	}
 	return ioutil.NopCloser(bytes.NewReader(b)), nil
 }
+
+// ReadAll reads from r until an error or EOF and returns the data it read.
+// A successful call returns err == nil, not err == EOF. Because ReadAll is
+// defined to read from src until EOF, it does not treat an EOF from Read
+// as an error to be reported.
+func ReadAll(r io.Reader) ([]byte, error) {
+	b := make([]byte, 0, 100*1024*1024)
+	for {
+		if len(b) == cap(b) {
+			// Add more capacity (let append pick how much).
+			b = append(b, 0)[:len(b)]
+		}
+		n, err := r.Read(b[len(b):cap(b)])
+		b = b[:len(b)+n]
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return b, err
+		}
+	}
+}
+
 func (m *memHandler) Put(_ context.Context, _ string, h v1.Hash, rc io.ReadCloser) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	defer rc.Close()
-	all, err := ioutil.ReadAll(rc)
+	all, err := ReadAll(rc)
 	if err != nil {
 		return err
 	}
@@ -133,6 +157,7 @@ func (m *memHandler) Put(_ context.Context, _ string, h v1.Hash, rc io.ReadClose
 // blobs
 type blobs struct {
 	blobHandler blobHandler
+	known map[string]readGetter
 
 	// Each upload gets a unique id that writes occur to until finalized.
 	uploads map[string][]byte
@@ -159,6 +184,10 @@ func (b *blobs) handle(resp http.ResponseWriter, req *http.Request) *regError {
 	contentRange := req.Header.Get("Content-Range")
 
 	repo := req.URL.Host + path.Join(elem[1:len(elem)-2]...)
+	fmt.Println("blob for ", repo, target, service)
+	for k := range b.blobHandler.(*memHandler).m {
+		fmt.Println("have blob", k)
+	}
 
 	switch req.Method {
 	case http.MethodHead:
@@ -216,6 +245,18 @@ func (b *blobs) handle(resp http.ResponseWriter, req *http.Request) *regError {
 				Code:    "NAME_INVALID",
 				Message: "invalid digest",
 			}
+		}
+
+		if k, f := b.known[h.String()]; f {
+			fmt.Println("known blob")
+			rdr, _ := k()
+
+			resp.Header().Set("Docker-Content-Digest", h.String())
+			resp.WriteHeader(http.StatusOK)
+			w, _ := io.Copy(resp, rdr)
+			fmt.Println("wrote bytes", w)
+			resp.Header().Set("Content-Length", fmt.Sprint(w))
+			return nil
 		}
 
 		var size int64
