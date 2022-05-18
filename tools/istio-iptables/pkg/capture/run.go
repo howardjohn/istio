@@ -171,6 +171,16 @@ func (cfg *IptablesConfigurator) handleInboundPortsInclude() {
 				cfg.iptables.AppendRule(iptableslog.UndefinedCommand, constants.ISTIOINBOUND, constants.MANGLE, "-p", constants.TCP,
 					"-j", constants.ISTIOTPROXY)
 			} else {
+				/*
+					-A KUBE-POSTROUTING -m mark ! --mark 0x4000/0x4000 -j RETURN
+					-A KUBE-POSTROUTING -j MARK --set-xmark 0x4000/0x0
+					-A KUBE-POSTROUTING -m comment --comment "kubernetes service traffic requiring SNAT" -j MASQUERADE --random-fully
+				*/
+				cfg.iptables.AppendRule(iptableslog.UndefinedCommand, constants.POSTROUTING, constants.NAT, "-m", "mark", "!", "--mark", "0x4000/0x4000", "-j", constants.RETURN)
+				cfg.iptables.AppendRule(iptableslog.UndefinedCommand, constants.POSTROUTING, constants.NAT, "-j", constants.MARK, "--set-xmark", "0x4000/0x0")
+				cfg.iptables.AppendRule(iptableslog.UndefinedCommand, constants.POSTROUTING, constants.NAT, "-j", "MASQUERADE", "--random-fully")
+				cfg.iptables.AppendRule(iptableslog.UndefinedCommand, constants.ISTIOINBOUND, constants.NAT,
+					"-j", "MARK", "--set-xmark", "0x4000/0x4000")
 				cfg.iptables.AppendRule(iptableslog.UndefinedCommand, constants.ISTIOINBOUND, constants.NAT, "-p", constants.TCP,
 					"-j", constants.ISTIOINREDIRECT)
 			}
