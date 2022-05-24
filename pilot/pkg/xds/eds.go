@@ -19,6 +19,7 @@ import (
 
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"go.uber.org/atomic"
 	any "google.golang.org/protobuf/types/known/anypb"
 
 	networkingapi "istio.io/api/networking/v1alpha3"
@@ -382,6 +383,7 @@ func edsNeedsPush(updates model.XdsUpdates) bool {
 	return false
 }
 
+var sends = atomic.NewInt32(0)
 func (eds *EdsGenerator) Generate(proxy *model.Proxy, w *model.WatchedResource, req *model.PushRequest) (model.Resources, model.XdsLogDetails, error) {
 	if !edsNeedsPush(req.ConfigsUpdated) {
 		return nil, model.DefaultXdsLogDetails, nil
@@ -497,7 +499,12 @@ func (eds *EdsGenerator) buildEndpoints(proxy *model.Proxy,
 	empty := 0
 	cached := 0
 	regenerated := 0
-	for _, clusterName := range w.ResourceNames {
+	res := w.ResourceNames
+	if sends.Inc() > 2 {
+		res = w.ResourceNames[:1]
+		log.Errorf("howardjohn: truncate to %v", res)
+	}
+	for _, clusterName := range res {
 		if edsUpdatedServices != nil {
 			_, _, hostname, _ := model.ParseSubsetKey(clusterName)
 			if _, ok := edsUpdatedServices[string(hostname)]; !ok {

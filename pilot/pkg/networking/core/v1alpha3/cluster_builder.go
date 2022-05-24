@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -26,6 +27,7 @@ import (
 	http "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
+	"go.uber.org/atomic"
 	any "google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -1236,8 +1238,12 @@ func (mc *MutableCluster) build() *cluster.Cluster {
 			v3.HttpProtocolOptionsType: util.MessageToAny(mc.httpProtocolOptions),
 		}
 	}
+	mc.cluster.AltStatName = fmt.Sprint(c.Inc())
+	mc.cluster.ConnectTimeout = durationpb.New(time.Duration(c.Inc()) * time.Second)
 	return mc.cluster
 }
+
+var c = atomic.NewInt32(0)
 
 // CastDestinationRule returns the destination rule enclosed by the config, if not null.
 // Otherwise, return nil.
