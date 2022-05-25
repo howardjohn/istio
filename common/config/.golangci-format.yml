@@ -34,8 +34,9 @@ run:
 linters:
   disable-all: true
   enable:
-  - goimports
-  - gofumpt
+#  - goimports
+#  - gofumpt
+  - gci
   fast: false
 
 linters-settings:
