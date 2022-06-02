@@ -46,7 +46,7 @@ security/cmd/node_agent/na/pkey
 tools/istioctl.bash
 vendor
 # Contains the built artifacts
-out/
+out/linux_amd64
 etc/
 var/
 # Go compiled tests

@@ -297,7 +297,7 @@ func SetupSingleNamespace(view *SingleNamespaceView, cfg Config) resource.SetupF
 
 // SetupTwoNamespaces calls Setup and returns a TwoNamespaceView.
 func SetupTwoNamespaces(view *TwoNamespaceView, cfg Config) resource.SetupFn {
-	cfg.NamespaceCount = 2
+	cfg.NamespaceCount = 8
 	return func(ctx resource.Context) error {
 		// Perform a setup with 2 namespaces.
 		var apps Echos

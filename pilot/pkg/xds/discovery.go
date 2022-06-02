@@ -488,6 +488,12 @@ func reasonsUpdated(req *model.PushRequest) string {
 }
 
 func doSendPushes(stopCh <-chan struct{}, semaphore chan struct{}, queue *PushQueue) {
+	go func() {
+		for {
+			time.Sleep(time.Second * 2)
+			log.Infof("periodic pending=%d", len(semaphore))
+		}
+	}()
 	for {
 		select {
 		case <-stopCh:
@@ -495,6 +501,7 @@ func doSendPushes(stopCh <-chan struct{}, semaphore chan struct{}, queue *PushQu
 		default:
 			// We can send to it until it is full, then it will block until a pushes finishes and reads from it.
 			// This limits the number of pushes that can happen concurrently
+			log.Infof("client start, pending=%d", len(semaphore))
 			semaphore <- struct{}{}
 
 			// Get the next proxy to push. This will block if there are no updates required.
@@ -507,6 +514,7 @@ func doSendPushes(stopCh <-chan struct{}, semaphore chan struct{}, queue *PushQu
 			doneFunc := func() {
 				queue.MarkDone(client)
 				<-semaphore
+				log.Infof("client %v done, pending=%d", client.conID, len(semaphore))
 			}
 
 			proxiesQueueTime.Record(time.Since(push.Start).Seconds())
@@ -642,6 +650,7 @@ func (s *DiscoveryServer) SendResponse(connections []*Connection, res *discovery
 		// push expects 1000s of envoy connections.
 		con := p
 		go func() {
+			panic("!")
 			err := con.stream.Send(res)
 			if err != nil {
 				log.Errorf("Failed to send internal event %s: %v", con.conID, err)

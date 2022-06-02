@@ -17,6 +17,7 @@ package xds
 import (
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -106,6 +107,8 @@ type Connection struct {
 
 	// errorChan is used to process error during discovery request processing.
 	errorChan chan error
+
+	sendMu *sync.Mutex
 }
 
 // Event represents a config or registry event that results in a push.
@@ -125,6 +128,7 @@ func newConnection(peerAddr string, stream DiscoveryStream) *Connection {
 		reqChan:     make(chan *discovery.DiscoveryRequest, 1),
 		errorChan:   make(chan error, 1),
 		peerAddr:    peerAddr,
+		sendMu: &sync.Mutex{},
 		connectedAt: time.Now(),
 		stream:      stream,
 	}
@@ -850,7 +854,31 @@ func (conn *Connection) send(res *discovery.DiscoveryResponse) error {
 		defer func() { recordSendTime(time.Since(start)) }()
 		return conn.stream.Send(res)
 	}
+	if !conn.sendMu.TryLock() {
+		log.Fatalf("attempted to send to %v (%v), already sending", conn.conID, res.TypeUrl)
+	}
+	done := uatomic.NewBool(false)
+	go func() {
+		time.Sleep(time.Second*30)
+		if !done.Load() {
+			log.Errorf("slow send to %v (%v)", conn.conID, res.TypeUrl)
+		}
+		time.Sleep(time.Second*30)
+		if !done.Load() {
+			log.Errorf("slow send 2 to %v (%v)", conn.conID, res.TypeUrl)
+		}
+		time.Sleep(time.Second*30)
+		if !done.Load() {
+			log.Errorf("slow send 3 to %v (%v)", conn.conID, res.TypeUrl)
+		}
+		time.Sleep(time.Second*300)
+		if !done.Load() {
+			log.Errorf("slow send blocked to %v (%v)", conn.conID, res.TypeUrl)
+		}
+	}()
 	err := istiogrpc.Send(conn.stream.Context(), sendHandler)
+	done.Store(true)
+	conn.sendMu.Unlock()
 	if err == nil {
 		sz := 0
 		for _, rc := range res.Resources {
