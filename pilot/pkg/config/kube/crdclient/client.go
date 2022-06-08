@@ -34,14 +34,13 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"go.uber.org/atomic"
 	"gomodules.xyz/jsonpatch/v3"
-	crd "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/metadata"
 
 	//  import GKE cluster authentication plugin
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -170,7 +169,7 @@ func NewForSchemas(client kube.Client, revision, domainSuffix string, schemas co
 	}
 	_ = out.crdMetadataInformer.SetTransform(kube.StripUnusedFields)
 
-	known, err := knownCRDs(client.Ext())
+	known, err := knownCRDs(client.Metadata())
 	if err != nil {
 		return nil, err
 	}
@@ -423,16 +422,17 @@ func (cl *Client) kind(r config.GroupVersionKind) (*cacheHandler, bool) {
 }
 
 // knownCRDs returns all CRDs present in the cluster, with timeout and retries.
-func knownCRDs(crdClient apiextensionsclient.Interface) (map[string]struct{}, error) {
-	var res *crd.CustomResourceDefinitionList
+func knownCRDs(crdClient metadata.Interface) (map[string]struct{}, error) {
+	var res *metav1.PartialObjectMetadataList
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = time.Second
 	b.MaxElapsedTime = 20 * time.Second
+	client := crdClient.Resource(collections.K8SApiextensionsK8SIoV1Customresourcedefinitions.Resource().GroupVersionResource())
 	err := backoff.Retry(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		var err error
-		res, err = crdClient.ApiextensionsV1().CustomResourceDefinitions().List(ctx, metav1.ListOptions{})
+		res, err = client.List(ctx, metav1.ListOptions{})
 		if err == nil {
 			return nil
 		}
