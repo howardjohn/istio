@@ -25,6 +25,7 @@ type AddressMap struct {
 	// Addresses hold the underlying map. Most code should only access this through the available methods.
 	// Should only be used by tests and construction/initialization logic, where there is no concern
 	// for race conditions.
+	// +checklocks:mutex
 	Addresses map[cluster.ID][]string
 
 	// NOTE: The copystructure library is not able to copy unexported fields, so the mutex will not be copied.

@@ -107,14 +107,14 @@ type fakeDNSServer struct {
 
 	mu sync.Mutex
 	// map fqdn hostname -> successful query count
+	// +checklocks:mu
 	hosts map[string]int
 }
 
 func newFakeDNSServer(addr string, ttl uint32, hosts sets.Set) *fakeDNSServer {
-	waitLock := sync.Mutex{}
-	waitLock.Lock()
+	c := make(chan struct{})
 	s := &fakeDNSServer{
-		Server: &dns.Server{Addr: addr, Net: "udp", NotifyStartedFunc: waitLock.Unlock},
+		Server: &dns.Server{Addr: addr, Net: "udp", NotifyStartedFunc: func() {close(c)}},
 		ttl:    ttl,
 		hosts:  make(map[string]int, len(hosts)),
 	}
@@ -129,7 +129,7 @@ func newFakeDNSServer(addr string, ttl uint32, hosts sets.Set) *fakeDNSServer {
 			scopes.Framework.Errorf("fake dns server error: %v", err)
 		}
 	}()
-	waitLock.Lock()
+	<-c
 	return s
 }
 
