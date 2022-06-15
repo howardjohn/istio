@@ -68,60 +68,60 @@ type ConfigInput struct {
 }
 
 var testCases = []ConfigInput{
-	//{
-	//	// Gateways provides an example config for a large Ingress deployment. This will create N
-	//	// virtual services and gateways, where routing is determined by hostname, meaning we generate N routes for HTTPS.
-	//	Name:      "gateways",
-	//	Services:  1000,
-	//	ProxyType: model.Router,
-	//},
-	//{
-	//	// Gateways-shared provides an example config for a large Ingress deployment. This will create N
-	//	// virtual services and gateways, where routing is determined by path. This means there will be a single large route.
-	//	Name:      "gateways-shared",
-	//	Services:  1000,
-	//	ProxyType: model.Router,
-	//},
-	//{
-	//	Name:      "empty",
-	//	Services:  100,
-	//	ProxyType: model.SidecarProxy,
-	//},
-	//{
-	//	Name:     "tls",
-	//	Services: 100,
-	//},
-	//{
-	//	Name:     "telemetry",
-	//	Services: 100,
-	//},
+	{
+		// Gateways provides an example config for a large Ingress deployment. This will create N
+		// virtual services and gateways, where routing is determined by hostname, meaning we generate N routes for HTTPS.
+		Name:      "gateways",
+		Services:  1000,
+		ProxyType: model.Router,
+	},
+	{
+		// Gateways-shared provides an example config for a large Ingress deployment. This will create N
+		// virtual services and gateways, where routing is determined by path. This means there will be a single large route.
+		Name:      "gateways-shared",
+		Services:  1000,
+		ProxyType: model.Router,
+	},
+	{
+		Name:      "empty",
+		Services:  100,
+		ProxyType: model.SidecarProxy,
+	},
+	{
+		Name:     "tls",
+		Services: 100,
+	},
+	{
+		Name:     "telemetry",
+		Services: 100,
+	},
 	{
 		Name:     "telemetry-api",
 		Services: 100,
 	},
-	//{
-	//	Name:     "virtualservice",
-	//	Services: 100,
-	//},
-	//{
-	//	Name:     "authorizationpolicy",
-	//	Services: 100,
-	//},
-	//{
-	//	Name:     "peerauthentication",
-	//	Services: 100,
-	//},
-	//{
-	//	Name:      "knative-gateway",
-	//	Services:  100,
-	//	ProxyType: model.Router,
-	//},
-	//{
-	//	Name:      "serviceentry-workloadentry",
-	//	Services:  100,
-	//	Instances: 1000,
-	//	ProxyType: model.SidecarProxy,
-	//},
+	{
+		Name:     "virtualservice",
+		Services: 100,
+	},
+	{
+		Name:     "authorizationpolicy",
+		Services: 100,
+	},
+	{
+		Name:     "peerauthentication",
+		Services: 100,
+	},
+	{
+		Name:      "knative-gateway",
+		Services:  100,
+		ProxyType: model.Router,
+	},
+	{
+		Name:      "serviceentry-workloadentry",
+		Services:  100,
+		Instances: 1000,
+		ProxyType: model.SidecarProxy,
+	},
 }
 
 var sidecarTestCases = func() (res []ConfigInput) {
