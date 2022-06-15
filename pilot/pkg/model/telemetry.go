@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	httpwasm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/wasm/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
@@ -28,7 +29,6 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	wrappers "google.golang.org/protobuf/types/known/wrapperspb"
-
 	sd "istio.io/api/envoy/extensions/stackdriver/config/v1alpha1"
 	"istio.io/api/envoy/extensions/stats"
 	meshconfig "istio.io/api/mesh/v1alpha1"
@@ -180,6 +180,7 @@ type TracingSpec struct {
 }
 
 type LoggingConfig struct {
+	Logs []*accesslog.AccessLog
 	Providers []*meshconfig.MeshConfig_ExtensionProvider
 	Filter    *tpb.AccessLogging_Filter
 }
@@ -214,8 +215,23 @@ func (t *Telemetries) AccessLogging(proxy *Proxy, class networking.ListenerClass
 	cfg.Filter = f
 	for _, p := range providers.SortedList() {
 		fp := t.fetchProvider(p)
-		if fp != nil {
-			cfg.Providers = append(cfg.Providers, fp)
+		if fp == nil {
+			continue
+		}
+		var al *accesslog.AccessLog
+		switch prov := fp.Provider.(type) {
+		case *meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLog:
+			al = buildEnvoyFileAccessLogHelper(prov.EnvoyFileAccessLog)
+			// TODO
+		//case *meshconfig.MeshConfig_ExtensionProvider_EnvoyHttpAls:
+		//	al = buildHTTPGrpcAccessLogHelper(push, prov.EnvoyHttpAls)
+		//case *meshconfig.MeshConfig_ExtensionProvider_EnvoyTcpAls:
+		//	al = buildTCPGrpcAccessLogHelper(push, prov.EnvoyTcpAls)
+		//case *meshconfig.MeshConfig_ExtensionProvider_EnvoyOtelAls:
+		//	al = buildOpenTelemetryLogHelper(push, prov.EnvoyOtelAls)
+		}
+		if al == nil {
+			continue
 		}
 	}
 	return &cfg

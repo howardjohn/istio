@@ -1,44 +1,26 @@
-// Copyright Istio Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-package v1alpha3
+package model
 
 import (
+	"fmt"
 	"strings"
-	"sync"
 
 	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	fileaccesslog "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/file/v3"
-	cel "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/filters/cel/v3"
 	grpcaccesslog "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/grpc/v3"
 	otelaccesslog "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/open_telemetry/v3"
-	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
-	tcp "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/tcp_proxy/v3"
 	formatters "github.com/envoyproxy/go-control-plane/envoy/extensions/formatter/req_without_query/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
-
 	meshconfig "istio.io/api/mesh/v1alpha1"
-	"istio.io/istio/pilot/pkg/model"
-	"istio.io/istio/pilot/pkg/networking"
-	"istio.io/istio/pilot/pkg/networking/util"
+	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/util/protomarshal"
-	"istio.io/pkg/log"
 )
+
 
 const (
 	// EnvoyTextLogFormat format for envoy text based access logs for Istio 1.9 onwards.
@@ -114,155 +96,79 @@ var (
 	// But end users can certainly configure it on their own via the meshConfig using the %FILTERSTATE% macro.
 	envoyWasmStateToLog = []string{"wasm.upstream_peer", "wasm.upstream_peer_id", "wasm.downstream_peer", "wasm.downstream_peer_id"}
 
-	// accessLogBuilder is used to set accessLog to filters
-	accessLogBuilder = newAccessLogBuilder()
-
 	// accessLogFormatters configures additional formatters needed for some of the format strings like "REQ_WITHOUT_QUERY"
 	accessLogFormatters = []*core.TypedExtensionConfig{
 		{
 			Name:        "envoy.formatter.req_without_query",
-			TypedConfig: util.MessageToAny(&formatters.ReqWithoutQuery{}),
+			TypedConfig: MessageToAny(&formatters.ReqWithoutQuery{}),
 		},
 	}
 )
-
-type AccessLogBuilder struct {
-	// tcpGrpcAccessLog is used when access log service is enabled in mesh config.
-	tcpGrpcAccessLog *accesslog.AccessLog
-	// httpGrpcAccessLog is used when access log service is enabled in mesh config.
-	httpGrpcAccessLog *accesslog.AccessLog
-	// tcpGrpcListenerAccessLog is used when access log service is enabled in mesh config.
-	tcpGrpcListenerAccessLog *accesslog.AccessLog
-
-	// file accessLog which is cached and reset on MeshConfig change.
-	mutex                 sync.RWMutex
-	fileAccesslog         *accesslog.AccessLog
-	listenerFileAccessLog *accesslog.AccessLog
+// MessageToAnyWithError converts from proto message to proto Any
+func MessageToAnyWithError(msg proto.Message) (*anypb.Any, error) {
+	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+	return &anypb.Any{
+		// nolint: staticcheck
+		TypeUrl: "type.googleapis.com/" + string(msg.ProtoReflect().Descriptor().FullName()),
+		Value:   b,
+	}, nil
 }
 
-func newAccessLogBuilder() *AccessLogBuilder {
-	return &AccessLogBuilder{
-		tcpGrpcAccessLog:         buildTCPGrpcAccessLog(false),
-		httpGrpcAccessLog:        buildHTTPGrpcAccessLog(),
-		tcpGrpcListenerAccessLog: buildTCPGrpcAccessLog(true),
-	}
-}
-
-func (b *AccessLogBuilder) setTCPAccessLog(push *model.PushContext, proxy *model.Proxy, tcp *tcp.TcpProxy, class networking.ListenerClass) {
-	mesh := push.Mesh
-	cfg := push.Telemetry.AccessLogging(proxy, class)
-
-	if cfg == nil {
-		// No Telemetry API configured, fall back to legacy mesh config setting
-		if mesh.AccessLogFile != "" {
-			tcp.AccessLog = append(tcp.AccessLog, b.buildFileAccessLog(mesh))
-		}
-
-		if mesh.EnableEnvoyAccessLogService {
-			// Setting it to TCP as the low level one.
-			tcp.AccessLog = append(tcp.AccessLog, b.tcpGrpcAccessLog)
-		}
-		return
-	}
-
-	if al := buildAccessLogFromTelemetry(push, cfg, false); len(al) != 0 {
-		tcp.AccessLog = append(tcp.AccessLog, al...)
-	}
-}
-
-func buildAccessLogFromTelemetry(push *model.PushContext, spec *model.LoggingConfig, forListener bool) []*accesslog.AccessLog {
-	als := make([]*accesslog.AccessLog, 0)
-	telFilter := buildAccessLogFilterFromTelemetry(spec)
-	filters := []*accesslog.AccessLogFilter{}
-	if forListener {
-		filters = append(filters, addAccessLogFilter())
-	}
-	if telFilter != nil {
-		filters = append(filters, telFilter)
-	}
-
-	for _, l := range spec.Logs {
-		al := &accesslog.AccessLog{
-			Name: l.Name,
-			ConfigType: l.ConfigType,
-			Filter: buildAccessLogFilter(filters...),
-		}
-
-		als = append(als, al)
-	}
-	return als
-}
-
-func buildAccessLogFilterFromTelemetry(spec *model.LoggingConfig) *accesslog.AccessLogFilter {
-	if spec == nil || spec.Filter == nil {
+// MessageToAny converts from proto message to proto Any
+func MessageToAny(msg proto.Message) *anypb.Any {
+	out, err := MessageToAnyWithError(msg)
+	if err != nil {
+		log.Error(fmt.Sprintf("error marshaling Any %s: %v", prototext.Format(msg), err))
 		return nil
 	}
-
-	fl := &cel.ExpressionFilter{
-		Expression: spec.Filter.Expression,
-	}
-
-	return &accesslog.AccessLogFilter{
-		FilterSpecifier: &accesslog.AccessLogFilter_ExtensionFilter{
-			ExtensionFilter: &accesslog.ExtensionFilter{
-				Name:       celFilter,
-				ConfigType: &accesslog.ExtensionFilter_TypedConfig{TypedConfig: util.MessageToAny(fl)},
-			},
-		},
-	}
+	return out
 }
 
-func (b *AccessLogBuilder) setHTTPAccessLog(push *model.PushContext, proxy *model.Proxy,
-	connectionManager *hcm.HttpConnectionManager, class networking.ListenerClass,
-) {
-	mesh := push.Mesh
-	cfg := push.Telemetry.AccessLogging(proxy, class)
+// this is used for testing. it should not be changed in regular code.
+var clusterLookupFn = LookupCluster
 
-	if cfg == nil {
-		// No Telemetry API configured, fall back to legacy mesh config setting
-		if mesh.AccessLogFile != "" {
-			connectionManager.AccessLog = append(connectionManager.AccessLog, b.buildFileAccessLog(mesh))
-		}
-
-		if mesh.EnableEnvoyAccessLogService {
-			connectionManager.AccessLog = append(connectionManager.AccessLog, b.httpGrpcAccessLog)
-		}
+func LookupCluster(push *PushContext, service string, port int) (hostname string, cluster string, err error) {
+	if service == "" {
+		err = fmt.Errorf("service must not be empty")
 		return
 	}
 
-	if al := buildAccessLogFromTelemetry(push, cfg, false); len(al) != 0 {
-		connectionManager.AccessLog = append(connectionManager.AccessLog, al...)
+	// TODO(yangminzhu): Verify the service and its cluster is supported, e.g. resolution type is not OriginalDst.
+	if parts := strings.Split(service, "/"); len(parts) == 2 {
+		namespace, name := parts[0], parts[1]
+		if svc := push.ServiceIndex.HostnameAndNamespace[host.Name(name)][namespace]; svc != nil {
+			hostname = string(svc.Hostname)
+			cluster = BuildSubsetKey(TrafficDirectionOutbound, "", svc.Hostname, port)
+			return
+		}
+	} else {
+		namespaceToServices := push.ServiceIndex.HostnameAndNamespace[host.Name(service)]
+		var namespaces []string
+		for k := range namespaceToServices {
+			namespaces = append(namespaces, k)
+		}
+		// If namespace is omitted, return successfully if there is only one such host name in the service index.
+		if len(namespaces) == 1 {
+			svc := namespaceToServices[namespaces[0]]
+			hostname = string(svc.Hostname)
+			cluster = BuildSubsetKey(TrafficDirectionOutbound, "", svc.Hostname, port)
+			return
+		} else if len(namespaces) > 1 {
+			err = fmt.Errorf("found %s in multiple namespaces %v, specify the namespace explicitly in "+
+				"the format of <Namespace>/<Hostname>", service, namespaces)
+			return
+		}
 	}
+
+	err = fmt.Errorf("could not find service %s in Istio service registry", service)
+	return
 }
 
-func (b *AccessLogBuilder) setListenerAccessLog(push *model.PushContext, proxy *model.Proxy,
-	listener *listener.Listener, class networking.ListenerClass,
-) {
-	mesh := push.Mesh
-	if mesh.DisableEnvoyListenerLog {
-		return
-	}
-	cfg := push.Telemetry.AccessLogging(proxy, class)
 
-	if cfg == nil {
-		// No Telemetry API configured, fall back to legacy mesh config setting
-		if mesh.AccessLogFile != "" {
-			listener.AccessLog = append(listener.AccessLog, b.buildListenerFileAccessLog(mesh))
-		}
-
-		if mesh.EnableEnvoyAccessLogService {
-			// Setting it to TCP as the low level one.
-			listener.AccessLog = append(listener.AccessLog, b.tcpGrpcListenerAccessLog)
-		}
-		return
-	}
-
-	if al := buildAccessLogFromTelemetry(push, cfg, true); len(al) != 0 {
-		listener.AccessLog = append(listener.AccessLog, al...)
-	}
-}
-
-func buildTCPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.MeshConfig_ExtensionProvider_EnvoyTcpGrpcV3LogProvider) *accesslog.AccessLog {
+func buildTCPGrpcAccessLogHelper(push *PushContext, prov *meshconfig.MeshConfig_ExtensionProvider_EnvoyTcpGrpcV3LogProvider) *accesslog.AccessLog {
 	logName := tcpEnvoyAccessLogFriendlyName
 	if prov != nil && prov.LogName != "" {
 		logName = prov.LogName
@@ -273,7 +179,7 @@ func buildTCPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.MeshC
 		filterObjects = prov.FilterStateObjectsToLog
 	}
 
-	hostname, cluster, err := clusterLookupFn(push, prov.Service, int(prov.Port))
+	_, cluster, err := clusterLookupFn(push, prov.Service, int(prov.Port))
 	if err != nil {
 		log.Errorf("could not find cluster for tcp grpc provider %q: %v", prov, err)
 		return nil
@@ -286,7 +192,6 @@ func buildTCPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.MeshC
 				TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
 					EnvoyGrpc: &core.GrpcService_EnvoyGrpc{
 						ClusterName: cluster,
-						Authority:   hostname,
 					},
 				},
 			},
@@ -297,7 +202,7 @@ func buildTCPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.MeshC
 
 	return &accesslog.AccessLog{
 		Name:       tcpEnvoyALSName,
-		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(fl)},
+		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: MessageToAny(fl)},
 	}
 }
 
@@ -327,7 +232,7 @@ func buildEnvoyFileAccessLogHelper(prov *meshconfig.MeshConfig_ExtensionProvider
 
 	al := &accesslog.AccessLog{
 		Name:       wellknown.FileAccessLog,
-		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(fl)},
+		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: MessageToAny(fl)},
 	}
 
 	return al
@@ -381,7 +286,7 @@ func buildFileAccessJSONLogFormat(
 	}, needsFormatter
 }
 
-func buildHTTPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.MeshConfig_ExtensionProvider_EnvoyHttpGrpcV3LogProvider) *accesslog.AccessLog {
+func buildHTTPGrpcAccessLogHelper(push *PushContext, prov *meshconfig.MeshConfig_ExtensionProvider_EnvoyHttpGrpcV3LogProvider) *accesslog.AccessLog {
 	logName := httpEnvoyAccessLogFriendlyName
 	if prov != nil && prov.LogName != "" {
 		logName = prov.LogName
@@ -392,7 +297,7 @@ func buildHTTPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.Mesh
 		filterObjects = prov.FilterStateObjectsToLog
 	}
 
-	hostname, cluster, err := clusterLookupFn(push, prov.Service, int(prov.Port))
+	_, cluster, err := clusterLookupFn(push, prov.Service, int(prov.Port))
 	if err != nil {
 		log.Errorf("could not find cluster for http grpc provider %q: %v", prov, err)
 		return nil
@@ -405,7 +310,6 @@ func buildHTTPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.Mesh
 				TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
 					EnvoyGrpc: &core.GrpcService_EnvoyGrpc{
 						ClusterName: cluster,
-						Authority:   hostname,
 					},
 				},
 			},
@@ -419,7 +323,7 @@ func buildHTTPGrpcAccessLogHelper(push *model.PushContext, prov *meshconfig.Mesh
 
 	return &accesslog.AccessLog{
 		Name:       wellknown.HTTPGRPCAccessLog,
-		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(fl)},
+		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: MessageToAny(fl)},
 	}
 }
 
@@ -478,16 +382,16 @@ func buildFileAccessLogHelper(path string, mesh *meshconfig.MeshConfig) *accessl
 	}
 	al := &accesslog.AccessLog{
 		Name:       wellknown.FileAccessLog,
-		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(fl)},
+		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: MessageToAny(fl)},
 	}
 
 	return al
 }
 
-func buildOpenTelemetryLogHelper(pushCtx *model.PushContext,
+func buildOpenTelemetryLogHelper(pushCtx *PushContext,
 	provider *meshconfig.MeshConfig_ExtensionProvider_EnvoyOpenTelemetryLogProvider,
 ) *accesslog.AccessLog {
-	hostname, cluster, err := clusterLookupFn(pushCtx, provider.Service, int(provider.Port))
+	_, cluster, err := clusterLookupFn(pushCtx, provider.Service, int(provider.Port))
 	if err != nil {
 		log.Errorf("could not find cluster for open telemetry provider %q: %v", provider, err)
 		return nil
@@ -508,15 +412,15 @@ func buildOpenTelemetryLogHelper(pushCtx *model.PushContext,
 		labels = provider.LogFormat.Labels
 	}
 
-	cfg := buildOpenTelemetryAccessLogConfig(logName, hostname, cluster, f, labels)
+	cfg := buildOpenTelemetryAccessLogConfig(logName, cluster, f, labels)
 
 	return &accesslog.AccessLog{
 		Name:       otelEnvoyALSName,
-		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(cfg)},
+		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: MessageToAny(cfg)},
 	}
 }
 
-func buildOpenTelemetryAccessLogConfig(logName, hostname, clusterName, format string, labels *structpb.Struct) *otelaccesslog.OpenTelemetryAccessLogConfig {
+func buildOpenTelemetryAccessLogConfig(logName, clusterName, format string, labels *structpb.Struct) *otelaccesslog.OpenTelemetryAccessLogConfig {
 	cfg := &otelaccesslog.OpenTelemetryAccessLogConfig{
 		CommonConfig: &grpcaccesslog.CommonGrpcAccessLogConfig{
 			LogName: logName,
@@ -524,7 +428,6 @@ func buildOpenTelemetryAccessLogConfig(logName, hostname, clusterName, format st
 				TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
 					EnvoyGrpc: &core.GrpcService_EnvoyGrpc{
 						ClusterName: clusterName,
-						Authority:   hostname,
 					},
 				},
 			},
@@ -563,135 +466,4 @@ func convertStructToAttributeKeyValues(labels map[string]*structpb.Value) []*otl
 		attrList = append(attrList, kv)
 	}
 	return attrList
-}
-
-func (b *AccessLogBuilder) buildFileAccessLog(mesh *meshconfig.MeshConfig) *accesslog.AccessLog {
-	if cal := b.cachedFileAccessLog(); cal != nil {
-		return cal
-	}
-
-	// We need to build access log. This is needed either on first access or when mesh config changes.
-	al := buildFileAccessLogHelper(mesh.AccessLogFile, mesh)
-
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	b.fileAccesslog = al
-
-	return al
-}
-
-func addAccessLogFilter() *accesslog.AccessLogFilter {
-	return &accesslog.AccessLogFilter{
-		FilterSpecifier: &accesslog.AccessLogFilter_ResponseFlagFilter{
-			ResponseFlagFilter: &accesslog.ResponseFlagFilter{Flags: []string{"NR"}},
-		},
-	}
-}
-
-func buildAccessLogFilter(f ...*accesslog.AccessLogFilter) *accesslog.AccessLogFilter {
-	if len(f) == 0 {
-		return nil
-	}
-
-	if len(f) == 1 {
-		return f[0]
-	}
-
-	return &accesslog.AccessLogFilter{
-		FilterSpecifier: &accesslog.AccessLogFilter_AndFilter{
-			AndFilter: &accesslog.AndFilter{
-				Filters: f,
-			},
-		},
-	}
-}
-
-func (b *AccessLogBuilder) buildListenerFileAccessLog(mesh *meshconfig.MeshConfig) *accesslog.AccessLog {
-	if cal := b.cachedListenerFileAccessLog(); cal != nil {
-		return cal
-	}
-
-	// We need to build access log. This is needed either on first access or when mesh config changes.
-	lal := buildFileAccessLogHelper(mesh.AccessLogFile, mesh)
-	// We add ResponseFlagFilter here, as we want to get listener access logs only on scenarios where we might
-	// not get filter Access Logs like in cases like NR to upstream.
-	lal.Filter = addAccessLogFilter()
-
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	b.listenerFileAccessLog = lal
-
-	return lal
-}
-
-func (b *AccessLogBuilder) cachedFileAccessLog() *accesslog.AccessLog {
-	b.mutex.RLock()
-	defer b.mutex.RUnlock()
-	return b.fileAccesslog
-}
-
-func (b *AccessLogBuilder) cachedListenerFileAccessLog() *accesslog.AccessLog {
-	b.mutex.RLock()
-	defer b.mutex.RUnlock()
-	return b.listenerFileAccessLog
-}
-
-func buildTCPGrpcAccessLog(isListener bool) *accesslog.AccessLog {
-	accessLogFriendlyName := tcpEnvoyAccessLogFriendlyName
-	if isListener {
-		accessLogFriendlyName = listenerEnvoyAccessLogFriendlyName
-	}
-	fl := &grpcaccesslog.TcpGrpcAccessLogConfig{
-		CommonConfig: &grpcaccesslog.CommonGrpcAccessLogConfig{
-			LogName: accessLogFriendlyName,
-			GrpcService: &core.GrpcService{
-				TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
-					EnvoyGrpc: &core.GrpcService_EnvoyGrpc{
-						ClusterName: EnvoyAccessLogCluster,
-					},
-				},
-			},
-			TransportApiVersion:     core.ApiVersion_V3,
-			FilterStateObjectsToLog: envoyWasmStateToLog,
-		},
-	}
-
-	var filter *accesslog.AccessLogFilter
-	if isListener {
-		filter = addAccessLogFilter()
-	}
-	return &accesslog.AccessLog{
-		Name:       tcpEnvoyALSName,
-		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(fl)},
-		Filter:     filter,
-	}
-}
-
-func buildHTTPGrpcAccessLog() *accesslog.AccessLog {
-	fl := &grpcaccesslog.HttpGrpcAccessLogConfig{
-		CommonConfig: &grpcaccesslog.CommonGrpcAccessLogConfig{
-			LogName: httpEnvoyAccessLogFriendlyName,
-			GrpcService: &core.GrpcService{
-				TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
-					EnvoyGrpc: &core.GrpcService_EnvoyGrpc{
-						ClusterName: EnvoyAccessLogCluster,
-					},
-				},
-			},
-			TransportApiVersion:     core.ApiVersion_V3,
-			FilterStateObjectsToLog: envoyWasmStateToLog,
-		},
-	}
-
-	return &accesslog.AccessLog{
-		Name:       wellknown.HTTPGRPCAccessLog,
-		ConfigType: &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(fl)},
-	}
-}
-
-func (b *AccessLogBuilder) reset() {
-	b.mutex.Lock()
-	b.fileAccesslog = nil
-	b.listenerFileAccessLog = nil
-	b.mutex.Unlock()
 }
