@@ -265,24 +265,11 @@ func BenchmarkEndpointGeneration(b *testing.B) {
 	var response *discovery.DiscoveryResponse
 	for _, tt := range tests {
 		b.Run(fmt.Sprintf("%d/%d", tt.endpoints, tt.services), func(b *testing.B) {
-			m := mesh.DefaultMeshConfig()
-			m.ExtensionProviders = append(m.ExtensionProviders, &meshconfig.MeshConfig_ExtensionProvider{
-				Name: "envoy-json",
-				Provider: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLog{
-					EnvoyFileAccessLog: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLogProvider{
-						Path: "/dev/stdout",
-						LogFormat: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLogProvider_LogFormat{
-							LogFormat: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLogProvider_LogFormat_Labels{},
-						},
-					},
-				},
-			})
 			s := NewFakeDiscoveryServer(b, FakeOptions{
 				Configs: createEndpoints(tt.endpoints, tt.services, numNetworks),
 				NetworksWatcher: mesh.NewFixedNetworksWatcher(&meshconfig.MeshNetworks{
 					Networks: createGateways(numNetworks),
 				}),
-				MeshConfig: m,
 			})
 			proxy := &model.Proxy{
 				Type:            model.SidecarProxy,
@@ -384,12 +371,25 @@ func setupTest(t testing.TB, config ConfigInput) (*FakeDiscoveryServer, *model.P
 	proxy.IstioVersion = model.ParseIstioVersion(proxy.Metadata.IstioVersion)
 
 	configs, k8sConfig := getConfigsWithCache(t, config)
+	m := mesh.DefaultMeshConfig()
+	m.ExtensionProviders = append(m.ExtensionProviders, &meshconfig.MeshConfig_ExtensionProvider{
+		Name: "envoy-json",
+		Provider: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLog{
+			EnvoyFileAccessLog: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLogProvider{
+				Path: "/dev/stdout",
+				LogFormat: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLogProvider_LogFormat{
+					LogFormat: &meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLogProvider_LogFormat_Labels{},
+				},
+			},
+		},
+	})
 	s := NewFakeDiscoveryServer(t, FakeOptions{
 		Configs:                configs,
 		KubernetesObjectString: k8sConfig,
 		// Allow debounce to avoid overwhelming with writes
 		DebounceTime:               time.Millisecond * 10,
 		DisableSecretAuthorization: true,
+		MeshConfig:                 m,
 	})
 
 	return s, proxy

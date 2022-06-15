@@ -9,8 +9,6 @@ spec:
     - name: prometheus
   accessLogging:
   - providers:
-      - name: envoy
-  - providers:
       - name: envoy-json
 ---
 # Set up a Service associated with our proxy, which will run as 1.1.1.1 IP
