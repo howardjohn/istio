@@ -74,6 +74,8 @@ type Telemetries struct {
 	// As result, this cache will live until any Telemetry is modified.
 	computedMetricsFilters map[metricsKey]interface{}
 	mu                     sync.Mutex
+	// TODO this is broken since we don't update it always
+	push                   *PushContext
 }
 
 // telemetryKey defines a key into the computedMetricsFilters cache.
@@ -94,12 +96,13 @@ type metricsKey struct {
 }
 
 // getTelemetries returns the Telemetry configurations for the given environment.
-func getTelemetries(env *Environment) (*Telemetries, error) {
+func getTelemetries(ps *PushContext, env *Environment) (*Telemetries, error) {
 	telemetries := &Telemetries{
 		NamespaceToTelemetries: map[string][]Telemetry{},
 		RootNamespace:          env.Mesh().GetRootNamespace(),
 		meshConfig:             env.Mesh(),
 		computedMetricsFilters: map[metricsKey]interface{}{},
+		push: ps,
 	}
 
 	fromEnv, err := env.List(collections.IstioTelemetryV1Alpha1Telemetries.Resource().GroupVersionKind(), NamespaceAll)
@@ -223,16 +226,17 @@ func (t *Telemetries) AccessLogging(proxy *Proxy, class networking.ListenerClass
 		case *meshconfig.MeshConfig_ExtensionProvider_EnvoyFileAccessLog:
 			al = buildEnvoyFileAccessLogHelper(prov.EnvoyFileAccessLog)
 			// TODO
-		//case *meshconfig.MeshConfig_ExtensionProvider_EnvoyHttpAls:
-		//	al = buildHTTPGrpcAccessLogHelper(push, prov.EnvoyHttpAls)
-		//case *meshconfig.MeshConfig_ExtensionProvider_EnvoyTcpAls:
-		//	al = buildTCPGrpcAccessLogHelper(push, prov.EnvoyTcpAls)
-		//case *meshconfig.MeshConfig_ExtensionProvider_EnvoyOtelAls:
-		//	al = buildOpenTelemetryLogHelper(push, prov.EnvoyOtelAls)
+		case *meshconfig.MeshConfig_ExtensionProvider_EnvoyHttpAls:
+			al = buildHTTPGrpcAccessLogHelper(t.push, prov.EnvoyHttpAls)
+		case *meshconfig.MeshConfig_ExtensionProvider_EnvoyTcpAls:
+			al = buildTCPGrpcAccessLogHelper(t.push, prov.EnvoyTcpAls)
+		case *meshconfig.MeshConfig_ExtensionProvider_EnvoyOtelAls:
+			al = buildOpenTelemetryLogHelper(t.push, prov.EnvoyOtelAls)
 		}
 		if al == nil {
 			continue
 		}
+		cfg.Logs = []*accesslog.AccessLog{al}
 	}
 	return &cfg
 }

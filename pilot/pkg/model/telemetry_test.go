@@ -64,7 +64,7 @@ func createTestTelemetries(configs []config.Config, t *testing.T) *Telemetries {
 		ConfigStore: MakeIstioStore(store),
 		Watcher:     mesh.NewFixedWatcher(m),
 	}
-	telemetries, err := getTelemetries(environment)
+	telemetries, err := getTelemetries(nil, environment)
 	if err != nil {
 		t.Fatalf("getTelemetries failed: %v", err)
 	}
