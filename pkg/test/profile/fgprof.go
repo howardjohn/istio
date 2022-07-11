@@ -17,18 +17,25 @@ package profile
 import (
 	"flag"
 	"os"
+	"runtime/pprof"
 
 	"github.com/felixge/fgprof"
 
 	"istio.io/istio/pkg/test"
 )
 
-var fprof string
+var (
+	fprof   string
+	cpuprof string
+	memprof string
+)
 
 // init initializes additional profiling flags
 // Go comes with some, like -cpuprofile and -memprofile by default, so those are elided.
 func init() {
 	flag.StringVar(&fprof, "fullprofile", "", "enable full profile. Path will be relative to test directory")
+	flag.StringVar(&cpuprof, "cpuprofile", "", "enable full profile. Path will be relative to test directory")
+	flag.StringVar(&memprof, "memprofile", "", "enable full profile. Path will be relative to test directory")
 }
 
 // FullProfile runs a "Full" profile (https://github.com/felixge/fgprof). This differs from standard
@@ -52,4 +59,31 @@ func FullProfile(t test.Failer) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func CPUProfile() func() {
+	if cpuprof == "" {
+		return func() {}
+	}
+	f, err := os.Create(cpuprof)
+	if err != nil {
+		panic(err.Error())
+	}
+	pprof.StartCPUProfile(f)
+	return func() {
+		pprof.StopCPUProfile()
+		f.Close()
+	}
+}
+
+func HeapProfile() {
+	if memprof == "" {
+		return
+	}
+	f, err := os.Create(memprof)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer f.Close()
+	pprof.WriteHeapProfile(f)
 }
