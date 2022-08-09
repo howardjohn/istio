@@ -12,42 +12,18 @@ Fuzz jobs will be run in unit test mode automatically (i.e. run once) and as par
 
 ## Local testing
 
-To run the fuzzers using `Dockerfile.fuzz`, follow these steps:
+To run the fuzzers, follow these steps:
 
 ```bash
-git clone https://github.com/istio/istio
+git clone https://github.com/google/oss-fuzz; cd oss-fuzz
+# Build fuzzers. Replace last path with your Istio source folder.
+python infra/helper.py build_fuzzers istio ~/go/src/istio.io/istio
+
+
+# Run a fuzzer. Replace last name with name of fuzzer.
+python infra/helper.py run_fuzzer istio FuzzBuildSidecarOutboundListeners
+# Repro a previous failure
+python infra/helper.py reproduce istio FuzzBuildSidecarOutboundListeners clusterfuzz-testcase-minimized-FuzzBuildSidecarOutboundListeners-12345
 ```
 
-```bash
-cd istio
-```
-
-```bash
-mv tests/fuzz/Dockerfile.fuzz ./
-```
-
-```bash
-sudo docker build -t istio-fuzz -f Dockerfile.fuzz .
-```
-
-Next, get a shell in the container:
-
-```bash
-sudo docker run -it istio-fuzz
-```
-
-At this point, you can navigate to `tests/fuzz` and build any of the fuzzers:
-
-```bash
-cd $PATH_TO_FUZZER
-go-fuzz-build -libfuzzer -func=FUZZ_NAME && \
-clang -fsanitize=fuzzer PACKAGE_NAME.a -o fuzzer
-```
-
-If you encounter any errors when linking with `PACKAGE_NAME.a`, simply `ls` after running `go-fuzz-build...`, and you will see the archive to link with.
-
-If everything goes well until this point, you can run the fuzzer:
-
-```bash
-./fuzzer
-```
+Note: to speed up builds, it may be helpful to comment out unneeded fuzzers is `oss_fuzz_build.sh`.

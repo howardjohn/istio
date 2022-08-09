@@ -19,6 +19,8 @@ set -o pipefail
 set -o errexit
 set -x
 
+go env
+
 sed -i 's/out.initJwksResolver()/\/\/out.initJwksResolver()/g' "${SRC}"/istio/pilot/pkg/xds/discovery.go
 # Create empty file that imports "github.com/AdamKorcz/go-118-fuzz-build/utils"
 # This is a small hack to install this dependency, since it is not used anywhere,
@@ -26,17 +28,25 @@ sed -i 's/out.initJwksResolver()/\/\/out.initJwksResolver()/g' "${SRC}"/istio/pi
 printf "package main\nimport _ \"github.com/AdamKorcz/go-118-fuzz-build/utils\"\n" > register.go
 go mod tidy
 
-mv "${SRC}"/istio/security/pkg/server/ca/server_test.go "${SRC}"/istio/security/pkg/server/ca/server_test_fuzz.go
-mv "${SRC}"/istio/pilot/pkg/networking/core/v1alpha3/envoyfilter/listener_patch_test.go "${SRC}"/istio/pilot/pkg/networking/core/v1alpha3/envoyfilter/listener_patch_test_fuzz.go
+pwd
+ls $SRC
+ls "${SRC}"/istio
+if [[ ! -f "${SRC}/istio/security/pkg/server/ca/server_test_fuzz.go" ]]; then
+  mv "${SRC}"/istio/security/pkg/server/ca/server_test.go "${SRC}"/istio/security/pkg/server/ca/server_test_fuzz.go
+fi
+if [[ ! -f "${SRC}"/istio/pilot/pkg/networking/core/v1alpha3/envoyfilter/listener_patch_test_fuzz.go ]]; then
+  mv "${SRC}"/istio/pilot/pkg/networking/core/v1alpha3/envoyfilter/listener_patch_test.go "${SRC}"/istio/pilot/pkg/networking/core/v1alpha3/envoyfilter/listener_patch_test_fuzz.go
+fi
 
 # Find all native fuzzers and compile them
 # shellcheck disable=SC2016
-grep --line-buffered --include '*.go' -Pr 'func Fuzz.*\(.* \*testing\.F' | sed -E 's/(func Fuzz(.*)\(.*)/\2/' | xargs -I{} sh -c '
+grep --line-buffered --include '*.go' -Pr 'func FuzzBuildSidecarOutboundListeners' | sed -E 's/(func Fuzz(.*)\(.*)/\2/' | xargs -I{} sh -c '
   fname="$(dirname $(echo "{}" | cut -d: -f1))"
   func="Fuzz$(echo "{}" | cut -d: -f2)"
   set -x
   compile_native_go_fuzzer istio.io/istio/$fname $func $func
 '
+exit 0
 
 # Now compile fuzzers from tests/fuzz
 compile_go_fuzzer istio.io/istio/tests/fuzz FuzzCRDRoundtrip fuzz_crd_roundtrip

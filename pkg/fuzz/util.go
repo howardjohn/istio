@@ -17,6 +17,7 @@ package fuzz
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"testing"
 
 	fuzzheaders "github.com/AdaLogics/go-fuzz-headers"
@@ -43,6 +44,7 @@ func New(t *testing.T, data []byte) Helper {
 func Struct[T any](h Helper, validators ...func(T) bool) T {
 	d := new(T)
 	if err := h.cf.GenerateStruct(d); err != nil {
+		os.Exit(17)
 		h.t.Skip(err.Error())
 	}
 	r := *d
@@ -60,6 +62,7 @@ func Slice[T any](h Helper, count int, validators ...func(T) bool) []T {
 	for i := 0; i < count; i++ {
 		d := new(T)
 		if err := h.cf.GenerateStruct(d); err != nil {
+			os.Exit(17)
 			h.t.Skip(err.Error())
 		}
 		r := *d
@@ -72,6 +75,7 @@ func Slice[T any](h Helper, count int, validators ...func(T) bool) []T {
 func validate[T any](h Helper, validators []func(T) bool, r T) {
 	if fz, ok := any(r).(Validator); ok {
 		if !fz.FuzzValidate() {
+			os.Exit(17)
 			h.t.Skip("struct didn't pass validator")
 		}
 	}
