@@ -251,4 +251,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
 
-replace k8s.io/api => ./out/gohack/k8s.io/api
+replace k8s.io/api => ./fork/k8s.io/api
