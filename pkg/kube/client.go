@@ -1303,6 +1303,7 @@ func istioScheme() *runtime.Scheme {
 	utilruntime.Must(gatewayapibeta.AddToScheme(scheme))
 	utilruntime.Must(apis.AddToScheme(scheme))
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
+	utilruntime.Must(metav1.AddMetaToScheme(scheme))
 	return scheme
 }
 
