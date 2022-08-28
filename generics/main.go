@@ -45,4 +45,10 @@ func main() {
 	pod := MustList[corev1.Pod](c, "istio-system")[0].Name
 	logs, err := GetLogs[corev1.Pod](c, pod, "istio-system", corev1.PodLogOptions{})
 	log.Infof("%v, %v", logs[:100], err)
+
+	pods := NewAPI[corev1.Pod](c)
+	res, _ := pods.List("kube-system", metav1.ListOptions{})
+	for _, p := range res {
+		fmt.Println(p.Name)
+	}
 }

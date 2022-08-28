@@ -37,6 +37,34 @@ func (o ObjectList[T]) DeepCopyObject() runtime.Object {
 
 var _ runtime.Object = ObjectList[any]{}
 
+type API[T Resource] interface {
+	Get(name, namespace string, options metav1.GetOptions) (*T, error)
+	List(namespace string, options metav1.ListOptions) ([]T, error)
+	Watch(namespace string, options metav1.ListOptions) (Watcher[T], error)
+}
+
+type api[T Resource] struct {
+	c *Client
+}
+
+func (a api[T]) Get(name, namespace string, options metav1.GetOptions) (*T, error) {
+	return Get[T](a.c, name, namespace, options)
+}
+
+func (a api[T]) List(namespace string, options metav1.ListOptions) ([]T, error) {
+	return List[T](a.c, namespace, options)
+}
+
+func (a api[T]) Watch(namespace string, options metav1.ListOptions) (Watcher[T], error) {
+	return Watch[T](a.c, namespace, options)
+}
+
+var _ API[Resource] = api[Resource]{}
+
+func NewAPI[T Resource](c *Client) API[T] {
+	return api[T]{c: c}
+}
+
 type Resource interface {
 	ResourceMetadata() schema.GroupVersion
 	ResourceName() string
