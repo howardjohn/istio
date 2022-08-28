@@ -10,16 +10,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 )
 
 type Client struct {
-	scheme *runtime.Scheme
 	client rest.Interface
 }
 
-func MustGet[T any](c *Client, name, namespace string) *T {
+func MustGet[T Resource](c *Client, name, namespace string) *T {
 	res, err := Get[T](c, name, namespace, metav1.GetOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -27,20 +25,31 @@ func MustGet[T any](c *Client, name, namespace string) *T {
 	return res
 }
 
-func Get[T any](c *Client, name, namespace string, options metav1.GetOptions) (*T, error) {
+type ResourceMetadata struct {
+	gv schema.GroupVersion
+}
+
+type Resource interface {
+	ResourceMetadata() schema.GroupVersion
+	ResourceName() string
+}
+
+func Get[T Resource](c *Client, name, namespace string, options metav1.GetOptions) (*T, error) {
 	result := new(T)
+	gv := (*result).ResourceMetadata()
 	x := (interface{})(result).(runtime.Object)
 	err := c.client.Get().
 		Namespace(namespace).
-		Resource("deployments").
+		Resource((*result).ResourceName()).
 		Name(name).
-		VersionedParams(&options, runtime.NewParameterCodec(c.scheme)).
+		//VersionedParams(&options, runtime.NewParameterCodec(c.scheme)).
+		AbsPath(rest.DefaultVersionedAPIPath("apis", gv)).
 		Do(context.Background()).
 		Into(x)
 	return result, err
 }
 
-func MustList[T any](c *Client, namespace string) []T {
+func MustList[T Resource](c *Client, namespace string) []T {
 	res, err := List[T](c, namespace, metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -48,40 +57,43 @@ func MustList[T any](c *Client, namespace string) []T {
 	return res
 }
 
-func List[T any](c *Client, namespace string, options metav1.ListOptions) ([]T, error) {
+func List[T Resource](c *Client, namespace string, options metav1.ListOptions) ([]T, error) {
 	x := ObjectList[T]{}
+	result := new(T)
+	gv := (*result).ResourceMetadata()
 	err := c.client.Get().
 		Namespace(namespace).
-		Resource("deployments").
-		VersionedParams(&options, runtime.NewParameterCodec(c.scheme)).
+		Resource((*result).ResourceName()).
+		//VersionedParams(&options, runtime.NewParameterCodec(c.scheme)).
+		AbsPath(rest.DefaultVersionedAPIPath("apis", gv)).
 		Do(context.Background()).
 		Into(&x)
 	return x.Items, err
 }
 
-func Watch[T any](c *Client, namespace string, options metav1.ListOptions) (<-chan T, error) {
-	x := ObjectList[T]{}
+func Watch[T Resource](c *Client, namespace string, options metav1.ListOptions) (<-chan T, error) {
+	result := new(T)
+	gv := (*result).ResourceMetadata()
 	wi, err := c.client.Get().
 		Namespace(namespace).
-		Resource("deployments").
-		VersionedParams(&options, runtime.NewParameterCodec(c.scheme)).
+		Resource((*result).ResourceName()).
+		//VersionedParams(&options, runtime.NewParameterCodec(c.scheme)).
+		AbsPath(rest.DefaultVersionedAPIPath("apis", gv)).
 		Watch(context.Background())
-	c := make(<- chan T)
+	if err != nil {
+		return nil, err
+	}
+	cc := make(chan T)
 	go func() {
 		for {
 			select {
-				case res := <-wi.ResultChan():
-					c<-res
-					case <-c
-			}
-			res, ok := <-wi.ResultChan()
-			if !ok {
-				wi.
+			case res, ok := <-wi.ResultChan():
+				log.Errorf("howardjohn: %+v %v", res, ok)
+				cc <- res.Object.(T)
 			}
 		}
 	}()
-	return t, err
-	return x.Items, err
+	return cc, err
 }
 
 type ObjectList[T any] struct {
@@ -108,6 +120,7 @@ func (o ObjectList[T]) DeepCopyObject() runtime.Object {
 }
 
 func main() {
+	log.EnableKlogWithVerbosity(6)
 	restConfig, err := kube.DefaultRestConfig("", "")
 	if err != nil {
 		log.Fatal(err)
@@ -117,18 +130,21 @@ func main() {
 		log.Fatal(err)
 	}
 	cfg := k.RESTConfig()
-	cfg.APIPath = "/apis/apps"
+	cfg.APIPath = "/apis"
 	rc, err := rest.RESTClientFor(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	c := &Client{
-		scheme: kube.IstioScheme,
 		client: rc,
 	}
-	r, err := Get[appsv1.Deployment](c, "coredns", "kube-system", metav1.GetOptions{})
+	r, err := Get[appsv1.Deployment](c, "kube-dns", "kube-system", metav1.GetOptions{})
 	fmt.Println(r.Name, err)
 	for _, dep := range MustList[appsv1.Deployment](c, "istio-system") {
 		fmt.Println(dep.Name)
+	}
+	cc, err := Watch[appsv1.Deployment](c, "istio-system", metav1.ListOptions{})
+	for res := range cc {
+		fmt.Println("watch", res.Name)
 	}
 }
