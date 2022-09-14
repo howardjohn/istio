@@ -20,6 +20,7 @@ var (
 	HTTPRoute                    = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Kind: "HTTPRoute"}
 	Ingress                      = config.GroupVersionKind{Group: "extensions", Version: "v1beta1", Kind: "Ingress"}
 	KubernetesGateway            = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Kind: "Gateway"}
+	Mesh                         = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Kind: "Mesh"}
 	MeshConfig                   = config.GroupVersionKind{Group: "", Version: "v1alpha1", Kind: "MeshConfig"}
 	MeshNetworks                 = config.GroupVersionKind{Group: "", Version: "v1alpha1", Kind: "MeshNetworks"}
 	MutatingWebhookConfiguration = config.GroupVersionKind{Group: "admissionregistration.k8s.io", Version: "v1", Kind: "MutatingWebhookConfiguration"}

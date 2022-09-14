@@ -268,7 +268,7 @@ func buildHTTPVirtualServices(
 ) {
 	route := obj.Spec.(*k8s.HTTPRouteSpec)
 	ns := obj.Namespace
-	parentRefs := extractParentReferenceInfo(ctx.GatewayReferences, route.ParentRefs, route.Hostnames, gvk.HTTPRoute, ns)
+	parentRefs := extractParentReferenceInfo(ctx.GatewayReferences, route.ParentRefs, route.Hostnames, route.Services, gvk.HTTPRoute, ns)
 
 	reportError := func(routeErr *ConfigError) {
 		obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
@@ -281,7 +281,13 @@ func buildHTTPVirtualServices(
 	var invalidBackendErr *ConfigError
 	httproutes := []*istio.HTTPRoute{}
 	hosts := hostnameToStringList(route.Hostnames)
-	convertHTTPRoute := func(r k8s.HTTPRouteRule) *ConfigError {
+	if len(route.Services) > 0 {
+		hosts = []string{}
+		for _, s := range route.Services {
+			hosts = append(hosts, fmt.Sprintf("%s.%s.svc.%s", s.Name, defaultIfNil((*string)(s.Namespace), obj.Namespace), ctx.Domain))
+		}
+	}
+	convertHTTPRoute := func(route *k8s.HTTPRouteSpec, r k8s.HTTPRouteRule) *ConfigError {
 		// TODO: implement rewrite, timeout, mirror, corspolicy, retries
 		vs := &istio.HTTPRoute{}
 		for _, match := range r.Matches {
@@ -292,6 +298,13 @@ func buildHTTPVirtualServices(
 			headers, err := createHeadersMatch(match)
 			if err != nil {
 				return err
+			}
+			var authority *istio.StringMatch
+			if len(route.Hostnames) > 0 &&  len(route.Services) > 0 { // Mesh. TODO: this isn't accurate
+				s := route.Hostnames[0] // todo support multiple
+				authority = &istio.StringMatch{
+					MatchType: &istio.StringMatch_Exact{Exact: string(s)},
+				}
 			}
 			qp, err := createQueryParamsMatch(match)
 			if err != nil {
@@ -306,6 +319,7 @@ func buildHTTPVirtualServices(
 				Headers:     headers,
 				QueryParams: qp,
 				Method:      method,
+				Authority:   authority,
 			})
 		}
 		for _, filter := range r.Filters {
@@ -349,7 +363,7 @@ func buildHTTPVirtualServices(
 			}}
 		}
 
-		route, err := buildHTTPDestination(ctx, r.BackendRefs, ns, zero)
+		vsRoute, err := buildHTTPDestination(ctx, r.BackendRefs, ns, zero)
 		if err != nil {
 			if isInvalidBackend(err) {
 				invalidBackendErr = err
@@ -357,7 +371,8 @@ func buildHTTPVirtualServices(
 				return err
 			}
 		}
-		vs.Route = route
+
+		vs.Route = vsRoute
 
 		httproutes = append(httproutes, vs)
 		return nil
@@ -369,12 +384,12 @@ func buildHTTPVirtualServices(
 			matches := r.Matches
 			for _, m := range matches {
 				r.Matches = []k8s.HTTPRouteMatch{m}
-				if err := convertHTTPRoute(r); err != nil {
+				if err := convertHTTPRoute(route, r); err != nil {
 					reportError(err)
 					return
 				}
 			}
-		} else if err := convertHTTPRoute(r); err != nil {
+		} else if err := convertHTTPRoute(route, r); err != nil {
 			reportError(err)
 			return
 		}
@@ -508,13 +523,13 @@ func toInternalParentReference(p k8s.ParentReference, localNamespace string) (pa
 	kind := defaultIfNil((*string)(p.Kind), gvk.KubernetesGateway.Kind)
 	var ik config.GroupVersionKind
 	var ns string
-	// Currently supported types are Gateway and Mesh
+	// Currently supported types are Gateway and Mes
 	if kind == gvk.KubernetesGateway.Kind && grp == gvk.KubernetesGateway.Group {
 		// Unset namespace means "same namespace"
 		ns = defaultIfNil((*string)(p.Namespace), localNamespace)
 		ik = gvk.KubernetesGateway
-	} else if kind == meshGVK.Kind && grp == meshGVK.Group {
-		ik = meshGVK
+	} else if kind == gvk.Mesh.Kind && grp == gvk.Mesh.Group {
+		ik = gvk.Mesh
 	} else {
 		return empty, fmt.Errorf("unsupported parentKey: %v/%v", grp, kind)
 	}
@@ -530,6 +545,7 @@ func referenceAllowed(
 	routeKind config.GroupVersionKind,
 	parentKind config.GroupVersionKind,
 	hostnames []k8s.Hostname,
+	services []k8s.BackendObjectReference,
 	namespace string,
 ) *ParentError {
 	// First check the hostnames are a match. This is a bi-directional wildcard match. Only one route
@@ -591,22 +607,18 @@ func referenceAllowed(
 		}
 	}
 
-	if parentKind == meshGVK {
-		for _, h := range hostnames {
-			if h == "*" {
-				return &ParentError{
-					Reason:  ParentErrorNoHostname,
-					Message: "mesh requires hostname to be set",
-				}
+	if parentKind == gvk.Mesh {
+		if len(services) == 0 {
+			return &ParentError{
+				Reason:  ParentErrorNoHostname,
+				Message: "mesh requires services to be set",
 			}
 		}
 	}
 	return nil
 }
 
-func extractParentReferenceInfo(gateways map[parentKey]map[k8s.SectionName]*parentInfo, routeRefs []k8s.ParentReference,
-	hostnames []k8s.Hostname, kind config.GroupVersionKind, localNamespace string,
-) []routeParentReference {
+func extractParentReferenceInfo(gateways map[parentKey]map[k8s.SectionName]*parentInfo, routeRefs []k8s.ParentReference, hostnames []k8s.Hostname, services []k8s.BackendObjectReference, kind config.GroupVersionKind, localNamespace string) []routeParentReference {
 	parentRefs := []routeParentReference{}
 	for _, ref := range routeRefs {
 		ir, err := toInternalParentReference(ref, localNamespace)
@@ -618,7 +630,7 @@ func extractParentReferenceInfo(gateways map[parentKey]map[k8s.SectionName]*pare
 			rpi := routeParentReference{
 				InternalName:      pr.InternalName,
 				Hostname:          pr.OriginalHostname,
-				DeniedReason:      referenceAllowed(pr, kind, pk.Kind, hostnames, localNamespace),
+				DeniedReason:      referenceAllowed(pr, kind, pk.Kind, hostnames, services, localNamespace),
 				OriginalReference: ref,
 			}
 			if rpi.DeniedReason == nil {
@@ -645,7 +657,7 @@ func extractParentReferenceInfo(gateways map[parentKey]map[k8s.SectionName]*pare
 func buildTCPVirtualService(ctx ConfigContext, obj config.Config) *config.Config {
 	route := obj.Spec.(*k8s.TCPRouteSpec)
 
-	parentRefs := extractParentReferenceInfo(ctx.GatewayReferences, route.ParentRefs, nil, gvk.TCPRoute, obj.Namespace)
+	parentRefs := extractParentReferenceInfo(ctx.GatewayReferences, route.ParentRefs, nil, nil, gvk.TCPRoute, obj.Namespace)
 
 	reportError := func(routeErr *ConfigError) {
 		obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
@@ -697,7 +709,7 @@ func buildTCPVirtualService(ctx ConfigContext, obj config.Config) *config.Config
 func buildTLSVirtualService(ctx ConfigContext, obj config.Config) []config.Config {
 	route := obj.Spec.(*k8s.TLSRouteSpec)
 
-	parentRefs := extractParentReferenceInfo(ctx.GatewayReferences, route.ParentRefs, nil, gvk.TLSRoute, obj.Namespace)
+	parentRefs := extractParentReferenceInfo(ctx.GatewayReferences, route.ParentRefs, nil, nil, gvk.TLSRoute, obj.Namespace)
 
 	reportError := func(routeErr *ConfigError) {
 		obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
@@ -1181,12 +1193,6 @@ func getGatewayClasses(r KubernetesResources) map[string]struct{} {
 	return classes
 }
 
-var meshGVK = config.GroupVersionKind{
-	Group:   gvk.KubernetesGateway.Group,
-	Version: gvk.KubernetesGateway.Version,
-	Kind:    "Mesh",
-}
-
 // parentKey holds info about a parentRef (ie route binding to a Gateway). This is a mirror of
 // k8s.ParentReference in a form that can be stored in a map
 type parentKey struct {
@@ -1419,7 +1425,7 @@ func convertGateways(r ConfigContext) ([]config.Config, map[parentKey]map[k8s.Se
 	}
 	// Insert a parent for Mesh references.
 	gwMap[parentKey{
-		Kind: meshGVK,
+		Kind: gvk.Mesh,
 		Name: "istio",
 	}] = map[k8s.SectionName]*parentInfo{
 		"": {

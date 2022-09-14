@@ -587,6 +587,24 @@ var (
 		}.MustBuild(),
 	}.MustBuild()
 
+	// K8SGatewayApiV1Alpha2Meshes describes the collection
+	// k8s/gateway_api/v1alpha2/meshes
+	K8SGatewayApiV1Alpha2Meshes = collection.Builder{
+		Name:         "k8s/gateway_api/v1alpha2/meshes",
+		VariableName: "K8SGatewayApiV1Alpha2Meshes",
+		Resource: resource.Builder{
+			Group:   "gateway.networking.k8s.io",
+			Kind:    "Mesh",
+			Plural:  "meshes",
+			Version: "v1alpha2",
+			Proto:   "k8s.io.gateway_api.api.v1alpha1.MeshSpec", StatusProto: "k8s.io.gateway_api.api.v1alpha1.MeshStatus",
+			ReflectType: reflect.TypeOf(&sigsk8siogatewayapiapisv1alpha2.MeshSpec{}).Elem(), StatusType: reflect.TypeOf(&sigsk8siogatewayapiapisv1alpha2.MeshStatus{}).Elem(),
+			ProtoPackage: "sigs.k8s.io/gateway-api/apis/v1alpha2", StatusPackage: "sigs.k8s.io/gateway-api/apis/v1alpha2",
+			ClusterScoped: true,
+			ValidateProto: validation.EmptyValidate,
+		}.MustBuild(),
+	}.MustBuild()
+
 	// K8SGatewayApiV1Alpha2Referencegrants describes the collection
 	// k8s/gateway_api/v1alpha2/referencegrants
 	K8SGatewayApiV1Alpha2Referencegrants = collection.Builder{
@@ -691,6 +709,7 @@ var (
 		MustAdd(K8SGatewayApiV1Alpha2Gatewayclasses).
 		MustAdd(K8SGatewayApiV1Alpha2Gateways).
 		MustAdd(K8SGatewayApiV1Alpha2Httproutes).
+		MustAdd(K8SGatewayApiV1Alpha2Meshes).
 		MustAdd(K8SGatewayApiV1Alpha2Referencegrants).
 		MustAdd(K8SGatewayApiV1Alpha2Referencepolicies).
 		MustAdd(K8SGatewayApiV1Alpha2Tcproutes).
@@ -733,6 +752,7 @@ var (
 		MustAdd(K8SGatewayApiV1Alpha2Gatewayclasses).
 		MustAdd(K8SGatewayApiV1Alpha2Gateways).
 		MustAdd(K8SGatewayApiV1Alpha2Httproutes).
+		MustAdd(K8SGatewayApiV1Alpha2Meshes).
 		MustAdd(K8SGatewayApiV1Alpha2Referencegrants).
 		MustAdd(K8SGatewayApiV1Alpha2Referencepolicies).
 		MustAdd(K8SGatewayApiV1Alpha2Tcproutes).
@@ -792,6 +812,7 @@ var (
 			MustAdd(K8SGatewayApiV1Alpha2Gatewayclasses).
 			MustAdd(K8SGatewayApiV1Alpha2Gateways).
 			MustAdd(K8SGatewayApiV1Alpha2Httproutes).
+			MustAdd(K8SGatewayApiV1Alpha2Meshes).
 			MustAdd(K8SGatewayApiV1Alpha2Referencegrants).
 			MustAdd(K8SGatewayApiV1Alpha2Referencepolicies).
 			MustAdd(K8SGatewayApiV1Alpha2Tcproutes).

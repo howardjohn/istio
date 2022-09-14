@@ -20,6 +20,7 @@ const (
 	HTTPRoute
 	Ingress
 	KubernetesGateway
+	Mesh
 	MeshConfig
 	MeshNetworks
 	MutatingWebhookConfiguration
@@ -70,6 +71,8 @@ func (k Kind) String() string {
 		return "Ingress"
 	case KubernetesGateway:
 		return "Gateway"
+	case Mesh:
+		return "Mesh"
 	case MeshConfig:
 		return "MeshConfig"
 	case MeshNetworks:
@@ -155,6 +158,9 @@ func FromGvk(gvk config.GroupVersionKind) Kind {
 	}
 	if gvk.Kind == "Gateway" && gvk.Group == "gateway.networking.k8s.io" && gvk.Version == "v1alpha2" {
 		return KubernetesGateway
+	}
+	if gvk.Kind == "Mesh" && gvk.Group == "gateway.networking.k8s.io" && gvk.Version == "v1alpha2" {
+		return Mesh
 	}
 	if gvk.Kind == "MeshConfig" && gvk.Group == "" && gvk.Version == "v1alpha1" {
 		return MeshConfig

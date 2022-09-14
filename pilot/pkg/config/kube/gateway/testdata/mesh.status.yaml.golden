@@ -139,9 +139,34 @@ status:
   parents:
   - conditions:
     - lastTransitionTime: fake
-      message: mesh requires hostname to be set
+      message: mesh requires services to be set
       reason: NoMatchingListenerHostname
       status: "False"
+      type: Accepted
+    - lastTransitionTime: fake
+      message: All references resolved
+      reason: ResolvedRefs
+      status: "True"
+      type: ResolvedRefs
+    controllerName: istio.io/gateway-controller
+    parentRef:
+      kind: Mesh
+      name: istio
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: HTTPRoute
+metadata:
+  creationTimestamp: null
+  name: with-hostname
+  namespace: default
+spec: null
+status:
+  parents:
+  - conditions:
+    - lastTransitionTime: fake
+      message: Route was valid
+      reason: Accepted
+      status: "True"
       type: Accepted
     - lastTransitionTime: fake
       message: All references resolved
@@ -164,7 +189,7 @@ status:
   parents:
   - conditions:
     - lastTransitionTime: fake
-      message: mesh requires hostname to be set
+      message: mesh requires services to be set
       reason: NoMatchingListenerHostname
       status: "False"
       type: Accepted

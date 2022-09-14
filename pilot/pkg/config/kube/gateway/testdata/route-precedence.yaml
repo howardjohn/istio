@@ -38,7 +38,9 @@ spec:
     namespace: istio-system
   - kind: Mesh
     name: istio
-  hostnames: ["a.domain.example", "b.domain.example"]
+  services:
+  - name: a
+  - name: b
   rules:
   - matches:
     - path:
@@ -70,7 +72,8 @@ spec:
     namespace: istio-system
   - kind: Mesh
     name: istio
-  hostnames: ["a.domain.example"]
+  services:
+  - name: a
   rules:
   - matches:
     - path:
@@ -114,7 +117,9 @@ spec:
   parentRefs:
   - name: gateway
     namespace: istio-system
-  hostnames: ["a.domain.example", "b.domain.example"]
+  services:
+  - name: a
+  - name: b
   rules:
   - matches:
     - path:

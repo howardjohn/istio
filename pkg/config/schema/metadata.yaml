@@ -160,6 +160,10 @@ collections:
     name: "k8s/gateway_api/v1alpha2/gatewayclasses"
     group: "gateway.networking.k8s.io"
 
+  - kind: "Mesh"
+    name: "k8s/gateway_api/v1alpha2/meshes"
+    group: "gateway.networking.k8s.io"
+
   - kind: "Gateway"
     name: "k8s/gateway_api/v1alpha2/gateways"
     group: "gateway.networking.k8s.io"
@@ -269,6 +273,16 @@ resources:
     protoPackage: "sigs.k8s.io/gateway-api/apis/v1alpha2"
     proto: "k8s.io.gateway_api.api.v1alpha1.GatewayClassSpec"
     statusProto: "k8s.io.gateway_api.api.v1alpha1.GatewayClassStatus"
+    statusProtoPackage: "sigs.k8s.io/gateway-api/apis/v1alpha2"
+
+  - kind: "Mesh"
+    plural: "meshes"
+    group: "gateway.networking.k8s.io"
+    version: "v1alpha2"
+    clusterScoped: true
+    protoPackage: "sigs.k8s.io/gateway-api/apis/v1alpha2"
+    proto: "k8s.io.gateway_api.api.v1alpha1.MeshSpec"
+    statusProto: "k8s.io.gateway_api.api.v1alpha1.MeshStatus"
     statusProtoPackage: "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
   - kind: "Gateway"
