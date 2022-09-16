@@ -42,6 +42,7 @@ import (
 	"istio.io/istio/pkg/test/framework/components/echo/common/ports"
 	"istio.io/istio/pkg/test/framework/components/echo/echotest"
 	"istio.io/istio/pkg/test/framework/components/echo/match"
+	"istio.io/istio/pkg/test/framework/components/echo/util/traffic"
 	"istio.io/istio/pkg/test/framework/components/istio"
 	"istio.io/istio/pkg/test/framework/components/istio/ingress"
 	"istio.io/istio/pkg/test/framework/label"
@@ -3269,4 +3270,55 @@ spec:
 			Check: check.Status(http.StatusNotFound),
 		},
 	})
+}
+
+// Regression test for https://github.com/istio/istio/issues/29310
+func gatewayShifting(t TrafficContext) {
+	t.ConfigIstio().YAML(t.Apps.Namespace.Name(), `
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts: ["*"]
+`).ApplyOrFail(t)
+	applyvs := func(dst echo.Instances) {
+		tt := tmpl.MustEvaluate(httpVirtualServiceTmpl, struct {
+			Gateway            string
+			VirtualServiceHost string
+			DestinationHost    string
+			Port               int
+			MatchScheme        string
+		}{"gateway", "*", dst.Config().Service, ports.All().MustForName(ports.HTTP).ServicePort, ""})
+		t.ConfigIstio().YAML(t.Apps.Namespace.Name(), tt).ApplyOrFail(t)
+	}
+
+	ingressCheck := traffic.NewGenerator(t, traffic.Config{
+		Source: t.Istio.IngressFor(t.Clusters().Default()),
+		Options: echo.CallOptions{
+			Port: echo.Port{
+				Protocol: protocol.HTTP,
+			},
+			HTTP: echo.HTTP{
+				Path: "/",
+			},
+			Check: check.OK(),
+		},
+		Interval: time.Millisecond * 10,
+	}).Start()
+	// Swap back and forth between backends a few times; this should be zero downtime
+	for i := 0; i < 10; i++ {
+		applyvs(t.Apps.A)
+		time.Sleep(time.Millisecond * 100)
+		applyvs(t.Apps.B)
+		time.Sleep(time.Millisecond * 100)
+	}
+	ingressCheck.Stop().CheckSuccessRate(t, 1)
 }

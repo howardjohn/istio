@@ -124,4 +124,5 @@ func fillInDefaults(cfg *Config) {
 	if cfg.Options.Check == nil {
 		cfg.Options.Check = check.OK()
 	}
+	cfg.Options.Retry = echo.Retry{NoRetry: true}
 }
