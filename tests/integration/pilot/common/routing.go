@@ -3314,10 +3314,14 @@ spec:
 		Interval: time.Millisecond * 10,
 	}).Start()
 	// Swap back and forth between backends a few times; this should be zero downtime
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1000; i++ {
 		applyvs(t.Apps.A)
 		time.Sleep(time.Millisecond * 100)
 		applyvs(t.Apps.B)
+		time.Sleep(time.Millisecond * 100)
+		applyvs(t.Apps.C)
+		time.Sleep(time.Millisecond * 100)
+		applyvs(t.Apps.DeltaXDS)
 		time.Sleep(time.Millisecond * 100)
 	}
 	ingressCheck.Stop().CheckSuccessRate(t, 1)

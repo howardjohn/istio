@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
+	"istio.io/pkg/log"
 
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/framework/components/echo"
@@ -50,6 +51,7 @@ func (r *Result) add(result echo.CallResult, err error) {
 
 	r.TotalRequests += count
 	if err != nil {
+		log.Errorf("howardjohn: failed: %v", err)
 		r.Error = multierror.Append(r.Error, fmt.Errorf("request %d: %v", r.TotalRequests, err))
 	} else {
 		r.SuccessfulRequests += count

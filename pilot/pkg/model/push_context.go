@@ -754,25 +754,19 @@ func virtualServiceDestinations(v *networking.VirtualService) map[string]sets.Se
 	return out
 }
 
-// GatewayServices returns the set of services which are referred from the proxy gateways.
-func (ps *PushContext) GatewayServices(proxy *Proxy) []*Service {
-	svcs := proxy.SidecarScope.services
+func (ps *PushContext) gatewayServices(svcs []*Service, namespace string, gateways *MergedGateway) []*Service {
 
 	// MergedGateway will be nil when there are no configs in the
 	// system during initial installation.
-	if proxy.MergedGateway == nil {
+	if gateways == nil {
 		return nil
 	}
 
 	// host set.
 	hostsFromGateways := sets.New[string]()
-	for _, gw := range proxy.MergedGateway.GatewayNameForServer {
-		for _, vsConfig := range ps.VirtualServicesForGateway(proxy.ConfigNamespace, gw) {
-			vs, ok := vsConfig.Spec.(*networking.VirtualService)
-			if !ok { // should never happen
-				log.Errorf("Failed in getting a virtual service: %v", vsConfig.Labels)
-				return svcs
-			}
+	for _, gw := range gateways.GatewayNameForServer {
+		for _, vsConfig := range ps.VirtualServicesForGateway(namespace, gw) {
+			vs := vsConfig.Spec.(*networking.VirtualService)
 
 			for host := range virtualServiceDestinations(vs) {
 				hostsFromGateways.Insert(host)
@@ -783,21 +777,87 @@ func (ps *PushContext) GatewayServices(proxy *Proxy) []*Service {
 	hostsFromMeshConfig := getHostsFromMeshConfig(ps)
 	hostsFromGateways.Merge(hostsFromMeshConfig)
 
-	log.Debugf("GatewayServices: gateway %v is exposing these hosts:%v", proxy.ID, hostsFromGateways)
-
 	gwSvcs := make([]*Service, 0, len(svcs))
 
 	for _, s := range svcs {
 		svcHost := string(s.Hostname)
-
 		if _, ok := hostsFromGateways[svcHost]; ok {
 			gwSvcs = append(gwSvcs, s)
 		}
 	}
-
-	log.Debugf("GatewayServices:: gateways len(services)=%d, len(filtered)=%d", len(svcs), len(gwSvcs))
-
 	return gwSvcs
+}
+
+// GatewayServices returns the set of services which are referred from the proxy gateways.
+func (ps *PushContext) GatewayServices(proxy *Proxy) []*Service {
+	if proxy.GatewayServices.PushVersion == ps.PushVersion {
+		log.Errorf("howardjohn: return cached gw services")
+		return proxy.GatewayServices.Services
+	}
+	svcs := ps.gatewayServices(proxy.SidecarScope.services, proxy.ConfigNamespace, proxy.MergedGateway)
+	if proxy.GatewayServices.Services == nil {
+		log.Errorf("howardjohn: no prev, update new")
+		proxy.GatewayServices = GatewayServices{
+			Services: svcs,
+			PushVersion: ps.PushVersion,
+		}
+		return svcs
+	}
+
+	// Workaround https://github.com/envoyproxy/envoy/issues/18958 When we update a route (ex: change
+	// backend from "foo" to "bar"), we may end up removing the "foo" cluster. Because of XDS ordering,
+	// the CDS update to remote "foo" would come first, resulting in 503s until the route is updated to
+	// point to "bar".
+	// To work around this, we merge the previous clusters with the new ones.
+	// This means we will keep some extra clusters around for a bit, but they will be cleaned up eventually -
+	// and its better than 503s.
+
+
+	prev := proxy.GatewayServices.Services
+	haveFull := map[string][]*Service{}
+	for _, s := range proxy.SidecarScope.services {
+		haveFull[string(s.Hostname)] = append(haveFull[string(s.Hostname)], s)
+	}
+	haveFiltered := sets.New[string]()
+	for _, s := range svcs {
+		log.Errorf("howardjohn: now: %v", s.Hostname)
+		haveFiltered.Insert(string(s.Hostname))
+	}
+	for _, k := range prev {
+		log.Errorf("howardjohn: prev: %v", k.Hostname)
+	}
+	computed := sets.New[string]()
+	log.Errorf("howardjohn: full %v, now %v, prev %v", len(proxy.SidecarScope.services), len(svcs), len(prev))
+	for _, s := range prev {
+		h := string(s.Hostname)
+		if proxy.GatewayServices.ComputedServices.Contains(h) {
+			log.Errorf("howardjohn: skip: carryover: %v", h)
+			continue
+		}
+		if !haveFiltered.Contains(h) {
+			// The previous scope had it, but now we don't. We might need to include it to work around ordering issues
+			if cs, f := haveFull[h]; f {
+				// We want to make sure we are adding the *current* service, not the old one. So make sure it still
+				// exists, and use the new one(s)
+				log.Errorf("howardjohn: add prev: %v", s.Hostname)
+				svcs = append(svcs, cs...)
+				computed.Insert(h)
+			} else {
+				log.Errorf("howardjohn: %v: not in full", h)
+			}
+		} else {
+			log.Errorf("howardjohn: %v: already have", h)
+		}
+	}
+
+	log.Errorf("howardjohn: compute with prev")
+	// TODO: we need to distinguish *originals*
+	proxy.GatewayServices = GatewayServices{
+		Services: svcs,
+		ComputedServices: computed,
+		PushVersion: ps.PushVersion,
+	}
+	return svcs
 }
 
 // add services from MeshConfig.ExtensionProviders

@@ -31,6 +31,7 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
+	"istio.io/istio/pkg/util/sets"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	istionetworking "istio.io/istio/pilot/pkg/networking"
@@ -290,6 +291,8 @@ type Proxy struct {
 	// The merged gateways associated with the proxy if this is a Router
 	MergedGateway *MergedGateway
 
+	GatewayServices GatewayServices
+
 	// service instances associated with the proxy
 	ServiceInstances []*ServiceInstance
 
@@ -332,6 +335,12 @@ type Proxy struct {
 	// LastPushContext; the XDS cache depends on knowing the time of the PushContext to determine if a
 	// key is stale or not.
 	LastPushTime time.Time
+}
+
+type GatewayServices struct {
+	Services         []*Service
+	PushVersion      string
+	ComputedServices sets.String
 }
 
 // WatchedResource tracks an active DiscoveryRequest subscription.
