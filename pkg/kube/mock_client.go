@@ -25,6 +25,7 @@ import (
 	kubeExtInformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 	kubeVersion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/cli-runtime/pkg/resource"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
@@ -100,6 +101,10 @@ func (c MockClient) GatewayAPI() serviceapisclient.Interface {
 }
 
 func (c MockClient) MCSApis() mcsapisclient.Interface {
+	panic("not used in mock")
+}
+
+func (c MockClient) DiscoveryClient() discovery.CachedDiscoveryInterface {
 	panic("not used in mock")
 }
 

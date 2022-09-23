@@ -24,8 +24,10 @@ package crdclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,13 +35,13 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"go.uber.org/atomic"
 	"gomodules.xyz/jsonpatch/v3"
+	"istio.io/istio/pkg/config/schema/resource"
 	crd "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/informers"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"  // import GKE cluster authentication plugin
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc" // import OIDC cluster authentication plugin, e.g. for Tectonic
@@ -74,9 +76,12 @@ type Client struct {
 	revision string
 
 	// kinds keeps track of all cache handlers for known types
-	kinds   map[config.GroupVersionKind]*cacheHandler
+	kinds          map[config.GroupVersionKind]*cacheHandler
+	availableKinds map[config.GroupVersionKind]bool
+	// kindsMu protects kinds and availableKinds
 	kindsMu sync.RWMutex
-	queue   queue.Instance
+
+	queue queue.Instance
 
 	// handlers defines a list of event handlers per-type
 	handlers map[config.GroupVersionKind][]model.EventHandler
@@ -155,6 +160,7 @@ func NewForSchemas(client kube.Client, revision, domainSuffix, identifier string
 		revision:         revision,
 		queue:            queue.NewQueue(1 * time.Second),
 		kinds:            map[config.GroupVersionKind]*cacheHandler{},
+		availableKinds:   map[config.GroupVersionKind]bool{},
 		handlers:         map[config.GroupVersionKind][]model.EventHandler{},
 		client:           client,
 		istioClient:      client.Istio(),
@@ -179,10 +185,10 @@ func NewForSchemas(client kube.Client, revision, domainSuffix, identifier string
 			crd = false
 		}
 		if !crd {
-			handleCRDAdd(out, name, nil)
+			handleCRDAdd(out, name, nil, true)
 		} else {
 			if _, f := known[name]; f {
-				handleCRDAdd(out, name, nil)
+				handleCRDAdd(out, name, nil, true)
 			} else {
 				out.logger.Warnf("Skipping CRD %v as it is not present", s.Resource().GroupVersionKind())
 			}
@@ -239,7 +245,7 @@ func (cl *Client) Run(stop <-chan struct{}) {
 				cl.logger.Errorf("wrong type %T: %v", obj, obj)
 				return
 			}
-			handleCRDAdd(cl, crd.Name, stop)
+			handleCRDAdd(cl, crd.Name, stop, false)
 		},
 		UpdateFunc: nil,
 		DeleteFunc: nil,
@@ -487,8 +493,8 @@ func genPatchBytes(oldRes, modRes runtime.Object, patchType types.PatchType) ([]
 	}
 }
 
-func handleCRDAdd(cl *Client, name string, stop <-chan struct{}) {
-	cl.logger.Debugf("adding CRD %q", name)
+func handleCRDAdd(cl *Client, name string, stop <-chan struct{}, useCache bool) {
+	cl.logger.Debugf("adding CRD %q, cached=%v", name, useCache)
 	s, f := cl.schemasByCRDName[name]
 	if !f {
 		cl.logger.Debugf("added resource that we are not watching: %v", name)
@@ -503,6 +509,12 @@ func handleCRDAdd(cl *Client, name string, stop <-chan struct{}) {
 		cl.logger.Debugf("added resource that already exists: %v", resourceGVK)
 		return
 	}
+
+	log.Errorf("howardjohn: %v exists: %v", s.Resource().GroupVersionKind(), resourceExists(cl, s.Resource(), useCache))
+	//if resourceExists(cl.client.Kube(), s.Resource()) {
+	//
+	//}
+
 	var i informers.GenericInformer
 	var ifactory starter
 	var err error
@@ -541,6 +553,40 @@ func handleCRDAdd(cl *Client, name string, stop <-chan struct{}) {
 		// For dynamically added CRDs, we need to start immediately though
 		ifactory.Start(stop)
 	}
+}
+
+func resourceExists(cl *Client, resource resource.Schema, useCache bool) bool {
+	if useCache {
+		if available, f := cl.availableKinds[resource.GroupVersionKind()]; f {
+			log.Errorf("howardjohn: cache hit for %v: %v", resource.GroupVersionKind(), available)
+			return available
+		}
+		cl.logger.Infof("cache miss for %v, checking discovery", resource.GroupVersionKind())
+	} else {
+		cl.logger.Infof("caching disabled, checking discovery for %v", resource.GroupVersionKind())
+	}
+	l, err := cl.client.Kube().Discovery().ServerResourcesForGroupVersion(resource.GroupVersionResource().GroupVersion().String())
+	if err != nil {
+		panic("todo")
+	}
+	log.Errorf("howardjohn: for gvr %v got %v resources", resource.GroupVersionResource().GroupVersion().String(), len(l.APIResources))
+	group, version, _ := strings.Cut(l.GroupVersion, "/")
+	for _, r := range l.APIResources {
+		gvk := config.GroupVersionKind{
+			Group:   group,
+			Version: version,
+			Kind:    r.Kind,
+		}
+		log.Errorf("howardjohn: cache write true for %v", gvk)
+		cl.availableKinds[gvk] = true
+	}
+	if _, f := cl.availableKinds[resource.GroupVersionKind()]; f {
+		return true
+	}
+	// TODO also cache false writes but looking at everything in schema
+	log.Errorf("howardjohn: cache write false for %v", resource.GroupVersionKind())
+	cl.availableKinds[resource.GroupVersionKind()] = false
+	return false
 }
 
 type starter interface {

@@ -125,6 +125,10 @@ type Client interface {
 	// GatewayAPI returns the gateway-api kube client.
 	GatewayAPI() gatewayapiclient.Interface
 
+	// DiscoveryClient returns a cached discovery client. Note: this differs from Kube().Discovery(),
+	// which would be uncached.
+	DiscoveryClient() discovery.CachedDiscoveryInterface
+
 	// KubeInformer returns an informer for core kube client
 	KubeInformer() informers.SharedInformerFactory
 
@@ -487,6 +491,10 @@ func (c *client) Istio() istioclient.Interface {
 
 func (c *client) GatewayAPI() gatewayapiclient.Interface {
 	return c.gatewayapi
+}
+
+func (c *client) DiscoveryClient() discovery.CachedDiscoveryInterface {
+	return c.discoveryClient
 }
 
 func (c *client) KubeInformer() informers.SharedInformerFactory {
