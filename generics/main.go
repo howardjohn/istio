@@ -51,4 +51,9 @@ func main() {
 	for _, p := range res {
 		fmt.Println(p.Name)
 	}
+
+	res, _ = pods.Namespace("default").List(metav1.ListOptions{})
+	for _, p := range res {
+		fmt.Println(p.Name)
+	}
 }

@@ -4,12 +4,16 @@ import (
 	"context"
 	"time"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
+	client "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubectl/pkg/scheme"
 )
 
@@ -38,13 +42,25 @@ func (o ObjectList[T]) DeepCopyObject() runtime.Object {
 var _ runtime.Object = ObjectList[any]{}
 
 type API[T Resource] interface {
-	Get(name, namespace string, options metav1.GetOptions) (*T, error)
+	Get(name string, namespace string, options metav1.GetOptions) (*T, error)
 	List(namespace string, options metav1.ListOptions) ([]T, error)
 	Watch(namespace string, options metav1.ListOptions) (Watcher[T], error)
+	Namespace(namespace string) NamespacedAPI[T]
+}
+
+type NamespacedAPI[T Resource] interface {
+	Get(name string, options metav1.GetOptions) (*T, error)
+	List(options metav1.ListOptions) ([]T, error)
+	Watch(options metav1.ListOptions) (Watcher[T], error)
 }
 
 type api[T Resource] struct {
 	c *Client
+}
+
+type namespaceApi[T Resource] struct {
+	api[T]
+	namespace string
 }
 
 func (a api[T]) Get(name, namespace string, options metav1.GetOptions) (*T, error) {
@@ -57,6 +73,22 @@ func (a api[T]) List(namespace string, options metav1.ListOptions) ([]T, error) 
 
 func (a api[T]) Watch(namespace string, options metav1.ListOptions) (Watcher[T], error) {
 	return Watch[T](a.c, namespace, options)
+}
+
+func (a api[T]) Namespace(namespace string) NamespacedAPI[T] {
+	return namespaceApi[T]{a, namespace}
+}
+
+func (a namespaceApi[T]) Get(name string, options metav1.GetOptions) (*T, error) {
+	return Get[T](a.c, name, a.namespace, options)
+}
+
+func (a namespaceApi[T]) List(options metav1.ListOptions) ([]T, error) {
+	return List[T](a.c, a.namespace, options)
+}
+
+func (a namespaceApi[T]) Watch(options metav1.ListOptions) (Watcher[T], error) {
+	return Watch[T](a.c, a.namespace, options)
 }
 
 var _ API[Resource] = api[Resource]{}
@@ -180,4 +212,54 @@ func defaultPath(gv schema.GroupVersion) string {
 		apiPath = "api"
 	}
 	return rest.DefaultVersionedAPIPath(apiPath, gv)
+}
+
+type Lister[T Resource] interface {
+	// List will return all objects across namespaces
+	List(selector labels.Selector) (ret []T, err error)
+	// Get will attempt to retrieve assuming that name==key
+	Get(name string) (T, error)
+	// ByNamespace will give you a GenericNamespaceLister for one namespace
+	ByNamespace(namespace string) NamespaceLister[T]
+}
+
+
+// GenericNamespaceLister is a lister skin on a generic Indexer
+type NamespaceLister[T Resource] interface {
+	// List will return all objects in this namespace
+	List(selector labels.Selector) (ret []T, err error)
+	// Get will attempt to retrieve by namespace and name
+	Get(name string) (*T, error)
+}
+
+
+type genericInformer struct {
+	informer cache.SharedIndexInformer
+	resource schema.GroupResource
+}
+
+
+func Informer[T Resource](c *Client, namespace string) Lister[T] {
+	// TODO: make it a factory
+	informer := cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				res, err := List[T](c, namespace, options)
+				if err != nil {
+					return nil, err
+				}
+				// TODO: convert? Or make our own ListWatch
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.AdmissionregistrationV1().MutatingWebhookConfigurations().Watch(context.TODO(), options)
+			},
+		},
+		&admissionregistrationv1.MutatingWebhookConfiguration{},
+		resyncPeriod,
+		indexers,
+	)
+	return nil
 }
