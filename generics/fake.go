@@ -1,14 +1,16 @@
 package main
 
 import (
-	"istio.io/istio/pkg/kube"
-	"istio.io/pkg/log"
+	"reflect"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/testing"
+
+	"istio.io/istio/pkg/kube"
 )
 
 type fakeAPI[T Resource] struct {
@@ -46,8 +48,7 @@ func NewFake[T Resource](objects ...T) API[T] {
 
 func (f fakeAPI[T]) Get(name string, namespace string, options metav1.GetOptions) (*T, error) {
 	x := new(T)
-	// I guess we should make ResourceMetadata have resource!
-	gvr := (*x).ResourceMetadata().WithResource("fake")
+	gvr := (*x).ResourceMetadata().WithResource((*x).ResourceName())
 	obj, err := f.Fake.
 		Invokes(testing.NewGetAction(gvr, namespace, name), any(x).(runtime.Object))
 
@@ -57,11 +58,20 @@ func (f fakeAPI[T]) Get(name string, namespace string, options metav1.GetOptions
 	return any(obj).(*T), err
 }
 
+func typeName(o any) string {
+	t := reflect.TypeOf(o)
+	if t.Kind() != reflect.Ptr {
+		panic("All types must be pointers to structs.")
+	}
+	t = t.Elem()
+	return t.Name()
+}
+
 func (f fakeAPI[T]) List(namespace string, options metav1.ListOptions) ([]T, error) {
 	x := new(T)
 	// I guess we should make ResourceMetadata have resource!
-	gvr := (*x).ResourceMetadata().WithResource("fake")
-	gvk := (*x).ResourceMetadata().WithKind("fake")
+	gvr := (*x).ResourceMetadata().WithResource((*x).ResourceName())
+	gvk := (*x).ResourceMetadata().WithKind(typeName(x))
 	obj, err := f.Fake.
 		Invokes(testing.NewListAction(gvr, gvk, namespace, options), &GenericList[T]{})
 
@@ -73,23 +83,16 @@ func (f fakeAPI[T]) List(namespace string, options metav1.ListOptions) ([]T, err
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &GenericList[T]{ListMeta: obj.(*GenericList[T]).ListMeta}
-	log.Errorf("howardjohn: %T %+v", obj, obj)
-	//for _, item := range any(obj).(*T).Items {
-	//	if label.Matches(labels.Set(item.Labels)) {
-	//		list.Items = append(list.Items, item)
-	//	}
-	//}
-	return list.Items, err
+	return reflect.ValueOf(obj).Elem().FieldByName("Items").Interface().([]T), nil
 }
 
 func (f fakeAPI[T]) Watch(namespace string, options metav1.ListOptions) (Watcher[T], error) {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
 func (f fakeAPI[T]) Namespace(namespace string) NamespacedAPI[T] {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 

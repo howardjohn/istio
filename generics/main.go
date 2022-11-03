@@ -71,7 +71,7 @@ func main() {
 		ObjectMeta: metav1.ObjectMeta{Name: "fake", Namespace: "fake"},
 	})
 	g, e := f.Get("fake", "fake", metav1.GetOptions{})
-	log.Errorf("howardjohn: %v %v", g, e)
+	log.Errorf("fake get: %v %v", g.Name, e)
 	l, e := f.List("fake", metav1.ListOptions{})
-	log.Infof("fake list: %v %v", l, e)
+	log.Infof("fake list: %v %v", len(l), e)
 }
