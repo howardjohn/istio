@@ -65,4 +65,13 @@ func main() {
 	for _, l := range informer.List(klabels.Everything()) {
 		log.Infof("informer list: %v", l.Name)
 	}
+
+	// Fake
+	f := NewFake[corev1.Pod](corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "fake", Namespace: "fake"},
+	})
+	g, e := f.Get("fake", "fake", metav1.GetOptions{})
+	log.Errorf("howardjohn: %v %v", g, e)
+	l, e := f.List("fake", metav1.ListOptions{})
+	log.Infof("fake list: %v %v", l, e)
 }

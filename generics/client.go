@@ -64,7 +64,7 @@ type api[T Resource] struct {
 }
 
 type namespaceApi[T Resource] struct {
-	api[T]
+	API[T]
 	namespace string
 }
 
@@ -89,15 +89,15 @@ func (a api[T]) Namespace(namespace string) NamespacedAPI[T] {
 }
 
 func (a namespaceApi[T]) Get(name string, options metav1.GetOptions) (*T, error) {
-	return Get[T](a.c, name, a.namespace, options)
+	return a.API.Get(name, a.namespace, options)
 }
 
 func (a namespaceApi[T]) List(options metav1.ListOptions) ([]T, error) {
-	return List[T](a.c, a.namespace, options)
+	return a.API.List(a.namespace, options)
 }
 
 func (a namespaceApi[T]) Watch(options metav1.ListOptions) (Watcher[T], error) {
-	return Watch[T](a.c, a.namespace, options)
+	return a.API.Watch(a.namespace, options)
 }
 
 func (a namespaceApi[T]) Optionless() OptionlessNamespacedAPI[T] {
@@ -105,15 +105,15 @@ func (a namespaceApi[T]) Optionless() OptionlessNamespacedAPI[T] {
 }
 
 func (a namespacedOptionlessApi[T]) Get(name string) (*T, error) {
-	return Get[T](a.c, name, a.namespace, metav1.GetOptions{})
+	return a.API.Get(name, a.namespace, metav1.GetOptions{})
 }
 
 func (a namespacedOptionlessApi[T]) List() ([]T, error) {
-	return List[T](a.c, a.namespace, metav1.ListOptions{})
+	return a.API.List(a.namespace, metav1.ListOptions{})
 }
 
 func (a namespacedOptionlessApi[T]) Watch() (Watcher[T], error) {
-	return Watch[T](a.c, a.namespace, metav1.ListOptions{})
+	return a.API.Watch(a.namespace, metav1.ListOptions{})
 }
 
 var _ API[Resource] = api[Resource]{}
