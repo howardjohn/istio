@@ -4,14 +4,12 @@ import (
 	"context"
 	"time"
 
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
-	client "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubectl/pkg/scheme"
@@ -52,6 +50,13 @@ type NamespacedAPI[T Resource] interface {
 	Get(name string, options metav1.GetOptions) (*T, error)
 	List(options metav1.ListOptions) ([]T, error)
 	Watch(options metav1.ListOptions) (Watcher[T], error)
+	Optionless() OptionlessNamespacedAPI[T]
+}
+
+type OptionlessNamespacedAPI[T Resource] interface {
+	Get(name string) (*T, error)
+	List() ([]T, error)
+	Watch() (Watcher[T], error)
 }
 
 type api[T Resource] struct {
@@ -61,6 +66,10 @@ type api[T Resource] struct {
 type namespaceApi[T Resource] struct {
 	api[T]
 	namespace string
+}
+
+type namespacedOptionlessApi[T Resource] struct {
+	namespaceApi[T]
 }
 
 func (a api[T]) Get(name, namespace string, options metav1.GetOptions) (*T, error) {
@@ -91,6 +100,22 @@ func (a namespaceApi[T]) Watch(options metav1.ListOptions) (Watcher[T], error) {
 	return Watch[T](a.c, a.namespace, options)
 }
 
+func (a namespaceApi[T]) Optionless() OptionlessNamespacedAPI[T] {
+	return namespacedOptionlessApi[T]{a}
+}
+
+func (a namespacedOptionlessApi[T]) Get(name string) (*T, error) {
+	return Get[T](a.c, name, a.namespace, metav1.GetOptions{})
+}
+
+func (a namespacedOptionlessApi[T]) List() ([]T, error) {
+	return List[T](a.c, a.namespace, metav1.ListOptions{})
+}
+
+func (a namespacedOptionlessApi[T]) Watch() (Watcher[T], error) {
+	return Watch[T](a.c, a.namespace, metav1.ListOptions{})
+}
+
 var _ API[Resource] = api[Resource]{}
 
 func NewAPI[T Resource](c *Client) API[T] {
@@ -100,6 +125,10 @@ func NewAPI[T Resource](c *Client) API[T] {
 type Resource interface {
 	ResourceMetadata() schema.GroupVersion
 	ResourceName() string
+}
+
+func resourceAsobject(r Resource) runtime.Object {
+	return any(&r).(runtime.Object)
 }
 
 type Client struct {
@@ -216,13 +245,12 @@ func defaultPath(gv schema.GroupVersion) string {
 
 type Lister[T Resource] interface {
 	// List will return all objects across namespaces
-	List(selector labels.Selector) (ret []T, err error)
+	List(selector labels.Selector) []T
 	// Get will attempt to retrieve assuming that name==key
 	Get(name string) (T, error)
 	// ByNamespace will give you a GenericNamespaceLister for one namespace
 	ByNamespace(namespace string) NamespaceLister[T]
 }
-
 
 // GenericNamespaceLister is a lister skin on a generic Indexer
 type NamespaceLister[T Resource] interface {
@@ -232,14 +260,34 @@ type NamespaceLister[T Resource] interface {
 	Get(name string) (*T, error)
 }
 
-
-type genericInformer struct {
-	informer cache.SharedIndexInformer
-	resource schema.GroupResource
+type Informer[T Resource] struct {
+	c     *Client
+	inner cache.SharedIndexInformer
 }
 
+func (i Informer[T]) List(selector labels.Selector) []T {
+	return castList[T](i.inner.GetStore().List())
+}
 
-func Informer[T Resource](c *Client, namespace string) Lister[T] {
+func castList[T any](l []any) []T {
+	res := make([]T, 0, len(l))
+	for _, v := range l {
+		res = append(res, *(v.(*T)))
+	}
+	return res
+}
+
+func (i Informer[T]) Get(name string) (T, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (i Informer[T]) ByNamespace(namespace string) NamespaceLister[T] {
+	//TODO implement me
+	panic("implement me")
+}
+
+func NewInformer[T Resource](c *Client, namespace string) Lister[T] {
 	// TODO: make it a factory
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
@@ -248,18 +296,68 @@ func Informer[T Resource](c *Client, namespace string) Lister[T] {
 				if err != nil {
 					return nil, err
 				}
+				return toRuntimeObject(res), nil
 				// TODO: convert? Or make our own ListWatch
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
+				res, err := Watch[T](c, namespace, options)
+				if err != nil {
+					return nil, err
 				}
-				return client.AdmissionregistrationV1().MutatingWebhookConfigurations().Watch(context.TODO(), options)
+				return res.inner, nil
 			},
 		},
-		&admissionregistrationv1.MutatingWebhookConfiguration{},
-		resyncPeriod,
-		indexers,
+		any(new(T)).(runtime.Object),
+		0,
+		cache.Indexers{},
 	)
+	// Just for simple examples, wouldn't do this in real world
+	go informer.Run(make(chan struct{}))
+	cache.WaitForCacheSync(make(chan struct{}), informer.HasSynced)
+	return Informer[T]{c: c, inner: informer}
+}
+
+type GenericList[T Resource] struct {
+	metav1.TypeMeta `json:",inline"`
+	// Standard list metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	// Items is the list of Ts
+	Items []T `json:"items" protobuf:"bytes,2,rep,name=items"`
+}
+
+func (in GenericList[T]) DeepCopyInto(out *GenericList[T]) {
+	*out = GenericList[T]{}
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		items := make([]T, len(in.Items))
+		for i := range in.Items {
+			cpy := resourceAsobject(in.Items[i]).DeepCopyObject()
+			items[i] = cpy.(T)
+		}
+		out.Items = items
+	}
+	return
+}
+
+// DeepCopy is an autogenerated deepcopy function, copying the receiver, creating a new StorageClassList.
+func (in GenericList[T]) DeepCopy() *GenericList[T] {
+	out := new(GenericList[T])
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject is an autogenerated deepcopy function, copying the receiver, creating a new runtime.Object.
+func (in GenericList[T]) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
 	return nil
+}
+
+func toRuntimeObject[T Resource](res []T) runtime.Object {
+	return &GenericList[T]{Items: res}
 }

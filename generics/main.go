@@ -2,12 +2,12 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/rest"
 
 	"istio.io/istio/pkg/kube"
@@ -29,9 +29,9 @@ func main() {
 		client: rc,
 	}
 	r, err := Get[appsv1.Deployment](c, "kube-dns", "kube-system", metav1.GetOptions{})
-	fmt.Println(r.Name, err)
+	log.Info(r.Name, err)
 	for _, dep := range MustList[appsv1.Deployment](c, "istio-system") {
-		fmt.Println(dep.Name)
+		log.Info(dep.Name)
 	}
 	watcher, err := Watch[appsv1.Deployment](c, "istio-system", metav1.ListOptions{})
 	go func() {
@@ -39,7 +39,7 @@ func main() {
 		watcher.Stop()
 	}()
 	for res := range watcher.Results() {
-		fmt.Println("watch", res.Name)
+		log.Info("watch", res.Name)
 	}
 
 	pod := MustList[corev1.Pod](c, "istio-system")[0].Name
@@ -49,11 +49,20 @@ func main() {
 	pods := NewAPI[corev1.Pod](c)
 	res, _ := pods.List("kube-system", metav1.ListOptions{})
 	for _, p := range res {
-		fmt.Println(p.Name)
+		log.Info(p.Name)
 	}
 
 	res, _ = pods.Namespace("default").List(metav1.ListOptions{})
 	for _, p := range res {
-		fmt.Println(p.Name)
+		log.Info(p.Name)
+	}
+
+	// Example how its easy to make simpler wrapper apis, especially for tests, embedding defaults
+	simple := pods.Namespace("default").Optionless()
+	simple.List()
+
+	informer := NewInformer[corev1.Pod](c, "kube-system")
+	for _, l := range informer.List(klabels.Everything()) {
+		log.Infof("informer list: %v", l.Name)
 	}
 }
