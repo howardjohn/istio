@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
@@ -55,13 +56,15 @@ func main() {
 		log.Info(p.Name)
 	}
 
-	res, _ = pods.Namespace("default").List(metav1.ListOptions{})
+	defaultPods := Namespaced(pods, "default")
+
+	res, _ = defaultPods.List(metav1.ListOptions{})
 	for _, p := range res {
 		log.Info(p.Name)
 	}
 
 	// Example how its easy to make simpler wrapper apis, especially for tests, embedding defaults
-	simple := pods.Namespace("default").Optionless()
+	simple := OptionlessNamespaced(defaultPods)
 	simple.List()
 
 	informer := NewInformer(pods, "kube-system")
@@ -70,9 +73,10 @@ func main() {
 	}
 
 	// Fake
-	f := NewFake(corev1.Pod{
+	 f := NewFake(corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "fake", Namespace: "fake"},
 	})
+
 	g, e := f.Get("fake", "fake", metav1.GetOptions{})
 	log.Errorf("fake get: %v %v", g.Name, e)
 	l, e := f.List("fake", metav1.ListOptions{})
@@ -98,4 +102,39 @@ func main() {
 	cache.WaitForCacheSync(make(chan struct{}), legacyPods.Informer().HasSynced)
 	lpil, _ := legacyPods.Lister().List(klabels.Everything())
 	log.Infof("fake legacy informer list: %v", len(lpil))
+
+	f.Update(corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "fake", Namespace: "fake", Labels: map[string]string{"a": "b"}},
+	}, metav1.UpdateOptions{})
+	nf, _ := f.Get("fake", "fake", metav1.GetOptions{})
+	log.Infof("after update, label is %v", nf.Labels)
+
+	CreateOrUpdate[corev1.Pod](f, corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "fake2", Namespace: "fake", Labels: map[string]string{"a": "b"}},
+	})
+	nf, _ = f.Get("fake2", "fake", metav1.GetOptions{})
+	log.Infof("create or update, label is %v", nf.Labels)
+
+	CreateOrUpdate[corev1.Pod](f, corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "fake2", Namespace: "fake", Labels: map[string]string{"a": "modified"}},
+	})
+	nf, _ = f.Get("fake2", "fake", metav1.GetOptions{})
+	log.Infof("create or update, label is %v", nf.Labels)
+
+	// Example of using wrappers to provide alternative APIs...
+	// The constructors could, of course, use some work
+	simpleFake := InfallibleOptionlessNamespaced(OptionlessNamespaced[corev1.Pod](Namespaced[corev1.Pod](f, "fake")))
+	simpleFake.Create(corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "fake3", Namespace: "fake"}})
+	log.Infof("got %v", simpleFake.Get("fake3").Name)
+}
+
+func CreateOrUpdate[T Resource](a API[T], t T) (*T, error) {
+	r, err := a.Create(t, metav1.CreateOptions{})
+	if err != nil {
+		if kerrors.IsAlreadyExists(err) {
+			return a.Update(t, metav1.UpdateOptions{})
+		}
+		return nil, err
+	}
+	return r, nil
 }

@@ -41,37 +41,17 @@ var _ runtime.Object = ObjectList[any]{}
 
 type API[T Resource] interface {
 	Create(t T, options metav1.CreateOptions) (*T, error)
+	Update(t T, options metav1.UpdateOptions) (*T, error)
 	Get(name string, namespace string, options metav1.GetOptions) (*T, error)
 	List(namespace string, options metav1.ListOptions) ([]T, error)
 	Watch(namespace string, options metav1.ListOptions) (Watcher[T], error)
-	Namespace(namespace string) NamespacedAPI[T]
-}
-
-type NamespacedAPI[T Resource] interface {
-	Get(name string, options metav1.GetOptions) (*T, error)
-	List(options metav1.ListOptions) ([]T, error)
-	Watch(options metav1.ListOptions) (Watcher[T], error)
-	Optionless() OptionlessNamespacedAPI[T]
-}
-
-type OptionlessNamespacedAPI[T Resource] interface {
-	Get(name string) (*T, error)
-	List() ([]T, error)
-	Watch() (Watcher[T], error)
 }
 
 type api[T Resource] struct {
 	c *Client
 }
 
-type namespaceApi[T Resource] struct {
-	API[T]
-	namespace string
-}
 
-type namespacedOptionlessApi[T Resource] struct {
-	namespaceApi[T]
-}
 
 func (a api[T]) Get(name, namespace string, options metav1.GetOptions) (*T, error) {
 	return Get[T](a.c, name, namespace, options)
@@ -89,36 +69,8 @@ func (a api[T]) Create(t T, options metav1.CreateOptions) (*T, error) {
 	return Create[T](a.c, t, options)
 }
 
-func (a api[T]) Namespace(namespace string) NamespacedAPI[T] {
-	return namespaceApi[T]{a, namespace}
-}
-
-func (a namespaceApi[T]) Get(name string, options metav1.GetOptions) (*T, error) {
-	return a.API.Get(name, a.namespace, options)
-}
-
-func (a namespaceApi[T]) List(options metav1.ListOptions) ([]T, error) {
-	return a.API.List(a.namespace, options)
-}
-
-func (a namespaceApi[T]) Watch(options metav1.ListOptions) (Watcher[T], error) {
-	return a.API.Watch(a.namespace, options)
-}
-
-func (a namespaceApi[T]) Optionless() OptionlessNamespacedAPI[T] {
-	return namespacedOptionlessApi[T]{a}
-}
-
-func (a namespacedOptionlessApi[T]) Get(name string) (*T, error) {
-	return a.API.Get(name, a.namespace, metav1.GetOptions{})
-}
-
-func (a namespacedOptionlessApi[T]) List() ([]T, error) {
-	return a.API.List(a.namespace, metav1.ListOptions{})
-}
-
-func (a namespacedOptionlessApi[T]) Watch() (Watcher[T], error) {
-	return a.API.Watch(a.namespace, metav1.ListOptions{})
+func (a api[T]) Update(t T, options metav1.UpdateOptions) (*T, error) {
+	return Update[T](a.c, t, options)
 }
 
 var _ API[Resource] = api[Resource]{}
@@ -155,14 +107,6 @@ func Get[T Resource](c *Client, name, namespace string, options metav1.GetOption
 	return result, err
 }
 
-func MustGet[T Resource](c *Client, name, namespace string) *T {
-	res, err := Get[T](c, name, namespace, metav1.GetOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-	return res
-}
-
 func Create[T Resource](c *Client, t T, options metav1.CreateOptions) (*T, error) {
 	result := new(T)
 	gv := (*result).ResourceMetadata()
@@ -170,6 +114,23 @@ func Create[T Resource](c *Client, t T, options metav1.CreateOptions) (*T, error
 	meta := (any)(t).(metav1.Object)
 
 	err := c.client.Post().
+		Namespace(meta.GetNamespace()).
+		Resource((*result).ResourceName()).
+		Name(meta.GetName()).
+		VersionedParams(&options, scheme.ParameterCodec).
+		AbsPath(defaultPath(gv)).
+		Do(context.Background()).
+		Into(x)
+	return result, err
+}
+
+func Update[T Resource](c *Client, t T, options metav1.UpdateOptions) (*T, error) {
+	result := new(T)
+	gv := (*result).ResourceMetadata()
+	x := (any)(result).(runtime.Object)
+	meta := (any)(t).(metav1.Object)
+
+	err := c.client.Put().
 		Namespace(meta.GetNamespace()).
 		Resource((*result).ResourceName()).
 		Name(meta.GetName()).

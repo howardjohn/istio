@@ -111,6 +111,18 @@ func (f fakeAPI[T]) Create(t T, options metav1.CreateOptions) (*T, error) {
 	return any(obj).(*T), nil
 }
 
+func (f fakeAPI[T]) Update(t T, options metav1.UpdateOptions) (*T, error) {
+	x := new(T)
+	gvr := (*x).ResourceMetadata().WithResource((*x).ResourceName())
+	meta := (any)(&t).(metav1.Object)
+	obj, err := f.Fake.
+		Invokes(testing.NewUpdateAction(gvr, meta.GetNamespace(), any(&t).(runtime.Object)), any(x).(runtime.Object))
+	if err != nil {
+		return nil, err
+	}
+	return any(obj).(*T), nil
+}
+
 func (f fakeAPI[T]) Namespace(namespace string) NamespacedAPI[T] {
 	// TODO implement me
 	panic("implement me")
