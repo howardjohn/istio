@@ -9,7 +9,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 
 	"istio.io/istio/pkg/kube"
 	"istio.io/pkg/log"
@@ -78,6 +80,7 @@ func main() {
 
 	fakeInformer := NewInformer[corev1.Pod](f, "fake")
 	log.Infof("informer list: %v", len(fakeInformer.List(klabels.Everything())))
+	log.Infof("creating pod...")
 	f.Create(corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "fake-added", Namespace: "fake"},
 	}, metav1.CreateOptions{})
@@ -88,4 +91,11 @@ func main() {
 	fcsList, _ := fcs.CoreV1().Pods(metav1.NamespaceAll).List(context.Background(), metav1.ListOptions{})
 
 	log.Infof("fcs list: %v", len(fcsList.Items))
+	fakeLegacyInformer := informers.NewSharedInformerFactory(fcs, 0)
+	legacyPods := fakeLegacyInformer.Core().V1().Pods()
+	legacyPods.Informer() // load it
+	fakeLegacyInformer.Start(make(chan struct{}))
+	cache.WaitForCacheSync(make(chan struct{}), legacyPods.Informer().HasSynced)
+	lpil, _ := legacyPods.Lister().List(klabels.Everything())
+	log.Infof("fake legacy informer list: %v", len(lpil))
 }
