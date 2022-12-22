@@ -6,22 +6,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/testing"
-
-	"istio.io/istio/pkg/kube"
 )
 
 type fakeAPI[T Resource] struct {
 	*testing.Fake
 	tracker testing.ObjectTracker
+	// We store a fake.Clientset only for conversion to one...
+	// We could create one on the fly when requested, but some tweaks would be needed to the API.
+	csf     *fake.Clientset
 }
 
-func NewFake[T Resource](objects ...T) API[T] {
-	f := &testing.Fake{}
+func NewFake[T Resource](objects ...T) FakeAPI[T] {
+	csf := fake.NewSimpleClientset()
+	f := &csf.Fake
 	// TODO: no scheme
-	o := testing.NewObjectTracker(kube.IstioScheme, scheme.Codecs.UniversalDecoder())
+	o := csf.Tracker()
 	for _, obj := range objects {
 		if err := o.Add(any(&obj).(runtime.Object)); err != nil {
 			panic(err)
@@ -31,17 +32,18 @@ func NewFake[T Resource](objects ...T) API[T] {
 	cs := &fakeAPI[T]{
 		tracker: o,
 		Fake:    f,
+		csf: csf,
 	}
-	cs.AddReactor("*", "*", testing.ObjectReaction(o))
-	cs.AddWatchReactor("*", func(action testing.Action) (handled bool, ret watch.Interface, err error) {
-		gvr := action.GetResource()
-		ns := action.GetNamespace()
-		watch, err := o.Watch(gvr, ns)
-		if err != nil {
-			return false, nil, err
-		}
-		return true, watch, nil
-	})
+	//cs.AddReactor("*", "*", testing.ObjectReaction(o))
+	//cs.AddWatchReactor("*", func(action testing.Action) (handled bool, ret watch.Interface, err error) {
+	//	gvr := action.GetResource()
+	//	ns := action.GetNamespace()
+	//	watch, err := o.Watch(gvr, ns)
+	//	if err != nil {
+	//		return false, nil, err
+	//	}
+	//	return true, watch, nil
+	//})
 
 	return cs
 }
@@ -114,4 +116,13 @@ func (f fakeAPI[T]) Namespace(namespace string) NamespacedAPI[T] {
 	panic("implement me")
 }
 
-var _ API[Resource] = fakeAPI[Resource]{}
+var _ FakeAPI[Resource] = fakeAPI[Resource]{}
+
+type FakeAPI[T Resource] interface {
+	API[T]
+	ToClientSet() *fake.Clientset
+}
+
+func (f fakeAPI[T]) ToClientSet() *fake.Clientset {
+	return f.csf
+}

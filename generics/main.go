@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"time"
 
@@ -82,4 +83,9 @@ func main() {
 	}, metav1.CreateOptions{})
 	time.Sleep(time.Millisecond * 100)
 	log.Infof("informer list: %v", len(fakeInformer.List(klabels.Everything())))
+
+	fcs := f.ToClientSet()
+	fcsList, _ := fcs.CoreV1().Pods(metav1.NamespaceAll).List(context.Background(), metav1.ListOptions{})
+
+	log.Infof("fcs list: %v", len(fcsList.Items))
 }
