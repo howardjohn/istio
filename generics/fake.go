@@ -87,8 +87,26 @@ func (f fakeAPI[T]) List(namespace string, options metav1.ListOptions) ([]T, err
 }
 
 func (f fakeAPI[T]) Watch(namespace string, options metav1.ListOptions) (Watcher[T], error) {
-	// TODO implement me
-	panic("implement me")
+	x := new(T)
+	gvr := (*x).ResourceMetadata().WithResource((*x).ResourceName())
+	wi, err := f.Fake.
+		InvokesWatch(testing.NewWatchAction(gvr, namespace, options))
+	if err != nil {
+		return Watcher[T]{}, err
+	}
+	return newWatcher[T](wi), nil
+}
+
+func (f fakeAPI[T]) Create(t T, options metav1.CreateOptions) (*T, error) {
+	x := new(T)
+	gvr := (*x).ResourceMetadata().WithResource((*x).ResourceName())
+	meta := (any)(&t).(metav1.Object)
+	obj, err := f.Fake.
+		Invokes(testing.NewCreateAction(gvr, meta.GetNamespace(), any(&t).(runtime.Object)), any(x).(runtime.Object))
+	if err != nil {
+		return nil, err
+	}
+	return any(obj).(*T), nil
 }
 
 func (f fakeAPI[T]) Namespace(namespace string) NamespacedAPI[T] {

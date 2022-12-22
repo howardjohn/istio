@@ -61,17 +61,25 @@ func main() {
 	simple := pods.Namespace("default").Optionless()
 	simple.List()
 
-	informer := NewInformer[corev1.Pod](c, "kube-system")
+	informer := NewInformer(pods, "kube-system")
 	for _, l := range informer.List(klabels.Everything()) {
 		log.Infof("informer list: %v", l.Name)
 	}
 
 	// Fake
-	f := NewFake[corev1.Pod](corev1.Pod{
+	f := NewFake(corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "fake", Namespace: "fake"},
 	})
 	g, e := f.Get("fake", "fake", metav1.GetOptions{})
 	log.Errorf("fake get: %v %v", g.Name, e)
 	l, e := f.List("fake", metav1.ListOptions{})
 	log.Infof("fake list: %v %v", len(l), e)
+
+	fakeInformer := NewInformer[corev1.Pod](f, "fake")
+	log.Infof("informer list: %v", len(fakeInformer.List(klabels.Everything())))
+	f.Create(corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "fake-added", Namespace: "fake"},
+	}, metav1.CreateOptions{})
+	time.Sleep(time.Millisecond * 100)
+	log.Infof("informer list: %v", len(fakeInformer.List(klabels.Everything())))
 }

@@ -31,7 +31,7 @@ func (o ObjectList[T]) DeepCopyObject() runtime.Object {
 		ListMeta: o.ListMeta,
 	}
 	for _, i := range o.Items {
-		x := (interface{})(i).(runtime.Object)
+		x := (any)(i).(runtime.Object)
 		n.Items = append(n.Items, x.DeepCopyObject().(T))
 	}
 	return n
@@ -40,6 +40,7 @@ func (o ObjectList[T]) DeepCopyObject() runtime.Object {
 var _ runtime.Object = ObjectList[any]{}
 
 type API[T Resource] interface {
+	Create(t T, options metav1.CreateOptions) (*T, error)
 	Get(name string, namespace string, options metav1.GetOptions) (*T, error)
 	List(namespace string, options metav1.ListOptions) ([]T, error)
 	Watch(namespace string, options metav1.ListOptions) (Watcher[T], error)
@@ -82,6 +83,10 @@ func (a api[T]) List(namespace string, options metav1.ListOptions) ([]T, error) 
 
 func (a api[T]) Watch(namespace string, options metav1.ListOptions) (Watcher[T], error) {
 	return Watch[T](a.c, namespace, options)
+}
+
+func (a api[T]) Create(t T, options metav1.CreateOptions) (*T, error) {
+	return Create[T](a.c, t, options)
 }
 
 func (a api[T]) Namespace(namespace string) NamespacedAPI[T] {
@@ -138,7 +143,7 @@ type Client struct {
 func Get[T Resource](c *Client, name, namespace string, options metav1.GetOptions) (*T, error) {
 	result := new(T)
 	gv := (*result).ResourceMetadata()
-	x := (interface{})(result).(runtime.Object)
+	x := (any)(result).(runtime.Object)
 	err := c.client.Get().
 		Namespace(namespace).
 		Resource((*result).ResourceName()).
@@ -156,6 +161,23 @@ func MustGet[T Resource](c *Client, name, namespace string) *T {
 		panic(err.Error())
 	}
 	return res
+}
+
+func Create[T Resource](c *Client, t T, options metav1.CreateOptions) (*T, error) {
+	result := new(T)
+	gv := (*result).ResourceMetadata()
+	x := (any)(result).(runtime.Object)
+	meta := (any)(t).(metav1.Object)
+
+	err := c.client.Post().
+		Namespace(meta.GetNamespace()).
+		Resource((*result).ResourceName()).
+		Name(meta.GetName()).
+		VersionedParams(&options, scheme.ParameterCodec).
+		AbsPath(defaultPath(gv)).
+		Do(context.Background()).
+		Into(x)
+	return result, err
 }
 
 func List[T Resource](c *Client, namespace string, opts metav1.ListOptions) ([]T, error) {
@@ -261,7 +283,7 @@ type NamespaceLister[T Resource] interface {
 }
 
 type Informer[T Resource] struct {
-	c     *Client
+	api   API[T]
 	inner cache.SharedIndexInformer
 }
 
@@ -287,12 +309,12 @@ func (i Informer[T]) ByNamespace(namespace string) NamespaceLister[T] {
 	panic("implement me")
 }
 
-func NewInformer[T Resource](c *Client, namespace string) Lister[T] {
+func NewInformer[T Resource](api API[T], namespace string) Lister[T] {
 	// TODO: make it a factory
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				res, err := List[T](c, namespace, options)
+				res, err := api.List(namespace, options)
 				if err != nil {
 					return nil, err
 				}
@@ -300,7 +322,7 @@ func NewInformer[T Resource](c *Client, namespace string) Lister[T] {
 				// TODO: convert? Or make our own ListWatch
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				res, err := Watch[T](c, namespace, options)
+				res, err := api.Watch(namespace, options)
 				if err != nil {
 					return nil, err
 				}
@@ -314,7 +336,7 @@ func NewInformer[T Resource](c *Client, namespace string) Lister[T] {
 	// Just for simple examples, wouldn't do this in real world
 	go informer.Run(make(chan struct{}))
 	cache.WaitForCacheSync(make(chan struct{}), informer.HasSynced)
-	return Informer[T]{c: c, inner: informer}
+	return Informer[T]{api: api, inner: informer}
 }
 
 type GenericList[T Resource] struct {
