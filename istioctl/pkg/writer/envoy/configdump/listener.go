@@ -28,6 +28,7 @@ import (
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	tcp "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/tcp_proxy/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
+	"istio.io/istio/pkg/util/sets"
 	"sigs.k8s.io/yaml"
 
 	protio "istio.io/istio/istioctl/pkg/util/proto"
@@ -150,10 +151,14 @@ func (c *ConfigWriter) PrintRemoteListenerSummary() error {
 	fmt.Fprintln(w, "LISTENER\tCHAIN\tMATCH\tDESTINATION")
 	for _, l := range listeners {
 		chains := getFilterChains(l)
-		lname := "envoy://" + l.GetName()
+		lname := l.GetName()
 		// Avoid duplicating the listener and filter name
-		if l.GetInternalListener() != nil && len(chains) == 1 && chains[0].GetName() == lname {
-			lname = "internal"
+		if l.GetInternalListener() != nil {
+			if len(chains) == 1 && chains[0].GetName() == lname {
+				lname = "internal"
+			} else {
+				lname = "envoy://" + lname
+			}
 		}
 		for _, fc := range chains {
 
@@ -216,15 +221,16 @@ func recurse(name string, match *matcher.Matcher) (string, bool) {
 		equality = "^"
 	case *matcher.Matcher_MatcherTree_CustomMatch:
 		panic("unhandled")
-
 	}
+	matchActions := sets.New[string]()
 	for k, v := range m {
+		fmt.Println(k, v)
 		switch v := v.GetOnMatch().(type) {
 		case *matcher.Matcher_OnMatch_Action:
 			if v.Action.GetName() == name {
-				return fmt.Sprintf("%v%v%v", n, equality, k), true
+				matchActions.Insert(k)
+				//return fmt.Sprintf("%v%v%v", n, equality, k), true
 			}
-			continue
 		case *matcher.Matcher_OnMatch_Matcher:
 			child, match := recurse(name, v.Matcher)
 			if !match {
@@ -233,6 +239,9 @@ func recurse(name string, match *matcher.Matcher) (string, bool) {
 			// TODO what if there are multiple? We return early
 			return fmt.Sprintf("%v%v%v -> %v", n, equality, k, child), true
 		}
+	}
+	if len(matchActions) > 0 {
+		return fmt.Sprintf("%v%v%v", n, equality, strings.Join(sets.SortedList(matchActions), ",")), true
 	}
 	return "", false
 }

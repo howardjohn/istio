@@ -176,6 +176,22 @@ func (lb *ListenerBuilder) buildWaypointInboundTerminateConnect(svcs map[host.Na
 				}},
 			})
 		}
+		clusterName := model.BuildSubsetKey(model.TrafficDirectionInboundPod, "internal", host.Name(wl.PodIP), 0)
+		vhost.Routes = append(vhost.Routes, &route.Route{
+			Match: &route.RouteMatch{
+				PathSpecifier: &route.RouteMatch_ConnectMatcher_{ConnectMatcher: &route.RouteMatch_ConnectMatcher{}},
+				Headers: []*route.HeaderMatcher{
+					istiomatcher.HeaderMatcher(":authority", fmt.Sprintf("%s:*", wl.PodIP)),
+				},
+			},
+			Action: &route.Route_Route{Route: &route.RouteAction{
+				UpgradeConfigs: []*route.RouteAction_UpgradeConfig{{
+					UpgradeType:   "CONNECT",
+					ConnectConfig: &route.RouteAction_UpgradeConfig_ConnectConfig{},
+				}},
+				ClusterSpecifier: &route.RouteAction_Cluster{Cluster: clusterName},
+			}},
+		})
 	}
 
 	httpOpts := &httpListenerOpts{
@@ -334,11 +350,44 @@ func (lb *ListenerBuilder) buildWaypointInboundPod(wls []WorkloadAndServices) []
 				Labels:    wl.Labels,
 			},
 		})
+		wlBuilder := lb.WithWorkload(wl)
+		if true {
+			cc := inboundChainConfig{
+				clusterName: model.BuildSubsetKey(model.TrafficDirectionInboundPod, "", host.Name(wl.PodIP), 0),
+				bind:        "0.0.0.0",
+				hbone:       true,
+			}
+			name := cc.clusterName
+
+			tcpName := name + "-tcp"
+			tcpChain := &listener.FilterChain{
+				Filters: wlBuilder.buildInboundNetworkFilters(cc),
+				Name:    tcpName,
+			}
+
+			httpName := name + "-http"
+			httpChain := &listener.FilterChain{
+				Filters: wlBuilder.buildInboundNetworkFiltersForHTTP(cc),
+				Name:    httpName,
+			}
+			l := &listener.Listener{
+				Name:              name,
+				ListenerSpecifier: &listener.Listener_InternalListener{InternalListener: &listener.Listener_InternalListenerConfig{}},
+				ListenerFilters:   []*listener.ListenerFilter{util.InternalListenerSetAddressFilter()},
+				TrafficDirection:  core.TrafficDirection_INBOUND,
+				// We don't know anything about the port, so we need to sniff. Insert two chains and the protocol detector
+				FilterChains: []*listener.FilterChain{tcpChain, httpChain},
+				FilterChainMatcher: match.NewAppProtocol(match.ProtocolMatch{
+					TCP:  match.ToChain(tcpName),
+					HTTP: match.ToChain(httpName),
+				}),
+			}
+			listeners = append(listeners, l)
+		}
 		if len(instances) == 0 {
 			// TODO: Don't we need some passthrough mechanism? We will need ORIG_PORT but custom IP to implement that though
 			continue
 		}
-		wlBuilder := lb.WithWorkload(wl)
 		for _, port := range getPorts(instances) {
 			if port.Protocol == protocol.UDP {
 				continue

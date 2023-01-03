@@ -235,6 +235,9 @@ func (cb *ClusterBuilder) buildWaypointInboundPod(wls []WorkloadAndServices, dis
 				cb.buildWaypointInboundPodCluster(wl, port).build(),
 				cb.buildWaypointInboundInternalPodCluster(wl, port).build())
 		}
+		clusters = append(clusters,
+			cb.buildWaypointInboundPodCluster(wl, model.Port{}).build(),
+			cb.buildWaypointInboundInternalPodCluster(wl, model.Port{}).build())
 	}
 	return clusters
 }
