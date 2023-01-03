@@ -222,6 +222,97 @@ func (c *Controller) selectorAuthorizationPolicies(ns string, lbls map[string]st
 	return sets.SortedList(res)
 }
 
+type AuthPolicy struct {
+	Namespace string
+	Selector  map[string]string
+}
+
+func (a *AuthPolicy) Equals(other *AuthPolicy) bool {
+	if a == nil {
+		return other == nil
+	}
+	if other == nil {
+		return false
+	}
+	return a.Namespace == other.Namespace && maps.Equal(a.Selector, other.Selector)
+}
+
+func (c *Controller) AuthorizationPolicyHandler2() model.EventHandler {
+	extract := func(c config.Config) *AuthPolicy {
+		if c.Spec == nil {
+			return nil
+		}
+
+		pol := c.Spec.(*v1beta1.AuthorizationPolicy)
+		sel := pol.Selector.GetMatchLabels()
+		if sel == nil {
+			// We only care about selector policies
+			return nil
+		}
+		return &AuthPolicy{
+			Namespace: c.Namespace,
+			Selector:  pol.Selector.GetMatchLabels(),
+		}
+	}
+	handle := func(pol AuthPolicy) []*v1.Pod {
+		return c.getPodsInPolicy(pol.Namespace, pol.Selector)
+	}
+	podKey := func(pod *v1.Pod) string {
+		return pod.Status.PodIP
+	}
+	podHandle := func(pod *v1.Pod) model.ConfigKey {
+		newWl := c.extractWorkload(pod)
+		// Update the pod, since it now has new VIP info
+		c.ambientIndex.byPod[podKey(pod)] = newWl
+		return model.ConfigKey{Kind: kind.Address, Name: newWl.ResourceName()}
+	}
+
+	return func(old config.Config, obj config.Config, ev model.Event) {
+		oldT := extract(old)
+		newT := extract(obj)
+		switch ev {
+		case model.EventUpdate:
+			if oldT.Equals(newT) {
+				// No relevant changes
+				return
+			}
+		default:
+			// Either deleting a resource we didn't care about, or adding one. Either way, no action needed.
+			if newT == nil {
+				return
+			}
+		}
+
+		children := map[string]*v1.Pod{}
+		if oldT != nil {
+			for _, v := range handle(*oldT) {
+				k := podKey(v)
+				children[k] = v
+			}
+		}
+		if newT != nil {
+			for _, v := range handle(*newT) {
+				k := podKey(v)
+				children[k] = v
+			}
+		}
+
+		keys := sets.New[model.ConfigKey]()
+		for _, v := range children {
+			keys.Insert(podHandle(v))
+		}
+
+
+		if len(keys) > 0 {
+			c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
+				Full:           false,
+				ConfigsUpdated: keys,
+				Reason:         []model.TriggerReason{model.AmbientUpdate},
+			})
+		}
+	}
+}
+
 func (c *Controller) AuthorizationPolicyHandler(old config.Config, obj config.Config, ev model.Event) {
 	getSelector := func(c config.Config) map[string]string {
 		if c.Spec == nil {
