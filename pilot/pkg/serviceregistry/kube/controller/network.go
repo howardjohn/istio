@@ -19,7 +19,7 @@ import (
 	"strconv"
 
 	"github.com/yl2chen/cidranger"
-	"istio.io/istio/pkg/kube/controllers"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"istio.io/api/label"
 	"istio.io/istio/pilot/pkg/model"
@@ -184,8 +184,8 @@ func (c *Controller) extractGatewaysFromService(svc *model.Service) bool {
 func (c *Controller) reloadNetworkGateways() {
 	c.Lock()
 	gwsChanged := false
-	for _, svc := range c.servicesMap {
-		if c.extractGatewaysInner(svc) {
+	for _, svc := range c.serviceOverlay.ListNamespace(metav1.NamespaceAll) {
+		if c.extractGatewaysInner(svc.Model) {
 			gwsChanged = true
 			break
 		}
@@ -277,7 +277,7 @@ func (c *Controller) updateServiceNodePortAddresses(svcs ...*model.Service) bool
 	}
 	for _, svc := range svcs {
 		c.RLock()
-		nodeSelector := c.serviceOverlay.Get(controllers.Name(svc)).NodeSelector
+		nodeSelector := c.serviceOverlay.Get(svc.Hostname).NodeSelector
 		c.RUnlock()
 		// update external address
 		var nodeAddresses []string
@@ -297,11 +297,11 @@ func (c *Controller) updateServiceNodePortAddresses(svcs ...*model.Service) bool
 func (c *Controller) getNodePortGatewayServices() []*model.Service {
 	c.RLock()
 	defer c.RUnlock()
-	out := make([]*model.Service, 0, len(c.nodeSelectorsForServices))
-	for hostname := range c.nodeSelectorsForServices {
-		svc := c.servicesMap[hostname]
-		if svc != nil {
-			out = append(out, svc)
+	out := make([]*model.Service, 0)
+	for _, svc := range c.serviceOverlay.ListNamespace(metav1.NamespaceAll) {
+		// TODO: this is somewhere and index would help
+		if len(svc.NodeSelector) > 0 {
+			out = append(out, svc.Model)
 		}
 	}
 

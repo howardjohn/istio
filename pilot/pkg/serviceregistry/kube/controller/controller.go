@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"go.uber.org/atomic"
+	"istio.io/istio/pkg/kube/controllers"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -228,7 +229,7 @@ type Controller struct {
 	nsInformer cache.SharedIndexInformer
 	nsLister   listerv1.NamespaceLister
 
-	serviceOverlay *controllers.Overlay[*v1.Service, types.NamespacedName, ComputedService]
+	serviceOverlay  *controllers.Overlay[*v1.Service, host.Name, ComputedService]
 	serviceInformer informer.FilteredSharedIndexInformer
 	serviceLister   listerv1.ServiceLister
 
@@ -250,28 +251,12 @@ type Controller struct {
 	stop chan struct{}
 
 	sync.RWMutex
-	// servicesMap stores hostname ==> service, it is used to reduce convertService calls.
-	servicesMap map[host.Name]*model.Service
-	// hostNamesForNamespacedName returns all possible hostnames for the given service name.
-	// If Kubernetes Multi-Cluster Services (MCS) is enabled, this will contain the regular
-	// hostname as well as the MCS hostname (clusterset.local). Otherwise, only the regular
-	// hostname will be returned.
-	hostNamesForNamespacedName func(name types.NamespacedName) []host.Name
-	// servicesForNamespacedName returns all services for the given service name.
-	// If Kubernetes Multi-Cluster Services (MCS) is enabled, this will contain the regular
-	// service as well as the MCS service (clusterset.local), if available. Otherwise,
-	// only the regular service will be returned.
-	servicesForNamespacedName func(name types.NamespacedName) []*model.Service
-	// nodeSelectorsForServices stores hostname => label selectors that can be used to
-	// refine the set of node port IPs for a service.
-	nodeSelectorsForServices map[host.Name]labels.Instance
+
 	// map of node name and its address+labels - this is the only thing we need from nodes
 	// for vm to k8s or cross cluster. When node port services select specific nodes by labels,
 	// we run through the label selectors here to pick only ones that we need.
 	// Only nodes with ExternalIP addresses are included in this map !
 	nodeInfoMap map[string]kubernetesNode
-	// externalNameSvcInstanceMap stores hostname ==> instance, is used to store instances for ExternalName k8s services
-	externalNameSvcInstanceMap map[host.Name][]*model.ServiceInstance
 	// index over workload instances from workload entries
 	workloadInstancesIndex workloadinstances.Index
 
@@ -309,55 +294,16 @@ func (c *Controller) AmbientEnabled(pod *v1.Pod) bool {
 // Created by bootstrap and multicluster (see multicluster.Controller).
 func NewController(kubeClient kubelib.Client, options Options) *Controller {
 	c := &Controller{
-		opts:                       options,
-		client:                     kubeClient,
-		queue:                      queue.NewQueueWithID(1*time.Second, string(options.ClusterID)),
-		servicesMap:                make(map[host.Name]*model.Service),
-		nodeSelectorsForServices:   make(map[host.Name]labels.Instance),
-		nodeInfoMap:                make(map[string]kubernetesNode),
-		externalNameSvcInstanceMap: make(map[host.Name][]*model.ServiceInstance),
-		workloadInstancesIndex:     workloadinstances.NewIndex(),
-		informerInit:               atomic.NewBool(false),
-		beginSync:                  atomic.NewBool(false),
-		initialSync:                atomic.NewBool(false),
+		opts:                   options,
+		client:                 kubeClient,
+		queue:                  queue.NewQueueWithID(1*time.Second, string(options.ClusterID)),
+		nodeInfoMap:            make(map[string]kubernetesNode),
+		workloadInstancesIndex: workloadinstances.NewIndex(),
+		informerInit:           atomic.NewBool(false),
+		beginSync:              atomic.NewBool(false),
+		initialSync:            atomic.NewBool(false),
 
 		multinetwork: initMultinetwork(),
-	}
-
-	if features.EnableMCSHost {
-		c.hostNamesForNamespacedName = func(name types.NamespacedName) []host.Name {
-			return []host.Name{
-				kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix),
-				serviceClusterSetLocalHostname(name),
-			}
-		}
-		c.servicesForNamespacedName = func(name types.NamespacedName) []*model.Service {
-			out := make([]*model.Service, 0, 2)
-
-			c.RLock()
-			if svc := c.servicesMap[kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix)]; svc != nil {
-				out = append(out, svc)
-			}
-
-			if svc := c.servicesMap[serviceClusterSetLocalHostname(name)]; svc != nil {
-				out = append(out, svc)
-			}
-			c.RUnlock()
-
-			return out
-		}
-	} else {
-		c.hostNamesForNamespacedName = func(name types.NamespacedName) []host.Name {
-			return []host.Name{
-				kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix),
-			}
-		}
-		c.servicesForNamespacedName = func(name types.NamespacedName) []*model.Service {
-			if svc := c.GetService(kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix)); svc != nil {
-				return []*model.Service{svc}
-			}
-			return nil
-		}
 	}
 
 	c.nsInformer = kubeClient.KubeInformer().Core().V1().Namespaces().Informer()
@@ -398,12 +344,12 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 		kubeClient.KubeInformer().Core().V1().Services().Informer())
 	c.serviceLister = listerv1.NewServiceLister(c.serviceInformer.GetIndexer())
 
-	c.serviceOverlay = controllers.CreateOverlay[*v1.Service, types.NamespacedName, ComputedService](c.serviceInformer, func(svc *v1.Service) ComputedService {
+	c.serviceOverlay = controllers.CreateOverlay[*v1.Service, host.Name, ComputedService](c.serviceInformer, func(svc *v1.Service) ComputedService {
 		svcConv := kube.ConvertService(*svc, c.opts.DomainSuffix, c.Cluster())
 		instances := kube.ExternalNameServiceInstances(svc, svcConv)
 		cs := ComputedService{
-			Kubernetes: svc,
-			Model:      svcConv,
+			Kubernetes:            svc,
+			Model:                 svcConv,
 			ExternalNameInstances: instances,
 		}
 		if isNodePortGatewayService(svc) {
@@ -469,8 +415,8 @@ type ComputedService struct {
 	NodeSelector          labels.Instance
 }
 
-func (c ComputedService) Key() types.NamespacedName {
-	return controllers.Name(c.Kubernetes)
+func (c ComputedService) Key() host.Name {
+	return c.Model.Hostname
 }
 
 func getNamespaceLabel(old any, s string) string {
@@ -499,6 +445,49 @@ func (c *Controller) Provider() provider.ID {
 
 func (c *Controller) Cluster() cluster.ID {
 	return c.opts.ClusterID
+}
+
+// hostNamesForNamespacedName returns all possible hostnames for the given service name.
+// If Kubernetes Multi-Cluster Services (MCS) is enabled, this will contain the regular
+// hostname as well as the MCS hostname (clusterset.local). Otherwise, only the regular
+// hostname will be returned.
+func (c *Controller) hostNamesForNamespacedName(name types.NamespacedName) []host.Name {
+	if features.EnableMCSHost {
+		return []host.Name{
+			kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix),
+			serviceClusterSetLocalHostname(name),
+		}
+	}
+	return []host.Name{
+		kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix),
+	}
+}
+
+// servicesForNamespacedName returns all services for the given service name.
+// If Kubernetes Multi-Cluster Services (MCS) is enabled, this will contain the regular
+// service as well as the MCS service (clusterset.local), if available. Otherwise,
+// only the regular service will be returned.
+func (c *Controller) servicesForNamespacedName(name types.NamespacedName) []*model.Service {
+	if features.EnableMCSHost {
+		out := make([]*model.Service, 0, 2)
+
+		c.RLock()
+
+		if svc := c.serviceOverlay.Get(kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix)); svc.Model != nil {
+			out = append(out, svc.Model)
+		}
+
+		if svc := c.serviceOverlay.Get(serviceClusterSetLocalHostname(name)); svc.Model != nil {
+			out = append(out, svc.Model)
+		}
+		c.RUnlock()
+
+		return out
+	}
+	if svc := c.GetService(kube.ServiceHostname(name.Name, name.Namespace, c.opts.DomainSuffix)); svc != nil {
+		return []*model.Service{svc}
+	}
+	return nil
 }
 
 func (c *Controller) MCSServices() []model.MCSServiceInfo {
@@ -625,9 +614,6 @@ func (c *Controller) onServiceEvent(curr any, event model.Event) error {
 
 func (c *Controller) deleteService(svc *model.Service) {
 	c.Lock()
-	delete(c.servicesMap, svc.Hostname)
-	delete(c.nodeSelectorsForServices, svc.Hostname)
-	delete(c.externalNameSvcInstanceMap, svc.Hostname)
 	_, isNetworkGateway := c.networkGatewaysBySvc[svc.Hostname]
 	delete(c.networkGatewaysBySvc, svc.Hostname)
 	c.Unlock()
@@ -653,24 +639,8 @@ func (c *Controller) addOrUpdateService(svc *v1.Service, svcConv *model.Service,
 	if !svcConv.Attributes.ClusterExternalAddresses.IsEmpty() {
 		needsFullPush = c.extractGatewaysFromService(svcConv)
 	} else if isNodePortGatewayService(svc) {
-		// We need to know which services are using node selectors because during node events,
-		// we have to update all the node port services accordingly.
-		nodeSelector := getNodeSelectorsForService(svc)
-		c.Lock()
-		// only add when it is nodePort gateway service
-		c.nodeSelectorsForServices[svcConv.Hostname] = nodeSelector
-		c.Unlock()
 		needsFullPush = c.updateServiceNodePortAddresses(svcConv)
 	}
-
-	// instance conversion is only required when service is added/updated.
-	instances := kube.ExternalNameServiceInstances(svc, svcConv)
-	c.Lock()
-	c.servicesMap[svcConv.Hostname] = svcConv
-	if len(instances) > 0 {
-		c.externalNameSvcInstanceMap[svcConv.Hostname] = instances
-	}
-	c.Unlock()
 
 	// This full push needed to update ALL ends endpoints, even though we do a full push on service add/update
 	// as that full push is only triggered for the specific service.
@@ -966,9 +936,10 @@ func (c *Controller) Stop() {
 // Services implements a service catalog operation
 func (c *Controller) Services() []*model.Service {
 	c.RLock()
-	out := make([]*model.Service, 0, len(c.servicesMap))
-	for _, svc := range c.servicesMap {
-		out = append(out, svc)
+	l := c.serviceOverlay.ListNamespace(metav1.NamespaceAll)
+	out := make([]*model.Service, 0, len(l))
+	for _, svc := range l {
+		out = append(out, svc.Model)
 	}
 	c.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].Hostname < out[j].Hostname })
@@ -978,7 +949,7 @@ func (c *Controller) Services() []*model.Service {
 // GetService implements a service catalog operation by hostname specified.
 func (c *Controller) GetService(hostname host.Name) *model.Service {
 	c.RLock()
-	svc := c.servicesMap[hostname]
+	svc := c.serviceOverlay.Get(hostname).Model
 	c.RUnlock()
 	return svc
 }
@@ -1024,7 +995,7 @@ func (c *Controller) InstancesByPort(svc *model.Service, reqSvcPort int, labels 
 
 	// Fall back to external name service since we did not find any instances of normal services
 	c.RLock()
-	externalNameInstances := c.serviceOverlay.Get(controllers.Name(svc)).ExternalNameInstances
+	externalNameInstances := c.serviceOverlay.Get(svc.Hostname).ExternalNameInstances
 	c.RUnlock()
 	if externalNameInstances != nil {
 		inScopeInstances := make([]*model.ServiceInstance, 0)
@@ -1044,9 +1015,7 @@ func (c *Controller) serviceInstancesFromWorkloadInstances(svc *model.Service, r
 	// as InstancesByPort is called by the aggregate controller. We dont want to include
 	// workload instances for any other registry
 	workloadInstancesExist := !c.workloadInstancesIndex.Empty()
-	c.RLock()
-	_, inRegistry := c.servicesMap[svc.Hostname]
-	c.RUnlock()
+	inRegistry := c.GetService(svc.Hostname) != nil
 
 	// Only select internal Kubernetes services with selectors
 	if !inRegistry || !workloadInstancesExist || svc.Attributes.ServiceRegistry != provider.Kubernetes ||

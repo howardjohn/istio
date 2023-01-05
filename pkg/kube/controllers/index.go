@@ -17,6 +17,8 @@ package controllers
 import (
 	"sync"
 
+	"golang.org/x/exp/maps"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
@@ -42,11 +44,18 @@ func (i *Overlay[I, K, O]) Get(k K) O {
 	return i.objects[k]
 }
 
-// Lookup finds object for a given key
-func (i *Overlay[I, K, O]) List(k K) O {
+func (i *Overlay[I, K, O]) ListNamespace(ns string) []O {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return i.objects[k]
+	if ns == metav1.NamespaceAll {
+		return maps.Values(i.objects)
+	}
+	inNs := i.namespaceIndex[ns]
+	res := make([]O, 0, len(inNs))
+	for k := range inNs {
+		res = append(res, i.objects[k])
+	}
+	return res
 }
 
 type Namer interface {

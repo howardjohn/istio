@@ -286,9 +286,9 @@ func (ic *serviceImportCacheImpl) ImportedServices() []importedService {
 
 		// Lookup the synthetic MCS service.
 		hostName := serviceClusterSetLocalHostnameForKR(usi)
-		svc := ic.servicesMap[hostName]
-		if svc != nil {
-			if vips := svc.ClusterVIPs.GetAddressesFor(ic.Cluster()); len(vips) > 0 {
+
+		if svc := ic.serviceOverlay.Get(hostName); svc.Model != nil {
+			if vips := svc.Model.ClusterVIPs.GetAddressesFor(ic.Cluster()); len(vips) > 0 {
 				info.clusterSetVIP = vips[0]
 			}
 		}

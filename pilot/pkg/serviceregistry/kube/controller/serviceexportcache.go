@@ -185,8 +185,8 @@ func (ec *serviceExportCacheImpl) ExportedServices() []exportedService {
 		clusterLocalHost := kubesr.ServiceHostname(uExport.GetName(), uExport.GetNamespace(), ec.opts.DomainSuffix)
 		clusterSetLocalHost := serviceClusterSetLocalHostname(es.namespacedName)
 		for _, hostName := range []host.Name{clusterLocalHost, clusterSetLocalHost} {
-			if svc := ec.servicesMap[hostName]; svc != nil {
-				es.discoverability[hostName] = ec.EndpointDiscoverabilityPolicy(svc).String()
+			if svc := ec.serviceOverlay.Get(hostName); svc.Model != nil {
+				es.discoverability[hostName] = ec.EndpointDiscoverabilityPolicy(svc.Model).String()
 			}
 		}
 
