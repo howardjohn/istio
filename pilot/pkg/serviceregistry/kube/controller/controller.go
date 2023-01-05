@@ -228,6 +228,7 @@ type Controller struct {
 	nsInformer cache.SharedIndexInformer
 	nsLister   listerv1.NamespaceLister
 
+	serviceOverlay *controllers.Overlay[*v1.Service, types.NamespacedName, ComputedService]
 	serviceInformer informer.FilteredSharedIndexInformer
 	serviceLister   listerv1.ServiceLister
 
@@ -397,6 +398,20 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 		kubeClient.KubeInformer().Core().V1().Services().Informer())
 	c.serviceLister = listerv1.NewServiceLister(c.serviceInformer.GetIndexer())
 
+	c.serviceOverlay = controllers.CreateOverlay[*v1.Service, types.NamespacedName, ComputedService](c.serviceInformer, func(svc *v1.Service) ComputedService {
+		svcConv := kube.ConvertService(*svc, c.opts.DomainSuffix, c.Cluster())
+		instances := kube.ExternalNameServiceInstances(svc, svcConv)
+		cs := ComputedService{
+			Kubernetes: svc,
+			Model:      svcConv,
+			ExternalNameInstances: instances,
+		}
+		if isNodePortGatewayService(svc) {
+			cs.NodeSelector = getNodeSelectorsForService(svc)
+		}
+		return cs
+	})
+
 	c.registerHandlers(c.serviceInformer, "Services", c.onServiceEvent, nil)
 
 	switch options.EndpointMode {
@@ -445,6 +460,17 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 	c.meshWatcher = options.MeshWatcher
 
 	return c
+}
+
+type ComputedService struct {
+	Kubernetes            *v1.Service
+	Model                 *model.Service
+	ExternalNameInstances []*model.ServiceInstance
+	NodeSelector          labels.Instance
+}
+
+func (c ComputedService) Key() types.NamespacedName {
+	return controllers.Name(c.Kubernetes)
 }
 
 func getNamespaceLabel(old any, s string) string {
@@ -998,7 +1024,7 @@ func (c *Controller) InstancesByPort(svc *model.Service, reqSvcPort int, labels 
 
 	// Fall back to external name service since we did not find any instances of normal services
 	c.RLock()
-	externalNameInstances := c.externalNameSvcInstanceMap[svc.Hostname]
+	externalNameInstances := c.serviceOverlay.Get(controllers.Name(svc)).ExternalNameInstances
 	c.RUnlock()
 	if externalNameInstances != nil {
 		inScopeInstances := make([]*model.ServiceInstance, 0)

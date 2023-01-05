@@ -214,3 +214,11 @@ func (s Set[T]) Len() int {
 func (s Set[T]) IsEmpty() bool {
 	return len(s) == 0
 }
+
+func InsertOrNew[T comparable](s Set[T], t T) Set[T] {
+	if s == nil {
+		return New(t)
+	}
+	s.Insert(t)
+	return s
+}

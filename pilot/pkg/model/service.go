@@ -112,6 +112,14 @@ type Service struct {
 	ResourceVersion string
 }
 
+func (s *Service) GetName() string {
+	return s.Attributes.Name
+}
+
+func (s *Service) GetNamespace() string {
+	return s.Attributes.Namespace
+}
+
 func (s *Service) Key() string {
 	if s == nil {
 		return ""

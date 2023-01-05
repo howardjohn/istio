@@ -19,6 +19,7 @@ import (
 	"strconv"
 
 	"github.com/yl2chen/cidranger"
+	"istio.io/istio/pkg/kube/controllers"
 
 	"istio.io/api/label"
 	"istio.io/istio/pilot/pkg/model"
@@ -276,7 +277,7 @@ func (c *Controller) updateServiceNodePortAddresses(svcs ...*model.Service) bool
 	}
 	for _, svc := range svcs {
 		c.RLock()
-		nodeSelector := c.nodeSelectorsForServices[svc.Hostname]
+		nodeSelector := c.serviceOverlay.Get(controllers.Name(svc)).NodeSelector
 		c.RUnlock()
 		// update external address
 		var nodeAddresses []string
