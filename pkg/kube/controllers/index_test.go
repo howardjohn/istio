@@ -177,20 +177,23 @@ func TestDependency(t *testing.T) {
 	podInfo := Subscribe[*corev1.Pod, PodInfo](
 		podInf,
 		func(i *corev1.Pod) PodInfo {
-			return PodInfo{Name: i.Name, Labels: i.Labels}
+			k, _ := cache.MetaNamespaceKeyFunc(i)
+			return PodInfo{Name: k, Labels: i.Labels}
 		})
 	// I now have a stream for ServiceInfo
 	svcInfo := Subscribe[*corev1.Service, ServiceInfo](
 		serviceInf,
 		func(i *corev1.Service) ServiceInfo {
-			return ServiceInfo{Name: i.Name, Selector: i.Spec.Selector}
+			k, _ := cache.MetaNamespaceKeyFunc(i)
+			return ServiceInfo{Name: k, Selector: i.Spec.Selector}
 		})
 
 	c.RunAndWait(test.NewStop(t))
 	podInfo.Register(func(info PodInfo) {
 		log.Errorf("howardjohn: handle pod %v", info)
 		for _, svc := range svcInfo.List() {
-			RegisterDependency(svcInfo, svc, info)
+			// TODO: This works only for services known before pod. If a service comes in later, we need to trigger it as well
+			RegisterDependency(svcInfo, svc, podInfo, info)
 
 		}
 	})
@@ -198,37 +201,53 @@ func TestDependency(t *testing.T) {
 		log.Errorf("howardjohn: handle server %v", info)
 	})
 
+	time.Sleep(time.Millisecond*50)
+	t.Log("svc create")
+	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
+	}, metav1.CreateOptions{})
+	time.Sleep(time.Millisecond*50)
+	t.Log("pod create")
 	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
 	}, metav1.CreateOptions{})
-	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod1"},
-		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
-	}, metav1.CreateOptions{})
+	time.Sleep(time.Millisecond*50)
+	t.Log("svc update")
 	c.Kube().CoreV1().Services("default").Update(context.Background(), &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod1"},
-		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "bar2"}},
+		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar2"}},
 	}, metav1.UpdateOptions{})
+	time.Sleep(time.Millisecond*50)
+	t.Log("svc update NOP")
 	c.Kube().CoreV1().Services("default").Update(context.Background(), &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"ignore": "me"}},
-		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "bar2"}},
+		ObjectMeta: metav1.ObjectMeta{Name: "svc1", Labels: map[string]string{"ignore": "me"}},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar2"}},
 	}, metav1.UpdateOptions{})
 	time.Sleep(time.Second)
 }
 
+type dependency struct {
+	f   func(string)
+	key string
+}
+
 func RegisterDependency[I Equaler[I], O Equaler[O]](hi *Handle[I], input I, ho *Handle[O], output O) {
 
-
+	ik := input.Key()
+	hi.Depend(ik, dependency{ho.call, output.Key()})
 }
 
 type Equaler[K any] interface {
 	Equals(k K) bool
+	Key() string
 }
 
 type Handle[O Equaler[O]] struct {
-	handlers []func(O)
-	objects map[string]O
-	mu sync.RWMutex
+	handlers  []func(O)
+	objects   map[string]O
+	dependees map[string][]dependency
+	mu        sync.RWMutex
 }
 
 func (h *Handle[O]) Register(f func(O)) {
@@ -239,16 +258,31 @@ func (h *Handle[O]) Handle(conv O) {
 	for _, hh := range h.handlers {
 		hh(conv)
 	}
+	for i, dep := range h.dependees[conv.Key()] {
+		log.Errorf("howardjohn: call dep %v/%v", i, dep.key)
+		dep.f(dep.key)
+	}
+}
+
+func (h *Handle[O]) call(k string) {
+	h.Handle(h.objects[k])
 }
 
 func (h *Handle[O]) List() []O {
 	return maps.Values(h.objects)
 }
 
+func (h *Handle[O]) Depend(k string, f dependency) {
+	h.dependees[k] = append(h.dependees[k], f)
+	h.dependees[k] = h.dependees[k][:1]
+	log.Errorf("howardjohn: depending on %v len %v", k, len(h.dependees[k]))
+}
+
 func Subscribe[I Object, O Equaler[O]](informer HandleInformer, convert func(i I) O) *Handle[O] {
 	h := &Handle[O]{
-		objects: make(map[string]O),
-		mu: sync.RWMutex{},
+		objects:   make(map[string]O),
+		dependees: map[string][]dependency{},
+		mu:        sync.RWMutex{},
 	}
 
 	addObj := func(obj any) {
