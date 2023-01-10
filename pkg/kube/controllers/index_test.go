@@ -16,6 +16,9 @@ package controllers
 
 import (
 	"context"
+	"golang.org/x/exp/slices"
+	"istio.io/istio/pkg/config/labels"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -169,6 +172,19 @@ func (p ServiceInfo) Key() string {
 	return p.Name
 }
 
+type PodSvc struct {
+	PodName      string
+	ServiceNames []string
+}
+
+func (p PodSvc) Equals(k PodSvc) bool {
+	return p.PodName == k.PodName && slices.Equal(p.ServiceNames, k.ServiceNames)
+}
+
+func (p PodSvc) Key() string {
+	return p.PodName + "/" + strings.Join(p.ServiceNames, ",")
+}
+
 func TestDependency(t *testing.T) {
 	c := kube.NewFakeClient()
 	podInf := c.KubeInformer().Core().V1().Pods().Informer()
@@ -189,53 +205,67 @@ func TestDependency(t *testing.T) {
 		})
 
 	c.RunAndWait(test.NewStop(t))
-	podInfo.Register(func(info PodInfo) {
-		log.Errorf("howardjohn: handle pod %v", info)
-		for _, svc := range svcInfo.List() {
-			// TODO: This works only for services known before pod. If a service comes in later, we need to trigger it as well
-			RegisterDependency(svcInfo, svc, podInfo, info)
-
+	match := func(a PodInfo, b ServiceInfo) bool {
+		log.Infof("match %+v < %+v = %v", b.Selector, a.Labels, labels.Instance(b.Selector).SubsetOf(a.Labels))
+		return labels.Instance(b.Selector).SubsetOf(a.Labels)
+	}
+	convert := func(a PodInfo, b []ServiceInfo) PodSvc {
+		svcs := []string{}
+		for _, k := range b {
+			svcs = append(svcs, k.Name)
 		}
+		return PodSvc{
+			PodName:      a.Name,
+			ServiceNames: svcs,
+		}
+	}
+	podSvc := Join[PodInfo, ServiceInfo, PodSvc](podInfo, svcInfo, match, convert)
+	podSvc.Register(func(ps PodSvc) {
+		log.Infof("computed new PodSvc: %v", ps.Key())
 	})
-	svcInfo.Register(func(info ServiceInfo) {
-		log.Errorf("howardjohn: handle server %v", info)
-	})
+	time.Sleep(time.Millisecond * 50)
 
-	time.Sleep(time.Millisecond*50)
 	t.Log("svc create")
 	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
 		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
 	}, metav1.CreateOptions{})
-	time.Sleep(time.Millisecond*50)
+	time.Sleep(time.Millisecond * 50)
+
 	t.Log("pod create")
 	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
 	}, metav1.CreateOptions{})
-	time.Sleep(time.Millisecond*50)
+	time.Sleep(time.Millisecond * 50)
+
 	t.Log("svc update")
 	c.Kube().CoreV1().Services("default").Update(context.Background(), &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
 		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar2"}},
 	}, metav1.UpdateOptions{})
-	time.Sleep(time.Millisecond*50)
+	time.Sleep(time.Millisecond * 50)
+
 	t.Log("svc update NOP")
 	c.Kube().CoreV1().Services("default").Update(context.Background(), &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "svc1", Labels: map[string]string{"ignore": "me"}},
 		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar2"}},
 	}, metav1.UpdateOptions{})
+	time.Sleep(time.Millisecond * 50)
+
+	t.Log("svc update back")
+	c.Kube().CoreV1().Services("default").Update(context.Background(), &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
+	}, metav1.UpdateOptions{})
+	time.Sleep(time.Millisecond * 50)
+
+	t.Log("svc create new")
+	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc2"},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
+	}, metav1.CreateOptions{})
 	time.Sleep(time.Second)
-}
-
-type dependency struct {
-	f   func(string)
-	key string
-}
-
-func RegisterDependency[I Equaler[I], O Equaler[O]](hi *Handle[I], input I, ho *Handle[O], output O) {
-
-	ik := input.Key()
-	hi.Depend(ik, dependency{ho.call, output.Key()})
+	t.Log("final", podSvc.List())
 }
 
 type Equaler[K any] interface {
@@ -244,10 +274,17 @@ type Equaler[K any] interface {
 }
 
 type Handle[O Equaler[O]] struct {
-	handlers  []func(O)
-	objects   map[string]O
-	dependees map[string][]dependency
-	mu        sync.RWMutex
+	handlers []func(O)
+	objects  map[string]O
+	mu       sync.RWMutex
+}
+
+func (h *Handle[O]) Get(k string) *O {
+	o, f := h.objects[k]
+	if !f {
+		return nil
+	}
+	return &o
 }
 
 func (h *Handle[O]) Register(f func(O)) {
@@ -258,31 +295,106 @@ func (h *Handle[O]) Handle(conv O) {
 	for _, hh := range h.handlers {
 		hh(conv)
 	}
-	for i, dep := range h.dependees[conv.Key()] {
-		log.Errorf("howardjohn: call dep %v/%v", i, dep.key)
-		dep.f(dep.key)
-	}
-}
-
-func (h *Handle[O]) call(k string) {
-	h.Handle(h.objects[k])
 }
 
 func (h *Handle[O]) List() []O {
 	return maps.Values(h.objects)
 }
 
-func (h *Handle[O]) Depend(k string, f dependency) {
-	h.dependees[k] = append(h.dependees[k], f)
-	h.dependees[k] = h.dependees[k][:1]
-	log.Errorf("howardjohn: depending on %v len %v", k, len(h.dependees[k]))
+type Watcher[O Equaler[O]] interface {
+	// Register a handler. TODO: call it for List() when we register
+	Register(f func(O))
+	List() []O
+	Get(k string) *O
 }
 
-func Subscribe[I Object, O Equaler[O]](informer HandleInformer, convert func(i I) O) *Handle[O] {
+type Joined[A Equaler[A], B Equaler[B], O Equaler[O]] struct {
+	mu       sync.RWMutex
+	objects  map[string]O
+	handlers []func(O)
+}
+
+func (j *Joined[A, B, O]) Get(k string) *O {
+	o, f := j.objects[k]
+	if !f {
+		return nil
+	}
+	return &o
+}
+
+func (j *Joined[A, B, O]) Handle(conv O) {
+	for _, hh := range j.handlers {
+		hh(conv)
+	}
+}
+func (j *Joined[A, B, O]) Register(f func(O)) {
+	j.handlers = append(j.handlers, f)
+}
+
+func (j *Joined[A, B, O]) List() []O {
+	return maps.Values(j.objects)
+}
+
+func Join[A Equaler[A], B Equaler[B], O Equaler[O]](
+	a Watcher[A],
+	b Watcher[B],
+	match func(a A, b B) bool,
+	conv func(a A, b []B) O,
+) Watcher[O] {
+	joined := &Joined[A, B, O]{
+		objects: make(map[string]O),
+	}
+	a.Register(func(ai A) {
+		key := ai.Key()
+		log.Infof("Join got new A %v", key)
+		o, f := joined.objects[key]
+		bs := b.List()
+		matches := []B{}
+		for _, bi := range bs {
+			if match(ai, bi) {
+				matches = append(matches, bi)
+			}
+		}
+		oNew := conv(ai, matches)
+		if f && o.Equals(oNew) {
+			log.Infof("no changes on A")
+			return
+		}
+		joined.objects[key] = oNew
+		joined.Handle(oNew)
+	})
+	b.Register(func(bi B) {
+		log.Errorf("Join got new B %v", bi.Key())
+		for _, ai := range a.List() {
+			if match(ai, bi) {
+				log.Infof("a %v matches b %v", ai.Key(), bi.Key())
+				bs := b.List()
+				log.Infof("have %v B's", len(bs))
+				matches := []B{}
+				for _, bi := range bs {
+					if match(ai, bi) {
+						matches = append(matches, bi)
+					}
+				}
+				key := ai.Key()
+				oOld := joined.objects[key]
+				oNew := conv(ai, matches)
+				if oOld.Equals(oNew) {
+					log.Infof("a unchanged")
+					continue
+				}
+				joined.objects[key] = oNew
+				joined.Handle(oNew)
+			}
+		}
+	})
+	return joined
+}
+
+func Subscribe[I Object, O Equaler[O]](informer HandleInformer, convert func(i I) O) Watcher[O] {
 	h := &Handle[O]{
-		objects:   make(map[string]O),
-		dependees: map[string][]dependency{},
-		mu:        sync.RWMutex{},
+		objects: make(map[string]O),
+		mu:      sync.RWMutex{},
 	}
 
 	addObj := func(obj any) {
