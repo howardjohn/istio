@@ -18,7 +18,7 @@ import (
 	"context"
 	"golang.org/x/exp/slices"
 	"istio.io/istio/pkg/config/labels"
-	"strings"
+	"istio.io/istio/pkg/util/sets"
 	"sync"
 	"testing"
 	"time"
@@ -182,7 +182,7 @@ func (p PodSvc) Equals(k PodSvc) bool {
 }
 
 func (p PodSvc) Key() string {
-	return p.PodName + "/" + strings.Join(p.ServiceNames, ",")
+	return p.PodName
 }
 
 func TestDependency(t *testing.T) {
@@ -206,7 +206,6 @@ func TestDependency(t *testing.T) {
 
 	c.RunAndWait(test.NewStop(t))
 	match := func(a PodInfo, b ServiceInfo) bool {
-		log.Infof("match %+v < %+v = %v", b.Selector, a.Labels, labels.Instance(b.Selector).SubsetOf(a.Labels))
 		return labels.Instance(b.Selector).SubsetOf(a.Labels)
 	}
 	convert := func(a PodInfo, b []ServiceInfo) PodSvc {
@@ -221,7 +220,7 @@ func TestDependency(t *testing.T) {
 	}
 	podSvc := Join[PodInfo, ServiceInfo, PodSvc](podInfo, svcInfo, match, convert)
 	podSvc.Register(func(ps PodSvc) {
-		log.Infof("computed new PodSvc: %v", ps.Key())
+		log.Infof("computed new PodSvc: %+v", ps)
 	})
 	time.Sleep(time.Millisecond * 50)
 
@@ -308,9 +307,14 @@ type Watcher[O Equaler[O]] interface {
 	Get(k string) *O
 }
 
+type ObjectDependencies[O any] struct {
+	o            O
+	dependencies sets.String
+}
+
 type Joined[A Equaler[A], B Equaler[B], O Equaler[O]] struct {
 	mu       sync.RWMutex
-	objects  map[string]O
+	objects  map[string]ObjectDependencies[O]
 	handlers []func(O)
 }
 
@@ -319,7 +323,7 @@ func (j *Joined[A, B, O]) Get(k string) *O {
 	if !f {
 		return nil
 	}
-	return &o
+	return &o.o
 }
 
 func (j *Joined[A, B, O]) Handle(conv O) {
@@ -332,7 +336,9 @@ func (j *Joined[A, B, O]) Register(f func(O)) {
 }
 
 func (j *Joined[A, B, O]) List() []O {
-	return maps.Values(j.objects)
+	return Map(maps.Values(j.objects), func(t ObjectDependencies[O]) O {
+		return t.o
+	})
 }
 
 func Join[A Equaler[A], B Equaler[B], O Equaler[O]](
@@ -342,50 +348,72 @@ func Join[A Equaler[A], B Equaler[B], O Equaler[O]](
 	conv func(a A, b []B) O,
 ) Watcher[O] {
 	joined := &Joined[A, B, O]{
-		objects: make(map[string]O),
+		objects: make(map[string]ObjectDependencies[O]),
 	}
 	a.Register(func(ai A) {
 		key := ai.Key()
 		log.Infof("Join got new A %v", key)
-		o, f := joined.objects[key]
+		oOld, f := joined.objects[key]
 		bs := b.List()
 		matches := []B{}
+		matchKeys := sets.New[string]()
 		for _, bi := range bs {
 			if match(ai, bi) {
 				matches = append(matches, bi)
+				matchKeys.Insert(bi.Key())
 			}
 		}
 		oNew := conv(ai, matches)
-		if f && o.Equals(oNew) {
+		// Always update, in case dependencies changed
+		joined.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
+		if f && oOld.o.Equals(oNew) {
 			log.Infof("no changes on A")
 			return
 		}
-		joined.objects[key] = oNew
 		joined.Handle(oNew)
 	})
 	b.Register(func(bi B) {
 		log.Errorf("Join got new B %v", bi.Key())
 		for _, ai := range a.List() {
+			key := ai.Key()
+			oOld, f := joined.objects[key]
+			var deps sets.String
 			if match(ai, bi) {
+				// We know it depends on all old things, and this new key (it may have already depended on this, though)
+				deps = oOld.dependencies.Copy().Insert(bi.Key())
 				log.Infof("a %v matches b %v", ai.Key(), bi.Key())
-				bs := b.List()
-				log.Infof("have %v B's", len(bs))
-				matches := []B{}
-				for _, bi := range bs {
-					if match(ai, bi) {
-						matches = append(matches, bi)
-					}
-				}
-				key := ai.Key()
-				oOld := joined.objects[key]
-				oNew := conv(ai, matches)
-				if oOld.Equals(oNew) {
-					log.Infof("a unchanged")
+			} else {
+				if !oOld.dependencies.Contains(bi.Key()) {
+					log.Infof("entirely skip %v", key)
 					continue
 				}
-				joined.objects[key] = oNew
-				joined.Handle(oNew)
+				// We know it depends on all old things, and but not this new key
+				deps = oOld.dependencies.Copy().Delete(bi.Key())
+				log.Infof("a %v does not match b anyhmore %v", ai.Key(), bi.Key())
 			}
+
+			matches := []B{}
+			matchKeys := sets.New[string]()
+			for bKey := range deps {
+				bip := b.Get(bKey)
+				if bip == nil {
+					continue
+				}
+				bi := *bip
+				if match(ai, bi) {
+					matches = append(matches, bi)
+					matchKeys.Insert(bi.Key())
+				}
+			}
+			oNew := conv(ai, matches)
+
+			// Always update, in case dependencies changed
+			joined.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
+			if f && oOld.o.Equals(oNew) {
+				log.Infof("no changes on B")
+				return
+			}
+			joined.Handle(oNew)
 		}
 	})
 	return joined
@@ -422,7 +450,6 @@ func Subscribe[I Object, O Equaler[O]](informer HandleInformer, convert func(i I
 		UpdateFunc: func(oldObj, newObj any) {
 			h.mu.Lock()
 			defer h.mu.Unlock()
-			deleteObj(oldObj)
 			addObj(newObj)
 		},
 		DeleteFunc: func(obj any) {
@@ -433,4 +460,22 @@ func Subscribe[I Object, O Equaler[O]](informer HandleInformer, convert func(i I
 	}
 	informer.AddEventHandler(handler)
 	return h
+}
+
+func Map[T, U any](data []T, f func(T) U) []U {
+	res := make([]U, 0, len(data))
+	for _, e := range data {
+		res = append(res, f(e))
+	}
+	return res
+}
+
+func Filter[T any](data []T, f func(T) bool) []T {
+	fltd := make([]T, 0, len(data))
+	for _, e := range data {
+		if f(e) {
+			fltd = append(fltd, e)
+		}
+	}
+	return fltd
 }
