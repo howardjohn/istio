@@ -16,12 +16,16 @@ package controllers
 
 import (
 	"context"
-	"golang.org/x/exp/slices"
-	"istio.io/istio/pkg/config/labels"
-	"istio.io/istio/pkg/util/sets"
-	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/exp/slices"
+	meshapi "istio.io/api/mesh/v1alpha1"
+	"istio.io/istio/pkg/config/labels"
+	"istio.io/istio/pkg/config/mesh"
+	istiolog "istio.io/pkg/log"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/client-go/informers"
 
 	"golang.org/x/exp/maps"
 	corev1 "k8s.io/api/core/v1"
@@ -185,8 +189,115 @@ func (p PodSvc) Key() string {
 	return p.PodName
 }
 
+func meshConfigMapData(cm *corev1.ConfigMap, key string) string {
+	if cm == nil {
+		return ""
+	}
+
+	cfgYaml, exists := cm.Data[key]
+	if !exists {
+		return ""
+	}
+
+	return cfgYaml
+}
+
+func makeConfigMapWithName(name, resourceVersion string, data map[string]string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       "istio-system",
+			Name:            name,
+			ResourceVersion: resourceVersion,
+		},
+		Data: data,
+	}
+}
+
+type EqualerString string
+
+func (e EqualerString) Equals(k EqualerString) bool {
+	return string(e) == string(k)
+}
+
+func (e EqualerString) Key() string {
+	return string(e)
+}
+
+var _ Equaler[EqualerString] = EqualerString("")
+
+func meshConfig(t *testing.T, c kube.Client) {
+	log.SetOutputLevel(istiolog.DebugLevel)
+	coreInf := informers.NewSharedInformerFactoryWithOptions(c.Kube(), 12*time.Hour,
+		informers.WithNamespace("istio-system"),
+		informers.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
+			listOptions.FieldSelector = fields.OneTermEqualSelector(metav1.ObjectNameField, "istio").String()
+		})).
+		Core().V1().ConfigMaps().Informer()
+	go coreInf.Run(test.NewStop(t))
+	userInf := informers.NewSharedInformerFactoryWithOptions(c.Kube(), 12*time.Hour,
+		informers.WithNamespace("istio-system"),
+		informers.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
+			listOptions.FieldSelector = fields.OneTermEqualSelector(metav1.ObjectNameField, "istio-user").String()
+		})).
+		Core().V1().ConfigMaps().Informer()
+	go userInf.Run(test.NewStop(t))
+	core := InformerToWatcher[*corev1.ConfigMap](coreInf)
+	user := InformerToWatcher[*corev1.ConfigMap](userInf)
+
+	cd := Direct[*corev1.ConfigMap, EqualerString](core, func(i *corev1.ConfigMap) EqualerString {
+		return EqualerString(meshConfigMapData(i, "mesh"))
+	})
+	ud := Direct[*corev1.ConfigMap, EqualerString](user, func(i *corev1.ConfigMap) EqualerString {
+		return EqualerString(meshConfigMapData(i, "mesh"))
+	})
+
+	combined := Join(cd, ud,
+		func(a EqualerString, b EqualerString) bool {
+			return true
+		},
+		func(a EqualerString, b []EqualerString) *meshapi.MeshConfig {
+			mc := mesh.DefaultMeshConfig()
+			for _, yml := range append([]EqualerString{a}, b...) {
+				mcn, err := mesh.ApplyMeshConfig(string(yml), mc)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				mc = mcn
+			}
+			return mc
+		})
+	combined.Register(func(config *meshapi.MeshConfig) {
+		log.Infof("New mesh cfg: %v", config)
+	})
+
+
+	cmCore := makeConfigMapWithName("istio", "1", map[string]string{
+		"istio": "ingressClass: core",
+	})
+	cmUser := makeConfigMapWithName("istio-user", "1", map[string]string{
+		"istio": "ingressClass: user",
+	})
+	cmCoreAlt := makeConfigMapWithName("istio", "1", map[string]string{
+		"istio": "ingressClass: alt",
+	})
+	cms := c.Kube().CoreV1().ConfigMaps("istio-system")
+	if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDependency(t *testing.T) {
 	c := kube.NewFakeClient()
+	meshConfig(t, c)
+	time.Sleep(time.Millisecond * 500)
+	return
 	pods := InformerToWatcher[*corev1.Pod](c.KubeInformer().Core().V1().Pods().Informer())
 	services := InformerToWatcher[*corev1.Service](c.KubeInformer().Core().V1().Services().Informer())
 	// I now have a stream for PodInfo
@@ -265,270 +376,4 @@ func TestDependency(t *testing.T) {
 	}, metav1.CreateOptions{})
 	time.Sleep(time.Second)
 	t.Log("final", podSvc.List())
-}
-
-type Equaler[K any] interface {
-	Equals(k K) bool
-	Key() string
-}
-
-type Handle[O any] struct {
-	handlers []func(O)
-	objects  map[string]O
-	mu       sync.RWMutex
-}
-
-func (h *Handle[O]) Get(k string) *O {
-	o, f := h.objects[k]
-	if !f {
-		return nil
-	}
-	return &o
-}
-
-func (h *Handle[O]) Register(f func(O)) {
-	h.handlers = append(h.handlers, f)
-}
-
-func (h *Handle[O]) Handle(conv O) {
-	for _, hh := range h.handlers {
-		hh(conv)
-	}
-}
-
-func (h *Handle[O]) List() []O {
-	return maps.Values(h.objects)
-}
-
-type Watcher[O any] interface {
-	// Register a handler. TODO: call it for List() when we register
-	Register(f func(O))
-	List() []O
-	Get(k string) *O
-}
-
-type ObjectDependencies[O any] struct {
-	o            O
-	dependencies sets.String
-}
-
-type Joined[A any, B any, O any] struct {
-	mu       sync.RWMutex
-	objects  map[string]ObjectDependencies[O]
-	handlers []func(O)
-}
-
-func (j *Joined[A, B, O]) Get(k string) *O {
-	o, f := j.objects[k]
-	if !f {
-		return nil
-	}
-	return &o.o
-}
-
-func (j *Joined[A, B, O]) Handle(conv O) {
-	for _, hh := range j.handlers {
-		hh(conv)
-	}
-}
-func (j *Joined[A, B, O]) Register(f func(O)) {
-	j.handlers = append(j.handlers, f)
-}
-
-func (j *Joined[A, B, O]) List() []O {
-	return Map(maps.Values(j.objects), func(t ObjectDependencies[O]) O {
-		return t.o
-	})
-}
-
-func Join[A any, B any, O any](
-	a Watcher[A],
-	b Watcher[B],
-	match func(a A, b B) bool,
-	conv func(a A, b []B) O,
-) Watcher[O] {
-	joined := &Joined[A, B, O]{
-		objects: make(map[string]ObjectDependencies[O]),
-	}
-	a.Register(func(ai A) {
-		key := Key(ai)
-		log.Infof("Join got new A %v", key)
-		oOld, f := joined.objects[key]
-		bs := b.List()
-		matches := []B{}
-		matchKeys := sets.New[string]()
-		for _, bi := range bs {
-			if match(ai, bi) {
-				matches = append(matches, bi)
-				matchKeys.Insert(Key(bi))
-			}
-		}
-		oNew := conv(ai, matches)
-		// Always update, in case dependencies changed
-		joined.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
-		if f && Equal(oOld.o, oNew) {
-			log.Infof("no changes on A")
-			return
-		}
-		joined.Handle(oNew)
-	})
-	b.Register(func(bi B) {
-		log.Errorf("Join got new B %v", Key(bi))
-		for _, ai := range a.List() {
-			key := Key(ai)
-			oOld, f := joined.objects[key]
-			var deps sets.String
-			if match(ai, bi) {
-				// We know it depends on all old things, and this new key (it may have already depended on this, though)
-				deps = oOld.dependencies.Copy().Insert(Key(bi))
-				log.Infof("a %v matches b %v", Key(ai), Key(bi))
-			} else {
-				if !oOld.dependencies.Contains(Key(bi)) {
-					log.Infof("entirely skip %v", key)
-					continue
-				}
-				// We know it depends on all old things, and but not this new key
-				deps = oOld.dependencies.Copy().Delete(Key(bi))
-				log.Infof("a %v does not match b anyhmore %v", Key(ai), Key(bi))
-			}
-
-			matches := []B{}
-			matchKeys := sets.New[string]()
-			for bKey := range deps {
-				bip := b.Get(bKey)
-				if bip == nil {
-					continue
-				}
-				bi := *bip
-				if match(ai, bi) {
-					matches = append(matches, bi)
-					matchKeys.Insert(Key(bi))
-				}
-			}
-			oNew := conv(ai, matches)
-
-			// Always update, in case dependencies changed
-			joined.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
-			if f && Equal(oOld.o, oNew) {
-				log.Infof("no changes on B")
-				return
-			}
-			joined.Handle(oNew)
-		}
-	})
-	return joined
-}
-
-type InformerWatch[I Object] struct {
-	inf cache.SharedInformer
-}
-
-func (i InformerWatch[I]) Register(f func(I)) {
-	addObj := func(obj any) {
-		i := Extract[I](obj)
-		f(i)
-	}
-	deleteObj := func(obj any) {
-		i := Extract[I](obj)
-		f(i)
-	}
-	handler := cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) {
-			addObj(obj)
-		},
-		UpdateFunc: func(oldObj, newObj any) {
-			addObj(newObj)
-		},
-		DeleteFunc: func(obj any) {
-			deleteObj(obj)
-		},
-	}
-	i.inf.AddEventHandler(handler)
-}
-
-func (i InformerWatch[I]) List() []I {
-	return Map(i.inf.GetStore().List(), func(t any) I {
-		return t.(I)
-	})
-}
-
-func (i InformerWatch[I]) Get(k string) *I {
-	iff, _, _ := i.inf.GetStore().GetByKey(k)
-	r := iff.(I)
-	return &r
-}
-
-func InformerToWatcher[I Object](informer cache.SharedInformer) Watcher[I] {
-	return InformerWatch[I]{informer}
-}
-
-
-func Equal[O any](a, b O) bool {
-	ak, ok := any(a).(Equaler[O])
-	if ok {
-		return ak.Equals(b)
-	}
-	ao, ok := any(a).(Object)
-	if ok {
-		return ao.GetResourceVersion() == any(b).(Object).GetResourceVersion()
-	}
-	panic("Should be Equaler or Object (probably?)")
-	return false
-}
-
-func Key[O any](a O) string {
-	ak, ok := any(a).(Equaler[O])
-	if ok {
-		return ak.Key()
-	}
-	ao, ok := any(a).(Object)
-	if ok {
-		k, _ := cache.MetaNamespaceKeyFunc(ao)
-		return k
-	}
-	panic("Should be Equaler or Object (probably?)")
-	return ""
-}
-
-func Direct[I any, O any](input Watcher[I], convert func(i I) O) Watcher[O] {
-	h := &Handle[O]{
-		objects: make(map[string]O),
-		mu:      sync.RWMutex{},
-	}
-
-	input.Register(func(i I) {
-		key := Key(i)
-		cur := input.Get(key)
-		if cur == nil {
-			old := h.objects[key]
-			delete(h.objects, key)
-			h.Handle(old)
-		} else {
-			conv := convert(*cur)
-			updated := !Equal(conv, h.objects[key])
-			h.objects[key] = conv
-			if updated {
-				h.Handle(conv)
-			}
-		}
-	})
-	return h
-}
-
-func Map[T, U any](data []T, f func(T) U) []U {
-	res := make([]U, 0, len(data))
-	for _, e := range data {
-		res = append(res, f(e))
-	}
-	return res
-}
-
-func Filter[T any](data []T, f func(T) bool) []T {
-	fltd := make([]T, 0, len(data))
-	for _, e := range data {
-		if f(e) {
-			fltd = append(fltd, e)
-		}
-	}
-	return fltd
 }
