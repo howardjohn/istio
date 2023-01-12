@@ -2,9 +2,10 @@ package controllers
 
 import (
 	"fmt"
-	"sync"
 
+	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/exp/maps"
+	"google.golang.org/protobuf/proto"
 	"istio.io/istio/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 )
@@ -17,10 +18,12 @@ type Equaler[K any] interface {
 type Handle[O any] struct {
 	handlers []func(O)
 	objects  map[string]O
-	mu       sync.RWMutex
+	mu       deadlock.RWMutex
 }
 
 func (h *Handle[O]) Get(k string) *O {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	o, f := h.objects[k]
 	if !f {
 		return nil
@@ -39,6 +42,8 @@ func (h *Handle[O]) Handle(conv O) {
 }
 
 func (h *Handle[O]) List() []O {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return maps.Values(h.objects)
 }
 
@@ -55,12 +60,14 @@ type ObjectDependencies[O any] struct {
 }
 
 type Joined[A any, B any, O any] struct {
-	mu       sync.RWMutex
+	mu       deadlock.RWMutex
 	objects  map[string]ObjectDependencies[O]
 	handlers []func(O)
 }
 
 func (j *Joined[A, B, O]) Get(k string) *O {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
 	o, f := j.objects[k]
 	if !f {
 		return nil
@@ -78,6 +85,8 @@ func (j *Joined[A, B, O]) Register(f func(O)) {
 }
 
 func (j *Joined[A, B, O]) List() []O {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
 	return Map(maps.Values(j.objects), func(t ObjectDependencies[O]) O {
 		return t.o
 	})
@@ -89,13 +98,15 @@ func Join[A any, B any, O any](
 	match func(a A, b B) bool,
 	conv func(a A, b []B) O,
 ) Watcher[O] {
-	joined := &Joined[A, B, O]{
+	j := &Joined[A, B, O]{
 		objects: make(map[string]ObjectDependencies[O]),
 	}
 	a.Register(func(ai A) {
 		key := Key(ai)
-		log.Infof("Join got new A %v", key)
-		oOld, f := joined.objects[key]
+		j.mu.Lock()
+		defer j.mu.Unlock() // TODO: unlock before handle, read lock with upgrade
+		log.Debugf("Join got new A %v", key)
+		oOld, f := j.objects[key]
 		bs := b.List()
 		matches := []B{}
 		matchKeys := sets.New[string]()
@@ -107,31 +118,34 @@ func Join[A any, B any, O any](
 		}
 		oNew := conv(ai, matches)
 		// Always update, in case dependencies changed
-		joined.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
+		j.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
 		if f && Equal(oOld.o, oNew) {
-			log.Infof("no changes on A")
+			log.Debugf("no changes on A")
 			return
 		}
-		joined.Handle(oNew)
+		j.Handle(oNew)
 	})
 	b.Register(func(bi B) {
-		log.Errorf("Join got new B %v", Key(bi))
+		log.Debugf("Join got new B %v", Key(bi))
+
+		j.mu.Lock()
+		defer j.mu.Unlock() // TODO: unlock before handle, read lock with upgrade
 		for _, ai := range a.List() {
 			key := Key(ai)
-			oOld, f := joined.objects[key]
+			oOld, f := j.objects[key]
 			var deps sets.String
 			if match(ai, bi) {
 				// We know it depends on all old things, and this new key (it may have already depended on this, though)
 				deps = oOld.dependencies.Copy().Insert(Key(bi))
-				log.Infof("a %v matches b %v", Key(ai), Key(bi))
+				log.Debugf("a %v matches b %v", Key(ai), Key(bi))
 			} else {
 				if !oOld.dependencies.Contains(Key(bi)) {
-					log.Infof("entirely skip %v", key)
+					log.Debugf("entirely skip %v", key)
 					continue
 				}
 				// We know it depends on all old things, and but not this new key
 				deps = oOld.dependencies.Copy().Delete(Key(bi))
-				log.Infof("a %v does not match b anyhmore %v", Key(ai), Key(bi))
+				log.Debugf("a %v does not match b anyhmore %v", Key(ai), Key(bi))
 			}
 
 			matches := []B{}
@@ -150,15 +164,15 @@ func Join[A any, B any, O any](
 			oNew := conv(ai, matches)
 
 			// Always update, in case dependencies changed
-			joined.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
+			j.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
 			if f && Equal(oOld.o, oNew) {
-				log.Infof("no changes on B")
+				log.Debugf("no changes on B")
 				return
 			}
-			joined.Handle(oNew)
+			j.Handle(oNew)
 		}
 	})
-	return joined
+	return j
 }
 
 type InformerWatch[I Object] struct {
@@ -206,7 +220,6 @@ func InformerToWatcher[I Object](informer cache.SharedInformer) Watcher[I] {
 	return InformerWatch[I]{informer}
 }
 
-
 func Equal[O any](a, b O) bool {
 	ak, ok := any(a).(Equaler[O])
 	if ok {
@@ -215,6 +228,10 @@ func Equal[O any](a, b O) bool {
 	ao, ok := any(a).(Object)
 	if ok {
 		return ao.GetResourceVersion() == any(b).(Object).GetResourceVersion()
+	}
+	ap, ok := any(a).(proto.Message)
+	if ok {
+		return proto.Equal(ap, any(b).(proto.Message))
 	}
 	// todo: proto.Equal?
 	panic(fmt.Sprintf("Should be Equaler or Object (probably?), got %T", a))
@@ -238,12 +255,12 @@ func Key[O any](a O) string {
 func Direct[I any, O any](input Watcher[I], convert func(i I) O) Watcher[O] {
 	h := &Handle[O]{
 		objects: make(map[string]O),
-		mu:      sync.RWMutex{},
+		mu:      deadlock.RWMutex{},
 	}
 
 	ti := *new(I)
 	to := *new(O)
-	input.Register(func(i I) {
+	handler := func(i I) *O {
 		key := Key(i)
 		log.Debugf("Direct[%T, %T]: event for %v", ti, to, key)
 		cur := input.Get(key)
@@ -253,26 +270,35 @@ func Direct[I any, O any](input Watcher[I], convert func(i I) O) Watcher[O] {
 				delete(h.objects, key)
 				h.Handle(old)
 				log.Debugf("Direct[%T, %T]: %v no longer exists (delete)", ti, to, key)
-			} else {
-				log.Debugf("Direct[%T, %T]: %v no longer exists (delete) NOP", ti, to, key)
+				return &old
 			}
-		} else {
-			conv := convert(*cur)
-			exist, f := h.objects[key]
-			if  false { // conv == nil { TODO: convert return *O so they can skip
-				// This is a delete
-				if f {
-					// Used to exist
-					h.Handle(conv)
-				}
-				return
+			log.Debugf("Direct[%T, %T]: %v no longer exists (delete) NOP", ti, to, key)
+			return nil
+		}
+		conv := convert(*cur)
+		exist, f := h.objects[key]
+		if false { // conv == nil { TODO: convert return *O so they can skip
+			// This is a delete
+			if f {
+				// Used to exist
+				return &conv
 			}
-			updated := !Equal(conv, exist)
-			log.Debugf("Direct[%T, %T]: conv %v, updated=%v", ti, to, key, updated)
-			h.objects[key] = conv
-			if updated {
-				h.Handle(conv)
-			}
+			return nil
+		}
+		updated := !Equal(conv, exist)
+		log.Debugf("Direct[%T, %T]: conv %v, updated=%v", ti, to, key, updated)
+		h.objects[key] = conv
+		if updated {
+			return &conv
+		}
+		return nil
+	}
+	input.Register(func(i I) {
+		h.mu.Lock()
+		out := handler(i)
+		h.mu.Unlock()
+		if out != nil {
+			h.Handle(*out)
 		}
 	})
 	return h

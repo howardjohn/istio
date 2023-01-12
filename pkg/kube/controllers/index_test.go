@@ -227,6 +227,7 @@ var _ Equaler[EqualerString] = EqualerString("")
 
 func meshConfig(t *testing.T, c kube.Client) {
 	log.SetOutputLevel(istiolog.DebugLevel)
+	_ = istiolog.DebugLevel
 	coreInf := informers.NewSharedInformerFactoryWithOptions(c.Kube(), 12*time.Hour,
 		informers.WithNamespace("istio-system"),
 		informers.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
@@ -257,40 +258,50 @@ func meshConfig(t *testing.T, c kube.Client) {
 		},
 		func(a EqualerString, b []EqualerString) *meshapi.MeshConfig {
 			mc := mesh.DefaultMeshConfig()
-			for _, yml := range append([]EqualerString{a}, b...) {
+			order := append([]EqualerString{}, b...) // order matters
+			order = append(order, a) // order matters
+			log.Errorf("howardjohn: ---%v", len(b))
+			for _, yml := range order {
 				mcn, err := mesh.ApplyMeshConfig(string(yml), mc)
 				if err != nil {
 					log.Error(err)
 					continue
 				}
+				log.Errorf("howardjohn: join %v", mcn.IngressClass)
 				mc = mcn
 			}
 			return mc
 		})
 	combined.Register(func(config *meshapi.MeshConfig) {
-		log.Infof("New mesh cfg: %v", config)
+		log.Infof("New mesh cfg: %v", config.GetIngressClass())
 	})
 
 
 	cmCore := makeConfigMapWithName("istio", "1", map[string]string{
-		"istio": "ingressClass: core",
+		"mesh": "ingressClass: core",
 	})
 	cmUser := makeConfigMapWithName("istio-user", "1", map[string]string{
-		"istio": "ingressClass: user",
+		"mesh": "ingressClass: user",
 	})
 	cmCoreAlt := makeConfigMapWithName("istio", "1", map[string]string{
-		"istio": "ingressClass: alt",
+		"mesh": "ingressClass: alt",
 	})
 	cms := c.Kube().CoreV1().ConfigMaps("istio-system")
 	if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(time.Millisecond * 100)
+	t.Log("insert user")
 	if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	t.Log("update core")
+	time.Sleep(time.Millisecond * 100)
 	if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(time.Millisecond * 100)
+	t.Log("done")
 }
 
 func TestDependency(t *testing.T) {
