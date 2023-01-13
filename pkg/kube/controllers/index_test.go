@@ -23,9 +23,7 @@ import (
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
 	meshapi "istio.io/api/mesh/v1alpha1"
@@ -35,7 +33,6 @@ import (
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/test/util/retry"
-	istiolog "istio.io/pkg/log"
 )
 
 type SaNode struct {
@@ -226,33 +223,31 @@ func (k StaticKey[O]) Equals(o StaticKey[O]) bool {
 	return Equal(k.Obj, o.Obj)
 }
 
-func meshConfig(t *testing.T, c kube.Client) {
-	log.SetOutputLevel(istiolog.DebugLevel)
-	_ = istiolog.DebugLevel
-	coreInf := informers.NewSharedInformerFactoryWithOptions(c.Kube(), 12*time.Hour,
-		informers.WithNamespace("istio-system"),
-		informers.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
-			listOptions.FieldSelector = fields.OneTermEqualSelector(metav1.ObjectNameField, "istio").String()
-		})).
-		Core().V1().ConfigMaps().Informer()
-	go coreInf.Run(test.NewStop(t))
-	userInf := informers.NewSharedInformerFactoryWithOptions(c.Kube(), 12*time.Hour,
-		informers.WithNamespace("istio-system"),
-		informers.WithTweakListOptions(func(listOptions *metav1.ListOptions) {
-			listOptions.FieldSelector = fields.OneTermEqualSelector(metav1.ObjectNameField, "istio-user").String()
-		})).
-		Core().V1().ConfigMaps().Informer()
-	go userInf.Run(test.NewStop(t))
-	core := InformerToWatcher[*corev1.ConfigMap](coreInf)
-	user := InformerToWatcher[*corev1.ConfigMap](userInf)
+func StaticConversion[I Object, O any](name string, f func(i I) *O) func(i I) *StaticKey[O] {
+	return func(i I) *StaticKey[O] {
+		// We don't care about this object
+		if i.GetName() != name {
+			return nil
+		}
+		res := f(i)
+		if res == nil {
+			return nil
+		}
+		return &StaticKey[O]{*res, Key[O](name)}
+	}
+}
 
-	cd := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](core, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
+func meshConfig(t *testing.T, c kube.Client) {
+	inf := WatcherFor[*corev1.ConfigMap](c)
+	c.RunAndWait(test.NewStop(t))
+
+	cd := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](inf, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
 		if i.Name != "istio" { // fake client won't filter.
 			return nil
 		}
 		return &StaticKey[EqualerString]{EqualerString(meshConfigMapData(i, "mesh")), "istio"}
 	})
-	ud := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](user, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
+	ud := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](inf, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
 		if i.Name != "istio-user" { // fake client won't filter.
 			return nil
 		}
@@ -269,9 +264,7 @@ func meshConfig(t *testing.T, c kube.Client) {
 			if core != nil {
 				order = append(order, string(core.Obj))
 			}
-			log.Errorf("howardjohn: --")
 			for _, yml := range order {
-				log.Errorf("howardjohn: apply %v", yml)
 				mcn, err := mesh.ApplyMeshConfig(yml, mc)
 				if err != nil {
 					log.Error(err)

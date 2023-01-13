@@ -1,6 +1,9 @@
 package controllers
 
-import "k8s.io/client-go/tools/cache"
+import (
+	"istio.io/istio/pkg/kube"
+	"k8s.io/client-go/tools/cache"
+)
 
 type informer[I Object] struct {
 	inf cache.SharedInformer
@@ -48,4 +51,8 @@ func (i informer[I]) Get(k Key[I]) *I {
 
 func InformerToWatcher[I Object](i cache.SharedInformer) Watcher[I] {
 	return informer[I]{i}
+}
+
+func WatcherFor[I Object](c kube.Client) Watcher[I] {
+	return InformerToWatcher[I](kube.InformerFor[I](c))
 }
