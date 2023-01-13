@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/atomic"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
@@ -237,9 +238,9 @@ func StaticConversion[I Object, O any](name string, f func(i I) *O) func(i I) *S
 	}
 }
 
-func meshConfig(t *testing.T, c kube.Client) {
+func MeshConfigWatcher(c kube.Client, stop <-chan struct{}) Watcher[StaticKey[*meshapi.MeshConfig]] {
 	inf := WatcherFor[*corev1.ConfigMap](c)
-	c.RunAndWait(test.NewStop(t))
+	c.RunAndWait(stop)
 
 	cd := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](inf, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
 		if i.Name != "istio" { // fake client won't filter.
@@ -274,7 +275,14 @@ func meshConfig(t *testing.T, c kube.Client) {
 			}
 			return &StaticKey[*meshapi.MeshConfig]{mc, "mesh"}
 		})
-	combined.Register(func(config StaticKey[*meshapi.MeshConfig]) {
+	return combined
+}
+
+func meshConfig(t *testing.T, c kube.Client) {
+	meshh := MeshConfigWatcher(c, test.NewStop(t))
+	cur := atomic.NewString("")
+	meshh.Register(func(config StaticKey[*meshapi.MeshConfig]) {
+		cur.Store(config.Obj.GetIngressClass())
 		log.Infof("New mesh cfg: %v", config.Obj.GetIngressClass())
 	})
 
@@ -288,27 +296,37 @@ func meshConfig(t *testing.T, c kube.Client) {
 		"mesh": "ingressClass: alt",
 	})
 	cms := c.Kube().CoreV1().ConfigMaps("istio-system")
+
 	t.Log("insert user")
 	if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(time.Millisecond * 100)
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" })
+
 	t.Log("create core")
 	if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("update core")
-	time.Sleep(time.Millisecond * 100)
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "core" })
+
+	t.Log("update core to alt")
 	if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(time.Millisecond * 100)
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "alt" })
+
+	t.Log("update core back")
+	if _, err := cms.Update(context.Background(), cmCore, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "core" })
+
 	t.Log("delete core")
-	time.Sleep(time.Millisecond * 100)
 	if err := cms.Delete(context.Background(), cmCoreAlt.Name, metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(time.Millisecond * 100)
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" })
+	
 	t.Log("done")
 }
 
