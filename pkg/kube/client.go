@@ -157,6 +157,8 @@ type Client interface {
 
 	// GetKubernetesVersion returns the Kubernetes server version
 	GetKubernetesVersion() (*kubeVersion.Info, error)
+
+	DAG() *DAG
 }
 
 // CLIClient is an extended client with additional helpers/functionality for Istioctl and testing.
@@ -347,6 +349,7 @@ func NewFakeClient(objects ...runtime.Object) CLIClient {
 
 	c.version = lazy.NewWithRetry(c.kube.Discovery().ServerVersion)
 
+	c.dag = NewDAG()
 	return c
 }
 
@@ -402,6 +405,7 @@ type client struct {
 	version lazy.Lazy[*kubeVersion.Info]
 
 	portManager PortManager
+	dag         *DAG
 }
 
 // newClientInternal creates a Kubernetes client from the given factory.
@@ -565,6 +569,10 @@ func (c *client) ExtInformer() kubeExtInformers.SharedInformerFactory {
 
 func (c *client) HasStarted() bool {
 	return c.started.Load()
+}
+
+func (c *client) DAG() *DAG {
+	return c.dag
 }
 
 // RunAndWait starts all informers and waits for their caches to sync.

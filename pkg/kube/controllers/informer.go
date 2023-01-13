@@ -1,12 +1,20 @@
 package controllers
 
 import (
+	"fmt"
+
 	"istio.io/istio/pkg/kube"
 	"k8s.io/client-go/tools/cache"
 )
 
 type informer[I Object] struct {
+	r   kube.Registerer
 	inf cache.SharedInformer
+}
+
+func (i informer[I]) AddDependency(chain []string) {
+	chain = append(chain, i.Name())
+	i.r.AddDependency(chain)
 }
 
 func (i informer[I]) Register(f func(I)) {
@@ -34,6 +42,10 @@ func (i informer[I]) Register(f func(I)) {
 	i.inf.AddEventHandler(handler)
 }
 
+func (i informer[I]) Name() string {
+	return fmt.Sprintf("informer[%T]", *new(I))
+}
+
 func (i informer[I]) List() []I {
 	return Map(i.inf.GetStore().List(), func(t any) I {
 		return t.(I)
@@ -49,10 +61,10 @@ func (i informer[I]) Get(k Key[I]) *I {
 	return &r
 }
 
-func InformerToWatcher[I Object](i cache.SharedInformer) Watcher[I] {
-	return informer[I]{i}
+func InformerToWatcher[I Object](r kube.Registerer, i cache.SharedInformer) Watcher[I] {
+	return informer[I]{r, i}
 }
 
 func WatcherFor[I Object](c kube.Client) Watcher[I] {
-	return InformerToWatcher[I](kube.InformerFor[I](c))
+	return InformerToWatcher[I](c.DAG(), kube.InformerFor[I](c))
 }

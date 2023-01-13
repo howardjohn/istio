@@ -5,12 +5,20 @@ import (
 	"sync"
 
 	"golang.org/x/exp/maps"
+	"istio.io/istio/pkg/kube"
 )
 
 type direct[O any] struct {
+	parent kube.Registerer
 	handlers []func(O)
 	objects  map[Key[O]]O
 	mu       sync.RWMutex
+	name     string
+}
+
+func (h *direct[O]) AddDependency(chain []string) {
+		chain = append(chain, h.Name())
+		h.parent.AddDependency(chain)
 }
 
 func (h *direct[O]) Get(k Key[O]) *O {
@@ -44,15 +52,22 @@ func (h *direct[O]) List() []O {
 	return maps.Values(h.objects)
 }
 
+func (h *direct[O]) Name() string {
+	return h.name
+}
+
 func Direct[I any, O any](input Watcher[I], convert func(i I) *O) Watcher[O] {
+	ti := *new(I)
+	to := *new(O)
 	h := &direct[O]{
 		objects: make(map[Key[O]]O),
 		mu:      sync.RWMutex{},
+		name: fmt.Sprintf("direct[%T,%T]", ti, to),
+		parent: input,
 	}
+	input.AddDependency([]string{h.name})
 
-	ti := *new(I)
-	to := *new(O)
-	log := log.WithLabels("origin", fmt.Sprintf("direct[%T,%T]", ti, to))
+	log := log.WithLabels("origin", h.Name())
 	handler := func(i I) *O {
 		key := GetKey(i)
 		conv := convert(i)
@@ -99,3 +114,5 @@ func Direct[I any, O any](input Watcher[I], convert func(i I) *O) Watcher[O] {
 	})
 	return h
 }
+
+

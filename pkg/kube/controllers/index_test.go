@@ -326,17 +326,17 @@ func meshConfig(t *testing.T, c kube.Client) {
 		t.Fatal(err)
 	}
 	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" })
-	
+
 	t.Log("done")
 }
 
 func TestDependency(t *testing.T) {
 	c := kube.NewFakeClient()
 	meshConfig(t, c)
-	time.Sleep(time.Millisecond * 500)
+	c.DAG().X()
 	return
-	pods := InformerToWatcher[*corev1.Pod](c.KubeInformer().Core().V1().Pods().Informer())
-	services := InformerToWatcher[*corev1.Service](c.KubeInformer().Core().V1().Services().Informer())
+	pods := InformerToWatcher[*corev1.Pod](c.DAG(), c.KubeInformer().Core().V1().Pods().Informer())
+	services := InformerToWatcher[*corev1.Service](c.DAG(), c.KubeInformer().Core().V1().Services().Informer())
 	// I now have a stream for PodInfo
 	podInfo := Direct[*corev1.Pod, PodInfo](
 		pods,

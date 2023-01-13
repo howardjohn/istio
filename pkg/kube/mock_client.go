@@ -80,6 +80,11 @@ type MockClient struct {
 	IstiodVersion     string
 }
 
+func (c MockClient) DAG() *DAG {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (c MockClient) SetPortManager(manager PortManager) {
 }
 

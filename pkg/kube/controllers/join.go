@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"golang.org/x/exp/maps"
+	"istio.io/istio/pkg/kube"
 
 	"istio.io/istio/pkg/util/sets"
 )
@@ -16,11 +17,20 @@ type joined[A any, B any, O any] struct {
 }
 
 type join[A any, B any, O any] struct {
+	parentA kube.Registerer
+	parentB kube.Registerer
 	mu       sync.RWMutex
 	objects  map[Key[O]]joined[A, B, O]
 	aIndex   map[Key[A]]sets.Set[Key[O]]
 	bIndex   map[Key[B]]sets.Set[Key[O]]
 	handlers []func(O)
+	name     string
+}
+
+func (j *join[A, B, O]) AddDependency(chain []string) {
+	chain = append(chain, j.Name())
+	j.parentA.AddDependency(chain)
+	j.parentB.AddDependency(chain)
 }
 
 func (j *join[A, B, O]) Get(k Key[O]) *O {
@@ -56,6 +66,10 @@ func (j *join[A, B, O]) List() []O {
 	})
 }
 
+func (j *join[A, B, O]) Name() string {
+	return j.name
+}
+
 // Join merges two objects, A and B, into a third O.
 // Behavior is weird, we will call with all (a,b) pairs, but (a,nil) and (nil,b) if there are no A's or B's
 func Join[A any, B any, O any](
@@ -63,16 +77,21 @@ func Join[A any, B any, O any](
 	b Watcher[B],
 	conv func(a *A, b *B) *O,
 ) Watcher[O] {
+	ta := *new(A)
+	tb := *new(B)
+	to := *new(O)
 	j := &join[A, B, O]{
 		objects: make(map[Key[O]]joined[A, B, O]),
 		aIndex:  map[Key[A]]sets.Set[Key[O]]{},
 		bIndex:  map[Key[B]]sets.Set[Key[O]]{},
+		name: fmt.Sprintf("join[%T,%T,%T]", ta, tb, to),
+		parentA: a,
+		parentB: b,
 	}
+	a.AddDependency([]string{j.name})
+	b.AddDependency([]string{j.name})
 
-	ta := *new(A)
-	tb := *new(B)
-	to := *new(O)
-	log := log.WithLabels("origin", fmt.Sprintf("join[%T,%T,%T]", ta, tb, to))
+	log := log.WithLabels("origin", j.Name())
 
 	a.Register(func(ai A) {
 		key := GetKey(ai)

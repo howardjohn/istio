@@ -12,6 +12,11 @@ type singleToMany[A any, B any, O any] struct {
 	handlers []func(O)
 }
 
+func (j *singleToMany[A, B, O]) AddDependency(chain []string) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (j *singleToMany[A, B, O]) Get(k Key[O]) *O {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
@@ -33,6 +38,10 @@ func (j *singleToMany[A, B, O]) Handle(conv O) {
 	for _, hh := range j.handlers {
 		hh(conv)
 	}
+}
+
+func (j *singleToMany[A, B, O]) Name() string {
+	return "singleToMany"
 }
 
 func (j *singleToMany[A, B, O]) Register(f func(O)) {

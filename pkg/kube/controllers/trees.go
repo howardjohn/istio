@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
+	"istio.io/istio/pkg/kube"
 	"k8s.io/client-go/tools/cache"
 
 	"istio.io/istio/pkg/util/sets"
@@ -14,10 +15,12 @@ type Equaler[K any] interface {
 }
 
 type Watcher[O any] interface {
+	Name() string
 	// Register a handler. TODO: call it for List() when we register
 	Register(f func(O))
 	List() []O
 	Get(k Key[O]) *O
+	kube.Registerer
 }
 
 type ObjectDependencies[O any] struct {
