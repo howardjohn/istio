@@ -210,21 +210,6 @@ func makeConfigMapWithName(name, resourceVersion string, data map[string]string)
 	}
 }
 
-// TODO: option to convet handlers of StaticKey type to without key, assuming singleton
-type StaticKey[O any] struct {
-	Obj O
-	K   Key[O]
-}
-
-func (k StaticKey[O]) Key() Key[StaticKey[O]] {
-	return Key[StaticKey[O]](k.K)
-}
-
-func (k StaticKey[O]) Equals(o StaticKey[O]) bool {
-	// Delegate to inside object
-	return Equal(k.Obj, o.Obj)
-}
-
 func StaticConversion[I Object, O any](name string, f func(i I) *O) func(i I) *StaticKey[O] {
 	return func(i I) *StaticKey[O] {
 		// We don't care about this object
@@ -239,7 +224,7 @@ func StaticConversion[I Object, O any](name string, f func(i I) *O) func(i I) *S
 	}
 }
 
-func MeshConfigWatcher(c kube.Client, stop <-chan struct{}) Watcher[StaticKey[*meshapi.MeshConfig]] {
+func MeshConfigWatcher(c kube.Client, stop <-chan struct{}) Watcher[*meshapi.MeshConfig] {
 	inf := WatcherFor[*corev1.ConfigMap](c)
 	c.RunAndWait(stop)
 
@@ -276,15 +261,15 @@ func MeshConfigWatcher(c kube.Client, stop <-chan struct{}) Watcher[StaticKey[*m
 			}
 			return &StaticKey[*meshapi.MeshConfig]{mc, "mesh"}
 		})
-	return combined
+	return StripStaticKey(combined)
 }
 
-func meshConfig(t *testing.T, c kube.Client) Watcher[StaticKey[*meshapi.MeshConfig]] {
+func meshConfig(t *testing.T, c kube.Client) Watcher[*meshapi.MeshConfig] {
 	meshh := MeshConfigWatcher(c, test.NewStop(t))
 	cur := atomic.NewString("")
-	meshh.Register(func(config StaticKey[*meshapi.MeshConfig]) {
-		cur.Store(config.Obj.GetIngressClass())
-		log.Infof("New mesh cfg: %v", config.Obj.GetIngressClass())
+	meshh.Register(func(config *meshapi.MeshConfig) {
+		cur.Store(config.GetIngressClass())
+		log.Infof("New mesh cfg: %v", config.GetIngressClass())
 	})
 
 	cmCore := makeConfigMapWithName("istio", "1", map[string]string{
@@ -302,31 +287,31 @@ func meshConfig(t *testing.T, c kube.Client) Watcher[StaticKey[*meshapi.MeshConf
 	if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" })
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" }, retry.Timeout(time.Second))
 
 	t.Log("create core")
 	if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	retry.UntilOrFail(t, func() bool { return cur.Load() == "core" })
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "core" }, retry.Timeout(time.Second))
 
 	t.Log("update core to alt")
 	if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	retry.UntilOrFail(t, func() bool { return cur.Load() == "alt" })
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "alt" }, retry.Timeout(time.Second))
 
 	t.Log("update core back")
 	if _, err := cms.Update(context.Background(), cmCore, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	retry.UntilOrFail(t, func() bool { return cur.Load() == "core" })
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "core" }, retry.Timeout(time.Second))
 
 	t.Log("delete core")
 	if err := cms.Delete(context.Background(), cmCoreAlt.Name, metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" })
+	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" }, retry.Timeout(time.Second))
 
 	t.Log("done")
 
@@ -337,6 +322,12 @@ func TestDependency(t *testing.T) {
 	c := kube.NewFakeClient()
 	defer c.DAG().X()
 	meshh := meshConfig(t, c)
+
+	ambientMode := Singleton[meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode, meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode]("AmbientMode",
+		Direct[*meshapi.MeshConfig, meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode]("_AmbientMode", meshh, func(m *meshapi.MeshConfig) *meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode {
+		return Ptr(m.GetAmbientMesh().GetMode())
+	}), Identity[meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode])
+	_ = ambientMode
 	_ = meshh
 	pods := InformerToWatcher[*corev1.Pod](c.DAG(), c.KubeInformer().Core().V1().Pods().Informer())
 	services := InformerToWatcher[*corev1.Service](c.DAG(), c.KubeInformer().Core().V1().Services().Informer())
@@ -372,7 +363,7 @@ func TestDependency(t *testing.T) {
 		}
 	}
 	podSvc := SingleToMany[PodInfo, ServiceInfo, PodSvc]("PodSvc", podInfo, svcInfo, match, convert)
-	_ = Join[PodSvc, StaticKey[*meshapi.MeshConfig], PodSvc]("todo", podSvc, meshh, func(a *PodSvc, b *StaticKey[*meshapi.MeshConfig]) *PodSvc {
+	_ = Join[PodSvc, *meshapi.MeshConfig, PodSvc]("todo", podSvc, meshh, func(a *PodSvc, b **meshapi.MeshConfig) *PodSvc {
 		return nil
 	})
 	podSvc.Register(func(ps PodSvc) {
@@ -419,6 +410,6 @@ func TestDependency(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "svc2"},
 		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
 	}, metav1.CreateOptions{})
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 50)
 	t.Log("final", podSvc.List())
 }

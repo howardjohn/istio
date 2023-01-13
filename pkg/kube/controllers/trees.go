@@ -97,3 +97,31 @@ func Filter[T any](data []T, f func(T) bool) []T {
 	}
 	return fltd
 }
+
+func Identity[A any](a A) A {
+	return a
+}
+
+func StripStaticKey[O any](w Watcher[StaticKey[O]]) Watcher[O] {
+	return Singleton[StaticKey[O], O]("_StripKey", w, func(sko StaticKey[O]) O {
+		return sko.Obj
+	})
+}
+
+type StaticKey[O any] struct {
+	Obj O
+	K   Key[O]
+}
+
+func (k StaticKey[O]) Key() Key[StaticKey[O]] {
+	return Key[StaticKey[O]](k.K)
+}
+
+func (k StaticKey[O]) Equals(o StaticKey[O]) bool {
+	// Delegate to inside object
+	return Equal(k.Obj, o.Obj)
+}
+
+func Ptr[T any](t T) *T {
+	return &t
+}
