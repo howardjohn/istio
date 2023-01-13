@@ -176,3 +176,27 @@ var translationMap = map[config.GroupVersionKind]func(r runtime.Object) config.C
 	},
 {{- end }}
 }
+func InformerFor[I](c kube.Client) cache.SharedIndexInformer {
+{{- range . }}
+	collections.{{ .VariableName }}.Resource().GroupVersionKind(): func(r runtime.Object) config.Config {
+		obj := r.(*{{ .ClientImport }}.{{ .Kind }})
+		return config.Config{
+		  Meta: config.Meta{
+		  	GroupVersionKind:  collections.{{ .VariableName }}.Resource().GroupVersionKind(),
+		  	Name:              obj.Name,
+		  	Namespace:         obj.Namespace,
+		  	Labels:            obj.Labels,
+		  	Annotations:       obj.Annotations,
+		  	ResourceVersion:   obj.ResourceVersion,
+		  	CreationTimestamp: obj.CreationTimestamp.Time,
+		  	OwnerReferences:   obj.OwnerReferences,
+		  	UID:               string(obj.UID),
+		  	Generation:        obj.Generation,
+		  },
+		  Spec:   {{ if not .NoSpec }}&obj.Spec{{ else }}obj{{ end }},
+      {{- if .StatusKind }}
+		  Status: &obj.Status,
+      {{- end }}
+		}
+	},
+{{- end }}
