@@ -9,12 +9,12 @@ type informer[I Object] struct {
 func (i informer[I]) Register(f func(I)) {
 	addObj := func(obj any) {
 		i := Extract[I](obj)
-		log.Debugf("informer watch add %v", obj)
+		log.Debugf("informer watch add %v", GetKey(obj))
 		f(i)
 	}
 	deleteObj := func(obj any) {
 		i := Extract[I](obj)
-		log.Debugf("informer watch delete %v", obj)
+		log.Debugf("informer watch delete %v", GetKey(obj))
 		f(i)
 	}
 	handler := cache.ResourceEventHandlerFuncs{
@@ -37,8 +37,11 @@ func (i informer[I]) List() []I {
 	})
 }
 
-func (i informer[I]) Get(k string) *I {
-	iff, _, _ := i.inf.GetStore().GetByKey(k)
+func (i informer[I]) Get(k Key[I]) *I {
+	iff, f, _ := i.inf.GetStore().GetByKey(string(k))
+	if !f {
+		return nil
+	}
 	r := iff.(I)
 	return &r
 }

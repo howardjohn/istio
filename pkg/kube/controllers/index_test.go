@@ -19,24 +19,23 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/tools/cache"
+
 	meshapi "istio.io/api/mesh/v1alpha1"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/mesh"
-	istiolog "istio.io/pkg/log"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/informers"
-
-	"golang.org/x/exp/maps"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/cache"
-
 	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/test/util/retry"
+	istiolog "istio.io/pkg/log"
 )
 
 type SaNode struct {
@@ -213,17 +212,19 @@ func makeConfigMapWithName(name, resourceVersion string, data map[string]string)
 	}
 }
 
-type EqualerString string
-
-func (e EqualerString) Equals(k EqualerString) bool {
-	return string(e) == string(k)
+type StaticKey[O any] struct {
+	Obj O
+	K   Key[O]
 }
 
-func (e EqualerString) Key() string {
-	return string(e)
+func (k StaticKey[O]) Key() Key[StaticKey[O]] {
+	return Key[StaticKey[O]](k.K)
 }
 
-var _ Equaler[EqualerString] = EqualerString("")
+func (k StaticKey[O]) Equals(o StaticKey[O]) bool {
+	// Delegate to inside object
+	return Equal(k.Obj, o.Obj)
+}
 
 func meshConfig(t *testing.T, c kube.Client) {
 	log.SetOutputLevel(istiolog.DebugLevel)
@@ -245,37 +246,44 @@ func meshConfig(t *testing.T, c kube.Client) {
 	core := InformerToWatcher[*corev1.ConfigMap](coreInf)
 	user := InformerToWatcher[*corev1.ConfigMap](userInf)
 
-	cd := Direct[*corev1.ConfigMap, EqualerString](core, func(i *corev1.ConfigMap) EqualerString {
-		return EqualerString(meshConfigMapData(i, "mesh"))
+	cd := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](core, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
+		if i.Name != "istio" { // fake client won't filter.
+			return nil
+		}
+		return &StaticKey[EqualerString]{EqualerString(meshConfigMapData(i, "mesh")), "istio"}
 	})
-	ud := Direct[*corev1.ConfigMap, EqualerString](user, func(i *corev1.ConfigMap) EqualerString {
-		return EqualerString(meshConfigMapData(i, "mesh"))
+	ud := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](user, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
+		if i.Name != "istio-user" { // fake client won't filter.
+			return nil
+		}
+		return &StaticKey[EqualerString]{EqualerString(meshConfigMapData(i, "mesh")), "istio-user"}
 	})
 
 	combined := Join(cd, ud,
-		func(a EqualerString, b EqualerString) bool {
-			return true
-		},
-		func(a EqualerString, b []EqualerString) *meshapi.MeshConfig {
+		func(core, user *StaticKey[EqualerString]) *StaticKey[*meshapi.MeshConfig] {
 			mc := mesh.DefaultMeshConfig()
-			order := append([]EqualerString{}, b...) // order matters
-			order = append(order, a) // order matters
-			log.Errorf("howardjohn: ---%v", len(b))
+			order := []string{}
+			if user != nil {
+				order = append(order, string(user.Obj))
+			}
+			if core != nil {
+				order = append(order, string(core.Obj))
+			}
+			log.Errorf("howardjohn: --")
 			for _, yml := range order {
-				mcn, err := mesh.ApplyMeshConfig(string(yml), mc)
+				log.Errorf("howardjohn: apply %v", yml)
+				mcn, err := mesh.ApplyMeshConfig(yml, mc)
 				if err != nil {
 					log.Error(err)
 					continue
 				}
-				log.Errorf("howardjohn: join %v", mcn.IngressClass)
 				mc = mcn
 			}
-			return mc
+			return &StaticKey[*meshapi.MeshConfig]{mc, "mesh"}
 		})
-	combined.Register(func(config *meshapi.MeshConfig) {
-		log.Infof("New mesh cfg: %v", config.GetIngressClass())
+	combined.Register(func(config StaticKey[*meshapi.MeshConfig]) {
+		log.Infof("New mesh cfg: %v", config.Obj.GetIngressClass())
 	})
-
 
 	cmCore := makeConfigMapWithName("istio", "1", map[string]string{
 		"mesh": "ingressClass: core",
@@ -287,17 +295,24 @@ func meshConfig(t *testing.T, c kube.Client) {
 		"mesh": "ingressClass: alt",
 	})
 	cms := c.Kube().CoreV1().ConfigMaps("istio-system")
-	if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
+	t.Log("insert user")
+	if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(time.Millisecond * 100)
-	t.Log("insert user")
-	if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
+	t.Log("create core")
+	if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	t.Log("update core")
 	time.Sleep(time.Millisecond * 100)
 	if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Millisecond * 100)
+	t.Log("delete core")
+	time.Sleep(time.Millisecond * 100)
+	if err := cms.Delete(context.Background(), cmCoreAlt.Name, metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(time.Millisecond * 100)
@@ -314,16 +329,16 @@ func TestDependency(t *testing.T) {
 	// I now have a stream for PodInfo
 	podInfo := Direct[*corev1.Pod, PodInfo](
 		pods,
-		func(i *corev1.Pod) PodInfo {
+		func(i *corev1.Pod) *PodInfo {
 			k, _ := cache.MetaNamespaceKeyFunc(i)
-			return PodInfo{Name: k, Labels: i.Labels}
+			return &PodInfo{Name: k, Labels: i.Labels}
 		})
 	// I now have a stream for ServiceInfo
 	svcInfo := Direct[*corev1.Service, ServiceInfo](
 		services,
-		func(i *corev1.Service) ServiceInfo {
+		func(i *corev1.Service) *ServiceInfo {
 			k, _ := cache.MetaNamespaceKeyFunc(i)
-			return ServiceInfo{Name: k, Selector: i.Spec.Selector}
+			return &ServiceInfo{Name: k, Selector: i.Spec.Selector}
 		})
 
 	c.RunAndWait(test.NewStop(t))
@@ -340,7 +355,7 @@ func TestDependency(t *testing.T) {
 			ServiceNames: svcs,
 		}
 	}
-	podSvc := Join[PodInfo, ServiceInfo, PodSvc](podInfo, svcInfo, match, convert)
+	podSvc := SingleToMany[PodInfo, ServiceInfo, PodSvc](podInfo, svcInfo, match, convert)
 	podSvc.Register(func(ps PodSvc) {
 		log.Infof("computed new PodSvc: %+v", ps)
 	})

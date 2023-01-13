@@ -1,18 +1,29 @@
 package controllers
 
 import (
-	"github.com/sasha-s/go-deadlock"
+	"fmt"
+	"sync"
+
 	"golang.org/x/exp/maps"
+
 	"istio.io/istio/pkg/util/sets"
 )
 
+type joined[A any, B any, O any] struct {
+	o    O
+	aKey *Key[A]
+	bKey *Key[B]
+}
+
 type join[A any, B any, O any] struct {
-	mu       deadlock.RWMutex
-	objects  map[string]ObjectDependencies[O]
+	mu       sync.RWMutex
+	objects  map[Key[O]]joined[A, B, O]
+	aIndex   map[Key[A]]sets.Set[Key[O]]
+	bIndex   map[Key[B]]sets.Set[Key[O]]
 	handlers []func(O)
 }
 
-func (j *join[A, B, O]) Get(k string) *O {
+func (j *join[A, B, O]) Get(k Key[O]) *O {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
 	o, f := j.objects[k]
@@ -23,10 +34,16 @@ func (j *join[A, B, O]) Get(k string) *O {
 }
 
 func (j *join[A, B, O]) Handle(conv O) {
+	if !j.mu.TryRLock() {
+		panic("handle called with lock!")
+	} else {
+		j.mu.RUnlock()
+	}
 	for _, hh := range j.handlers {
 		hh(conv)
 	}
 }
+
 func (j *join[A, B, O]) Register(f func(O)) {
 	j.handlers = append(j.handlers, f)
 }
@@ -34,89 +51,119 @@ func (j *join[A, B, O]) Register(f func(O)) {
 func (j *join[A, B, O]) List() []O {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
-	return Map(maps.Values(j.objects), func(t ObjectDependencies[O]) O {
+	return Map(maps.Values(j.objects), func(t joined[A, B, O]) O {
 		return t.o
 	})
 }
 
+// Join merges two objects, A and B, into a third O.
+// Behavior is weird, we will call with all (a,b) pairs, but (a,nil) and (nil,b) if there are no A's or B's
 func Join[A any, B any, O any](
 	a Watcher[A],
 	b Watcher[B],
-	match func(a A, b B) bool,
-	conv func(a A, b []B) O,
+	conv func(a *A, b *B) *O,
 ) Watcher[O] {
 	j := &join[A, B, O]{
-		objects: make(map[string]ObjectDependencies[O]),
+		objects: make(map[Key[O]]joined[A, B, O]),
+		aIndex:  map[Key[A]]sets.Set[Key[O]]{},
+		bIndex:  map[Key[B]]sets.Set[Key[O]]{},
 	}
+
+	ta := *new(A)
+	tb := *new(B)
+	to := *new(O)
+	log := log.WithLabels("origin", fmt.Sprintf("join[%T,%T,%T]", ta, tb, to))
+
 	a.Register(func(ai A) {
-		key := Key(ai)
+		key := GetKey(ai)
+		log := log.WithLabels("key", key, "reason", "A")
+		log.Debugf("event")
 		j.mu.Lock()
-		defer j.mu.Unlock() // TODO: unlock before handle, read lock with upgrade
-		log.Debugf("Join got new A %v", key)
-		oOld, f := j.objects[key]
-		bs := b.List()
-		matches := []B{}
-		matchKeys := sets.New[string]()
-		for _, bi := range bs {
-			if match(ai, bi) {
-				matches = append(matches, bi)
-				matchKeys.Insert(Key(bi))
+		// First, clear out old state. We could be more incremental in the future
+		for oKey := range j.aIndex[key] {
+			prev, pf := j.objects[oKey]
+			delete(j.objects, oKey)
+			if pf && prev.bKey != nil {
+				sets.DeleteCleanupLast(j.bIndex, *prev.bKey, oKey)
 			}
 		}
-		oNew := conv(ai, matches)
-		// Always update, in case dependencies changed
-		j.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
-		if f && Equal(oOld.o, oNew) {
-			log.Debugf("no changes on A")
-			return
+		cur := a.Get(key)
+		// Now we have an "A"... find all relevant "B"
+		bs := b.List()
+		toCall := []O{}
+		for _, bi := range bs {
+			res := conv(cur, &bi)
+			if res == nil {
+				// Nothing to do since we already cleaned up earlier
+				continue
+			}
+			oKey := GetKey(*res)
+			bKey := GetKey(bi)
+			j.objects[oKey] = joined[A, B, O]{o: *res, aKey: &key, bKey: &bKey}
+			j.aIndex[key] = sets.InsertOrNew(j.aIndex[key], oKey)
+			j.bIndex[bKey] = sets.InsertOrNew(j.bIndex[bKey], oKey)
+			toCall = append(toCall, *res)
 		}
-		j.Handle(oNew)
+		if cur != nil && len(bs) == 0 {
+			// Also try inserting without a B
+			res := conv(cur, nil)
+			if res != nil {
+				oKey := GetKey(*res)
+				j.objects[oKey] = joined[A, B, O]{o: *res, bKey: nil, aKey: &key}
+				j.aIndex[key] = sets.InsertOrNew(j.aIndex[key], oKey)
+				toCall = append(toCall, *res)
+			}
+		}
+
+		j.mu.Unlock()
+		for _, c := range toCall {
+			j.Handle(c)
+		}
 	})
 	b.Register(func(bi B) {
-		log.Debugf("Join got new B %v", Key(bi))
-
+		key := GetKey(bi)
+		log := log.WithLabels("key", key, "reason", "B")
+		log.Debugf("event")
 		j.mu.Lock()
-		defer j.mu.Unlock() // TODO: unlock before handle, read lock with upgrade
-		for _, ai := range a.List() {
-			key := Key(ai)
-			oOld, f := j.objects[key]
-			var deps sets.String
-			if match(ai, bi) {
-				// We know it depends on all old things, and this new key (it may have already depended on this, though)
-				deps = oOld.dependencies.Copy().Insert(Key(bi))
-				log.Debugf("a %v matches b %v", Key(ai), Key(bi))
-			} else {
-				if !oOld.dependencies.Contains(Key(bi)) {
-					log.Debugf("entirely skip %v", key)
-					continue
-				}
-				// We know it depends on all old things, and but not this new key
-				deps = oOld.dependencies.Copy().Delete(Key(bi))
-				log.Debugf("a %v does not match b anyhmore %v", Key(ai), Key(bi))
+		// First, clear out old state. We could be more incremental in the future
+		for oKey := range j.bIndex[key] {
+			prev, pf := j.objects[oKey]
+			delete(j.objects, oKey)
+			if pf && prev.aKey != nil {
+				sets.DeleteCleanupLast(j.aIndex, *prev.aKey, oKey)
 			}
+		}
+		cur := b.Get(key)
+		// Now we have an "B"... find all relevant "A"
+		as := a.List()
+		toCall := []O{}
+		for _, ai := range as {
+			res := conv(&ai, cur)
+			if res == nil {
+				// Nothing to do since we already cleaned up earlier
+				continue
+			}
+			oKey := GetKey(*res)
+			aKey := GetKey(ai)
+			j.objects[oKey] = joined[A, B, O]{o: *res, bKey: &key, aKey: &aKey}
+			j.aIndex[aKey] = sets.InsertOrNew(j.aIndex[aKey], oKey)
+			j.bIndex[key] = sets.InsertOrNew(j.bIndex[key], oKey)
+			toCall = append(toCall, *res)
+		}
+		if cur != nil && len(as) == 0 {
+			// Also try inserting without an A
+			res := conv(nil, cur)
+			if res != nil {
+				oKey := GetKey(*res)
+				j.objects[oKey] = joined[A, B, O]{o: *res, bKey: &key, aKey: nil}
+				j.bIndex[key] = sets.InsertOrNew(j.bIndex[key], oKey)
+				toCall = append(toCall, *res)
+			}
+		}
 
-			matches := []B{}
-			matchKeys := sets.New[string]()
-			for bKey := range deps {
-				bip := b.Get(bKey)
-				if bip == nil {
-					continue
-				}
-				bi := *bip
-				if match(ai, bi) {
-					matches = append(matches, bi)
-					matchKeys.Insert(Key(bi))
-				}
-			}
-			oNew := conv(ai, matches)
-
-			// Always update, in case dependencies changed
-			j.objects[key] = ObjectDependencies[O]{o: oNew, dependencies: matchKeys}
-			if f && Equal(oOld.o, oNew) {
-				log.Debugf("no changes on B")
-				return
-			}
-			j.Handle(oNew)
+		j.mu.Unlock()
+		for _, c := range toCall {
+			j.Handle(c)
 		}
 	})
 	return j

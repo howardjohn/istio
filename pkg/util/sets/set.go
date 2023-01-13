@@ -222,3 +222,9 @@ func InsertOrNew[T comparable](s Set[T], t T) Set[T] {
 	s.Insert(t)
 	return s
 }
+
+func DeleteCleanupLast[K comparable, T comparable](m map[K]Set[T], k K, v T) {
+	if m[k].Delete(v).IsEmpty() {
+		delete(m, k)
+	}
+}

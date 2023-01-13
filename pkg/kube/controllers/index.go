@@ -27,13 +27,17 @@ import (
 	"istio.io/istio/pkg/util/sets"
 )
 
+type StringKeyer[O any] interface {
+	Key() Key[O]
+}
+
 type Keyer[K comparable] interface {
 	Key() K
 }
 
 type Overlay[I runtime.Object, K comparable, O Keyer[K]] struct {
-	mu       sync.RWMutex
-	objects  map[K]O
+	mu             sync.RWMutex
+	objects        map[K]O
 	namespaceIndex map[string]sets.Set[K]
 }
 
@@ -77,9 +81,9 @@ func CreateOverlay[I Object, K comparable, O Keyer[K]](
 	convert func(i I) O,
 ) *Overlay[I, K, O] {
 	idx := Overlay[I, K, O]{
-		objects:  make(map[K]O),
+		objects:        make(map[K]O),
 		namespaceIndex: make(map[string]sets.Set[K]),
-		mu:       sync.RWMutex{},
+		mu:             sync.RWMutex{},
 	}
 	addObj := func(obj any) {
 		i := Extract[I](obj)
@@ -123,7 +127,6 @@ func CreateOverlay[I Object, K comparable, O Keyer[K]](
 type HandleInformer interface {
 	AddEventHandler(handler cache.ResourceEventHandler)
 }
-
 
 // Index maintains a simple index over an informer
 type Index[O runtime.Object, K comparable] struct {
