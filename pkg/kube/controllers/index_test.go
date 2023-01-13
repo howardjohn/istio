@@ -210,6 +210,7 @@ func makeConfigMapWithName(name, resourceVersion string, data map[string]string)
 	}
 }
 
+// TODO: option to convet handlers of StaticKey type to without key, assuming singleton
 type StaticKey[O any] struct {
 	Obj O
 	K   Key[O]
@@ -242,20 +243,20 @@ func MeshConfigWatcher(c kube.Client, stop <-chan struct{}) Watcher[StaticKey[*m
 	inf := WatcherFor[*corev1.ConfigMap](c)
 	c.RunAndWait(stop)
 
-	cd := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](inf, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
+	cd := Direct[*corev1.ConfigMap, StaticKey[EqualerString]]("istio ConfigMap", inf, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
 		if i.Name != "istio" { // fake client won't filter.
 			return nil
 		}
 		return &StaticKey[EqualerString]{EqualerString(meshConfigMapData(i, "mesh")), "istio"}
 	})
-	ud := Direct[*corev1.ConfigMap, StaticKey[EqualerString]](inf, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
+	ud := Direct[*corev1.ConfigMap, StaticKey[EqualerString]]("istio-user ConfigMap", inf, func(i *corev1.ConfigMap) *StaticKey[EqualerString] {
 		if i.Name != "istio-user" { // fake client won't filter.
 			return nil
 		}
 		return &StaticKey[EqualerString]{EqualerString(meshConfigMapData(i, "mesh")), "istio-user"}
 	})
 
-	combined := Join(cd, ud,
+	combined := Join("Merged MeshConfig", cd, ud,
 		func(core, user *StaticKey[EqualerString]) *StaticKey[*meshapi.MeshConfig] {
 			mc := mesh.DefaultMeshConfig()
 			order := []string{}
@@ -278,7 +279,7 @@ func MeshConfigWatcher(c kube.Client, stop <-chan struct{}) Watcher[StaticKey[*m
 	return combined
 }
 
-func meshConfig(t *testing.T, c kube.Client) {
+func meshConfig(t *testing.T, c kube.Client) Watcher[StaticKey[*meshapi.MeshConfig]] {
 	meshh := MeshConfigWatcher(c, test.NewStop(t))
 	cur := atomic.NewString("")
 	meshh.Register(func(config StaticKey[*meshapi.MeshConfig]) {
@@ -328,17 +329,20 @@ func meshConfig(t *testing.T, c kube.Client) {
 	retry.UntilOrFail(t, func() bool { return cur.Load() == "user" })
 
 	t.Log("done")
+
+	return meshh
 }
 
 func TestDependency(t *testing.T) {
 	c := kube.NewFakeClient()
-	meshConfig(t, c)
-	c.DAG().X()
-	return
+	defer c.DAG().X()
+	meshh := meshConfig(t, c)
+	_ = meshh
 	pods := InformerToWatcher[*corev1.Pod](c.DAG(), c.KubeInformer().Core().V1().Pods().Informer())
 	services := InformerToWatcher[*corev1.Service](c.DAG(), c.KubeInformer().Core().V1().Services().Informer())
 	// I now have a stream for PodInfo
 	podInfo := Direct[*corev1.Pod, PodInfo](
+		"PodInfo",
 		pods,
 		func(i *corev1.Pod) *PodInfo {
 			k, _ := cache.MetaNamespaceKeyFunc(i)
@@ -346,13 +350,14 @@ func TestDependency(t *testing.T) {
 		})
 	// I now have a stream for ServiceInfo
 	svcInfo := Direct[*corev1.Service, ServiceInfo](
+		"ServiceInfo",
 		services,
 		func(i *corev1.Service) *ServiceInfo {
 			k, _ := cache.MetaNamespaceKeyFunc(i)
 			return &ServiceInfo{Name: k, Selector: i.Spec.Selector}
 		})
 
-	c.RunAndWait(test.NewStop(t))
+	//c.RunAndWait(test.NewStop(t))
 	match := func(a PodInfo, b ServiceInfo) bool {
 		return labels.Instance(b.Selector).SubsetOf(a.Labels)
 	}
@@ -366,7 +371,10 @@ func TestDependency(t *testing.T) {
 			ServiceNames: svcs,
 		}
 	}
-	podSvc := SingleToMany[PodInfo, ServiceInfo, PodSvc](podInfo, svcInfo, match, convert)
+	podSvc := SingleToMany[PodInfo, ServiceInfo, PodSvc]("PodSvc", podInfo, svcInfo, match, convert)
+	_ = Join[PodSvc, StaticKey[*meshapi.MeshConfig], PodSvc]("todo", podSvc, meshh, func(a *PodSvc, b *StaticKey[*meshapi.MeshConfig]) *PodSvc {
+		return nil
+	})
 	podSvc.Register(func(ps PodSvc) {
 		log.Infof("computed new PodSvc: %+v", ps)
 	})

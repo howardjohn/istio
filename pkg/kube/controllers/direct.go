@@ -56,13 +56,16 @@ func (h *direct[O]) Name() string {
 	return h.name
 }
 
-func Direct[I any, O any](input Watcher[I], convert func(i I) *O) Watcher[O] {
+func Direct[I any, O any](name string, input Watcher[I], convert func(i I) *O) Watcher[O] {
 	ti := *new(I)
 	to := *new(O)
+	if name == "" {
+		name = fmt.Sprintf("direct[%T,%T]", ti, to)
+	}
 	h := &direct[O]{
 		objects: make(map[Key[O]]O),
 		mu:      sync.RWMutex{},
-		name: fmt.Sprintf("direct[%T,%T]", ti, to),
+		name: name,
 		parent: input,
 	}
 	input.AddDependency([]string{h.name})

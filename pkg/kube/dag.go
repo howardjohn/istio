@@ -4,7 +4,6 @@ import (
 	"os"
 
 	"github.com/dominikbraun/graph"
-	"github.com/dominikbraun/graph/draw"
 	"istio.io/pkg/log"
 )
 
@@ -24,7 +23,7 @@ type Registerer interface {
 }
 
 func (d *DAG) X() {
-	draw.DOT(d.graph, os.Stdout)
+	Mermaid(d.graph, os.Stdout)
 }
 // 0 -> 1 -> 2 ..
 func (d *DAG) AddDependency(chain []string) {
@@ -32,7 +31,7 @@ func (d *DAG) AddDependency(chain []string) {
 	for i := range chain[:len(chain)-1] {
 		d.graph.AddVertex(chain[i])
 		d.graph.AddVertex(chain[i+1])
-		d.graph.AddEdge(chain[i], chain[i+1])
+		d.graph.AddEdge(chain[i+1], chain[i])
 	}
 }
 

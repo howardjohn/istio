@@ -1,20 +1,27 @@
 package controllers
 
 import (
+	"fmt"
 	"sync"
 
 	"golang.org/x/exp/maps"
+	"istio.io/istio/pkg/kube"
 )
 
 type singleToMany[A any, B any, O any] struct {
 	mu       sync.RWMutex
 	objects  map[Key[O]]ObjectDependencies[O]
 	handlers []func(O)
+
+	parentA kube.Registerer
+	parentB kube.Registerer
+	name     string
 }
 
 func (j *singleToMany[A, B, O]) AddDependency(chain []string) {
-	//TODO implement me
-	panic("implement me")
+	chain = append(chain, j.Name())
+	j.parentA.AddDependency(chain)
+	j.parentB.AddDependency(chain)
 }
 
 func (j *singleToMany[A, B, O]) Get(k Key[O]) *O {
@@ -41,7 +48,7 @@ func (j *singleToMany[A, B, O]) Handle(conv O) {
 }
 
 func (j *singleToMany[A, B, O]) Name() string {
-	return "singleToMany"
+	return j.name
 }
 
 func (j *singleToMany[A, B, O]) Register(f func(O)) {
@@ -57,14 +64,26 @@ func (j *singleToMany[A, B, O]) List() []O {
 }
 
 func SingleToMany[A any, B any, O any](
+	name string,
 	a Watcher[A],
 	b Watcher[B],
 	match func(a A, b B) bool,
 	conv func(a A, b []B) O,
 ) Watcher[O] {
+	ta := *new(A)
+	tb := *new(B)
+	to := *new(O)
+	if name == "" {
+		name = fmt.Sprintf("singleToMany[%T,%T,%T]", ta, tb, to)
+	}
 	j := &singleToMany[A, B, O]{
 		objects: make(map[Key[O]]ObjectDependencies[O]),
+		name: name,
+		parentA: a,
+		parentB: b,
 	}
+	a.AddDependency([]string{j.name})
+	b.AddDependency([]string{j.name})
 
 	//ta := *new(A)
 	//tb := *new(B)

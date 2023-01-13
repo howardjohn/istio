@@ -73,6 +73,7 @@ func (j *join[A, B, O]) Name() string {
 // Join merges two objects, A and B, into a third O.
 // Behavior is weird, we will call with all (a,b) pairs, but (a,nil) and (nil,b) if there are no A's or B's
 func Join[A any, B any, O any](
+	name string,
 	a Watcher[A],
 	b Watcher[B],
 	conv func(a *A, b *B) *O,
@@ -80,11 +81,14 @@ func Join[A any, B any, O any](
 	ta := *new(A)
 	tb := *new(B)
 	to := *new(O)
+	if name == "" {
+		name = fmt.Sprintf("join[%T,%T,%T]", ta, tb, to)
+	}
 	j := &join[A, B, O]{
 		objects: make(map[Key[O]]joined[A, B, O]),
 		aIndex:  map[Key[A]]sets.Set[Key[O]]{},
 		bIndex:  map[Key[B]]sets.Set[Key[O]]{},
-		name: fmt.Sprintf("join[%T,%T,%T]", ta, tb, to),
+		name: name,
 		parentA: a,
 		parentB: b,
 	}
