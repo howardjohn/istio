@@ -3,15 +3,24 @@ package cv2
 import (
 	"fmt"
 	"reflect"
+	"sync"
+
+	"go.uber.org/atomic"
+	"istio.io/istio/pkg/kube/controllers"
+	istiolog "istio.io/pkg/log"
 )
 
-type erasedCollection interface {
+var log = istiolog.RegisterScope("cv2", "", 0)
 
+type erasedCollection interface {
+	// TODO: cannot use Event as it assumes Object
+	Register(f func(o controllers.Event))
 }
 
 type Collection[T any] interface {
 	Get(k Key[T]) *T
 	List(namespace string) []T
+	Register(f func(o controllers.Event))
 }
 
 type Singleton[T any] interface {
@@ -21,6 +30,11 @@ type Singleton[T any] interface {
 // singletonAdapter exposes a singleton as a collection
 type singletonAdapter[T any] struct {
 	s Singleton[T]
+}
+
+func (s singletonAdapter[T]) Register(f func(o controllers.Event)) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (s singletonAdapter[T]) Get(k Key[T]) *T {
@@ -59,13 +73,47 @@ func Filter[T any](data []T, f func(T) bool) []T {
 }
 
 type filter struct {
-	name string
+	name      string
 	namespace string
 }
 
+func GetName(a any) string {
+	ak, ok := a.(controllers.Object)
+	if ok {
+		return ak.GetName()
+	}
+	panic(fmt.Sprintf("No Name, got %T", a))
+	return ""
+}
+
+func GetNamespace(a any) string {
+	ak, ok := a.(controllers.Object)
+	if ok {
+		return ak.GetNamespace()
+	}
+	panic(fmt.Sprintf("No Namespace, got %T", a))
+	return ""
+}
+
+func (f filter) Matches(object any) bool {
+	if f.name != "" && f.name != GetName(object) {
+		log.Debugf("no match name: %q vs %q", f.name, GetName(object))
+		return false
+	} else {
+		log.Debugf("matches name: %q vs %q", f.name, GetName(object))
+	}
+	if f.namespace != "" && f.namespace != GetNamespace(object) {
+		log.Debugf("no match namespace: %q vs %q", f.namespace, GetNamespace(object))
+		return false
+	} else {
+		log.Debugf("matches namespace: %q vs %q", f.namespace, GetNamespace(object))
+	}
+	return true
+}
+
 type dependency struct {
-	key depKey
-	dep erasedCollection
+	key    depKey
+	dep    erasedCollection
 	filter filter
 }
 
@@ -73,21 +121,34 @@ type depKey struct {
 	// Explicit name
 	name string
 	// Type. If there are multiple with the same type, name is required
-	dtype string
+	dtype reflect.Type
 }
 
-type handler struct {
-	deps   map[depKey]dependency
-	handle any
+func (d depKey) String() string {
+	return fmt.Sprintf("%v/%v", d.dtype.Name(), d.name)
 }
 
-func (h handler) Get() *T {
-	//TODO implement me
-	panic("implement me")
+type handler[T any] struct {
+	deps    map[depKey]dependency
+	handle  any
+	state   *atomic.Pointer[T]
+	execute func()
+}
+
+type depper interface {
+	getDeps() map[depKey]dependency
+}
+
+func (h *handler[T]) getDeps() map[depKey]dependency {
+	return h.deps
+}
+
+func (h handler[T]) Get() *T {
+	return h.state.Load()
 }
 
 func DependOnCollection[T any](c Collection[T], opts ...DepOption) Option {
-	return func(h *handler) {
+	return func(deps map[depKey]dependency) {
 		d := dependency{
 			dep: c,
 			key: depKey{dtype: getType[T]()},
@@ -95,10 +156,10 @@ func DependOnCollection[T any](c Collection[T], opts ...DepOption) Option {
 		for _, o := range opts {
 			o(&d)
 		}
-		if _, f := h.deps[d.key]; f {
+		if _, f := deps[d.key]; f {
 			panic(fmt.Sprintf("Conflicting dependency already registered, %+v", d.key))
 		}
-		h.deps[d.key] = d
+		deps[d.key] = d
 	}
 }
 
@@ -119,34 +180,103 @@ type HandlerContext interface {
 	_internalHandler()
 }
 
+type hc struct{}
+
+// TODO
+func (h hc) _internalHandler() {}
+
 // Todo.. we need a way to get the current context
 func FetchOneNamed[T any](ctx HandlerContext, name string) *T {
-
+	key := depKey{
+		name:  name,
+		dtype: getType[T](),
+	}
+	h := ctx.(depper)
+	d, f := h.getDeps()[key]
+	if !f {
+		panic(fmt.Sprintf("Dependency for %v not found", key))
+	}
+	dep := d.dep.(Collection[T])
+	// TODO: list it....
+	_ = d
+	// name is wrong
+	var res *T
+	for _, c := range dep.List(d.filter.namespace) {
+		if d.filter.Matches(c) {
+			if res != nil {
+				panic("FetchOne got multiple resources")
+			}
+			res = &c
+		}
+	}
+	return res
 }
 
 type DepOption func(*dependency)
-type Option func(*handler)
+type Option func(map[depKey]dependency)
 
 type HandleEmpty[T any] func(ctx HandlerContext) *T
 
 func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
-	h := &handler{
+	h := &handler[T]{
 		handle: hf,
+		deps:   map[depKey]dependency{},
+		state:  atomic.NewPointer[T](nil),
+	}
+	h.execute = func() {
+		res := hf(h)
+		oldRes := h.state.Swap(res)
+		updated := controllers.Equal(res, oldRes)
+		log.Errorf("howardjohn: updated %v", updated) // TODO: compare
+		// TODO: propogate event
 	}
 	for _, o := range opts {
-		o(h)
+		o(h.deps)
+	}
+	// Populate initial state. It is a singleton so we don't have any hard dependencies
+	h.execute()
+	mu := sync.Mutex{}
+	for _, dep := range h.deps {
+		dep := dep
+		log := log.WithLabels("dep", dep.key)
+		log.Infof("insert dep, filter: %+v", dep.filter)
+		dep.dep.Register(func(o controllers.Event) {
+			mu.Lock()
+			defer mu.Unlock()
+			log.WithLabels("name", GetName(o.New)).Debugf("got event %v", o.Event)
+			switch o.Event {
+			case controllers.EventAdd:
+				if dep.filter.Matches(o.New) {
+					log.Debugf("Add match %v", o.New.GetName())
+					h.execute()
+				} else {
+					log.Debugf("Add no match %v", o.New.GetName())
+				}
+			case controllers.EventDelete:
+			case controllers.EventUpdate:
+				if dep.filter.Matches(o.New) {
+					log.Debugf("Update match %v", o.New.GetName())
+					h.execute()
+				} else if dep.filter.Matches(o.Old) {
+					log.Debugf("Update no match, but used to %v", o.New.GetName())
+					h.execute()
+				} else {
+					log.Debugf("Update no change")
+				}
+			}
+		})
 	}
 	return h
 }
 
-func (h *handler) _internalHandler() {
+func (h *handler[T]) _internalHandler() {
 
 }
 
-func getType[T any]() string {
-	if t := reflect.TypeOf(*new(T)); t.Kind() == reflect.Ptr {
-		return "*" + t.Elem().Name()
-	} else {
-		return t.Name()
-	}
+func (h *handler[T]) FetchOneNamed() {
+
+}
+
+func getType[T any]() reflect.Type {
+	return reflect.TypeOf(*new(T)).Elem()
 }

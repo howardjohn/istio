@@ -5,7 +5,6 @@ import (
 
 	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/kube/controllers"
-	"istio.io/pkg/log"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
 )
@@ -22,30 +21,7 @@ func (i informer[I]) AddDependency(chain []string) {
 	i.r.AddDependency(chain)
 }
 
-func (i informer[I]) Register(f func(I)) {
-	addObj := func(obj any) {
-		i := controllers.Extract[I](obj)
-		log.Debugf("informer watch add %v", controllers.GetKey(obj))
-		f(i)
-	}
-	deleteObj := func(obj any) {
-		i := controllers.Extract[I](obj)
-		log.Debugf("informer watch delete %v", controllers.GetKey(obj))
-		f(i)
-	}
-	handler := cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) {
-			addObj(obj)
-		},
-		UpdateFunc: func(oldObj, newObj any) {
-			addObj(newObj)
-		},
-		DeleteFunc: func(obj any) {
-			deleteObj(obj)
-		},
-	}
-	i.inf.AddEventHandler(handler)
-}
+func (i informer[I]) _internalHandler() {}
 
 func (i informer[I]) Name() string {
 	return fmt.Sprintf("informer[%T]", *new(I))
@@ -67,6 +43,12 @@ func (i informer[I]) Get(k Key[I]) *I {
 	r := iff.(I)
 	return &r
 }
+
+
+func (i informer[I]) Register(f func(o controllers.Event)) {
+	i.inf.AddEventHandler(controllers.EventHandler(f))
+}
+
 
 func InformerToWatcher[I controllers.Object](r kube.Registerer, i cache.SharedIndexInformer) Collection[I] {
 	return informer[I]{r, i}

@@ -28,6 +28,16 @@ type ObjectDependencies[O any] struct {
 	dependencies sets.String
 }
 
+func PtrEqual[O any](a, b *O) bool {
+	if a == nil && b == nil {
+		return false
+	}
+	if b == nil != (a == nil) {
+		return true
+	}
+	return Equal(*a, *b)
+}
+
 func Equal[O any](a, b O) bool {
 	ak, ok := any(a).(Equaler[O])
 	if ok {
