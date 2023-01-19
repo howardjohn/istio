@@ -119,12 +119,16 @@ func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.Mesh
 			log.Errorf("howardjohn: Computing mesh config")
 			meshCfg := mesh.DefaultMeshConfig()
 			cms := []*corev1.ConfigMap{}
-			if f := FetchOneNamed[*corev1.ConfigMap](ctx, "istio-user"); f != nil {
-				cms = append(cms, *f)
-			}
-			if f := FetchOneNamed[*corev1.ConfigMap](ctx, "istio"); f != nil {
-				cms = append(cms, *f)
-			}
+			log.Errorf("howardjohn: fetch user")
+			cms = AppendNonNil(cms, FetchOne[*corev1.ConfigMap](ctx, ConfigMaps, FilterName("istio-user")))
+			log.Errorf("howardjohn: fetch core")
+			cms = AppendNonNil(cms, FetchOne[*corev1.ConfigMap](ctx, ConfigMaps, FilterName("istio")))
+			//if f := FetchOneNamed[*corev1.ConfigMap](ctx, "istio-user"); f != nil {
+			//	cms = append(cms, *f)
+			//}
+			//if f := FetchOneNamed[*corev1.ConfigMap](ctx, "istio"); f != nil {
+			//	cms = append(cms, *f)
+			//}
 			log.Errorf("howardjohn: -1: %v", meshCfg.GetIngressClass())
 			for i, c := range cms {
 				n, err := mesh.ApplyMeshConfig(meshConfigMapData(c), meshCfg)
@@ -133,13 +137,13 @@ func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.Mesh
 					continue
 				}
 				meshCfg = n
-				log.Errorf("howardjohn: %v: %v", i, meshCfg.GetIngressClass())
+				log.Errorf("howardjohn: %v: %v/%v", i, meshCfg.GetIngressClass(), meshConfigMapData(c))
 			}
 			log.Errorf("howardjohn: computed to %v", meshCfg.GetIngressClass())
 			return meshCfg
 		},
-		DependOnCollection[*corev1.ConfigMap](ConfigMaps, FilterName("istio")),
-		DependOnCollection[*corev1.ConfigMap](ConfigMaps, FilterName("istio-user")),
+		//DependOnCollection[*corev1.ConfigMap](ConfigMaps, FilterName("istio")),
+		//DependOnCollection[*corev1.ConfigMap](ConfigMaps, FilterName("istio-user")),
 	)
 	return MeshConfig
 }

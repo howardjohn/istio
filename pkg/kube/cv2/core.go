@@ -62,6 +62,14 @@ func Map[T, U any](data []T, f func(T) U) []U {
 	return res
 }
 
+
+func AppendNonNil[T any](data []T, i *T) []T {
+	if i != nil {
+		data = append(data, *i)
+	}
+	return data
+}
+
 func Filter[T any](data []T, f func(T) bool) []T {
 	fltd := make([]T, 0, len(data))
 	for _, e := range data {
@@ -128,18 +136,23 @@ func (d depKey) String() string {
 	return fmt.Sprintf("%v/%v", d.dtype.Name(), d.name)
 }
 
-type handler[T any] struct {
+type dependencies struct {
 	deps    map[depKey]dependency
-	handle  any
+	finalized bool
+}
+
+type handler[T any] struct {
+	deps   dependencies
+	handle any
 	state   *atomic.Pointer[T]
 	execute func()
 }
 
 type depper interface {
-	getDeps() map[depKey]dependency
+	getDeps() dependencies
 }
 
-func (h *handler[T]) getDeps() map[depKey]dependency {
+func (h *handler[T]) getDeps() dependencies {
 	return h.deps
 }
 
@@ -185,6 +198,53 @@ type hc struct{}
 // TODO
 func (h hc) _internalHandler() {}
 
+
+func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T {
+	// First, set up the dependency. On first run, this will be new.
+	// One subsequent runs, we just validate
+	h := ctx.(depper)
+	d := dependency{
+		dep: c,
+		key: depKey{dtype: getType[T]()},
+	}
+	for _, o := range opts {
+		o(&d)
+	}
+	deps := h.getDeps()
+	_, exists := deps.deps[d.key]
+	if exists && !deps.finalized {
+		panic(fmt.Sprintf("dependency already registered, %+v", d.key))
+	}
+	if !exists && deps.finalized {
+		panic(fmt.Sprintf("dependency registered after initialization, %+v", d.key))
+	}
+	deps.deps[d.key] = d
+
+	if !deps.finalized {
+		return nil
+	}
+
+	// Now we can do the real fetching
+	var res *T
+	for _, c := range c.List(d.filter.namespace) {
+		c := c
+		if d.filter.Matches(c) {
+			if res != nil {
+				panic("FetchOne got multiple resources")
+			}
+			res = &c
+		}
+	}
+	return res
+}
+
+func nilSafeDeref[T any](i *T) any {
+	if i == nil {
+		return i
+	}
+	return *i
+}
+
 // Todo.. we need a way to get the current context
 func FetchOneNamed[T any](ctx HandlerContext, name string) *T {
 	key := depKey{
@@ -192,7 +252,7 @@ func FetchOneNamed[T any](ctx HandlerContext, name string) *T {
 		dtype: getType[T](),
 	}
 	h := ctx.(depper)
-	d, f := h.getDeps()[key]
+	d, f := h.getDeps().deps[key]
 	if !f {
 		panic(fmt.Sprintf("Dependency for %v not found", key))
 	}
@@ -220,7 +280,10 @@ type HandleEmpty[T any] func(ctx HandlerContext) *T
 func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 	h := &handler[T]{
 		handle: hf,
-		deps:   map[depKey]dependency{},
+		deps:   dependencies{
+			deps: map[depKey]dependency{},
+			finalized: false,
+		},
 		state:  atomic.NewPointer[T](nil),
 	}
 	h.execute = func() {
@@ -231,12 +294,17 @@ func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 		// TODO: propogate event
 	}
 	for _, o := range opts {
-		o(h.deps)
+		o(h.deps.deps)
 	}
+	// Run the handler, but do not persist state. This is just to register dependencies
+	// I suppose we could make this also persist state
+	//hf(h)
+	// TODO: wait for dependencies to be ready
 	// Populate initial state. It is a singleton so we don't have any hard dependencies
 	h.execute()
+	h.deps.finalized = true
 	mu := sync.Mutex{}
-	for _, dep := range h.deps {
+	for _, dep := range h.deps.deps {
 		dep := dep
 		log := log.WithLabels("dep", dep.key)
 		log.Infof("insert dep, filter: %+v", dep.filter)
