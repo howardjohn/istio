@@ -243,7 +243,7 @@ func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 		dep.dep.Register(func(o controllers.Event) {
 			mu.Lock()
 			defer mu.Unlock()
-			log.WithLabels("name", GetName(o.New)).Debugf("got event %v", o.Event)
+			log.Debugf("got event %v", o.Event)
 			switch o.Event {
 			case controllers.EventAdd:
 				if dep.filter.Matches(o.New) {
@@ -253,6 +253,12 @@ func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 					log.Debugf("Add no match %v", o.New.GetName())
 				}
 			case controllers.EventDelete:
+				if dep.filter.Matches(o.Old) {
+					log.Debugf("delete match %v", o.Old.GetName())
+					h.execute()
+				} else {
+					log.Debugf("Add no match %v", o.Old.GetName())
+				}
 			case controllers.EventUpdate:
 				if dep.filter.Matches(o.New) {
 					log.Debugf("Update match %v", o.New.GetName())
