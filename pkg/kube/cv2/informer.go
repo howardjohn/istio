@@ -35,7 +35,7 @@ func (i informer[I]) List(namespace string) []I {
 	return res
 }
 
-func (i informer[I]) Get(k Key[I]) *I {
+func (i informer[I]) GetKey(k Key[I]) *I {
 	iff, f, _ := i.inf.GetStore().GetByKey(string(k))
 	if !f {
 		return nil

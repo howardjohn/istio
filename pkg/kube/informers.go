@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
+	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -23,5 +24,6 @@ func InformerFor[I runtime.Object](c Client) cache.SharedIndexInformer {
 	if eq(&corev1.Secret{}) { return c.KubeInformer().Core().V1().Secrets().Informer() }
 	if eq(&corev1.Service{}) { return c.KubeInformer().Core().V1().Services().Informer() }
 	if eq(&corev1.ServiceAccount{}) { return c.KubeInformer().Core().V1().ServiceAccounts().Informer() }
+	if eq(&securityclient.AuthorizationPolicy{}) { return c.IstioInformer().Security().V1beta1().AuthorizationPolicies().Informer() }
 	panic(fmt.Sprintf("Unknown type %T", i))
 }

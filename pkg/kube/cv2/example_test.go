@@ -2,15 +2,26 @@ package cv2
 
 import (
 	"context"
+	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
 	"go.uber.org/atomic"
 	meshapi "istio.io/api/mesh/v1alpha1"
+	"istio.io/istio/pilot/pkg/model"
+	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
+	kubelabels "istio.io/istio/pkg/kube/labels"
+	"istio.io/istio/pkg/spiffe"
+	"istio.io/istio/pkg/test/util/assert"
+
+	//security "istio.io/api/security/v1beta1"
+	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/retry"
+	"istio.io/istio/pkg/workloadapi"
 	istiolog "istio.io/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -119,31 +130,20 @@ func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.Mesh
 			log.Errorf("howardjohn: Computing mesh config")
 			meshCfg := mesh.DefaultMeshConfig()
 			cms := []*corev1.ConfigMap{}
-			log.Errorf("howardjohn: fetch user")
-			cms = AppendNonNil(cms, FetchOne[*corev1.ConfigMap](ctx, ConfigMaps, FilterName("istio-user")))
-			log.Errorf("howardjohn: fetch core")
-			cms = AppendNonNil(cms, FetchOne[*corev1.ConfigMap](ctx, ConfigMaps, FilterName("istio")))
-			//if f := FetchOneNamed[*corev1.ConfigMap](ctx, "istio-user"); f != nil {
-			//	cms = append(cms, *f)
-			//}
-			//if f := FetchOneNamed[*corev1.ConfigMap](ctx, "istio"); f != nil {
-			//	cms = append(cms, *f)
-			//}
-			log.Errorf("howardjohn: -1: %v", meshCfg.GetIngressClass())
-			for i, c := range cms {
+			cms = AppendNonNil(cms, FetchOne(ctx, ConfigMaps, FilterName("istio-user")))
+			cms = AppendNonNil(cms, FetchOne(ctx, ConfigMaps, FilterName("istio")))
+
+			for _, c := range cms {
 				n, err := mesh.ApplyMeshConfig(meshConfigMapData(c), meshCfg)
 				if err != nil {
 					log.Error(err)
 					continue
 				}
 				meshCfg = n
-				log.Errorf("howardjohn: %v: %v/%v", i, meshCfg.GetIngressClass(), meshConfigMapData(c))
 			}
-			log.Errorf("howardjohn: computed to %v", meshCfg.GetIngressClass())
+			log.Errorf("howardjohn: computed mesh config to %v", meshCfg.GetIngressClass())
 			return meshCfg
 		},
-		//DependOnCollection[*corev1.ConfigMap](ConfigMaps, FilterName("istio")),
-		//DependOnCollection[*corev1.ConfigMap](ConfigMaps, FilterName("istio-user")),
 	)
 	return MeshConfig
 }
@@ -151,11 +151,76 @@ func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.Mesh
 func TestWorkload(t *testing.T) {
 	log.SetOutputLevel(istiolog.DebugLevel)
 	c := kube.NewFakeClient()
-	meshConfig(t, c)
-	//Services := Watch[Services]()
-	//Pods := Watch[Pods]()
+	MeshConfig := meshConfig(t, c)
+	_ = MeshConfig
 	//Namespaces := Watch[Namespaces]()
-	//Workloads := Handler(func(p Pod) Workload {
+	AuthzPolicies := CollectionFor[*securityclient.AuthorizationPolicy](c)
+	Services := CollectionFor[*corev1.Service](c)
+	Pods := CollectionFor[*corev1.Pod](c)
+	c.RunAndWait(test.NewStop(t))
+
+	t.Log("spawn workload collectioner")
+	Workloads := NewCollection(Pods, func(ctx HandlerContext, p *corev1.Pod) *workloadapi.Workload {
+		log.Errorf("howardjohn: computing workload for pod %v", p.Name)
+		// TODO: only selector ones
+		policies := Fetch(ctx, AuthzPolicies)
+		policyNames := Map(policies, func(t *securityclient.AuthorizationPolicy) string {
+			return t.Name
+		})
+		//meshCfg := FetchOne(ctx, MeshConfig)
+		services := Fetch(ctx, Services, FilterSelects(p.GetLabels()))
+		vips := constructVIPs(p, services)
+		w := &workloadapi.Workload{
+			Name:                  p.Name,
+			Namespace:             p.Namespace,
+			Address:               netip.MustParseAddr(p.Status.PodIP).AsSlice(),
+			Network:               "TODO", // TODO: this is just an example. Real in In controller
+			ServiceAccount:        p.Spec.ServiceAccountName,
+			WaypointAddresses:     nil, // TODO
+			Node:                  p.Spec.NodeName,
+			NativeHbone:           false,
+			VirtualIps:            vips,
+			AuthorizationPolicies: policyNames,
+		}
+		if td := spiffe.GetTrustDomain(); td != "cluster.local" {
+			w.TrustDomain = td
+		}
+		w.WorkloadName, w.WorkloadType = workloadNameAndType(p)
+		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
+		// TODO:
+		//if c.AmbientEnabled(pod) {
+		//	Configured for override
+		//wl.Protocol = workloadapi.Protocol_HTTP
+		//}
+		// Otherwise supports tunnel directly
+		if model.SupportsTunnel(p.Labels, model.TunnelHTTP) {
+			w.Protocol = workloadapi.Protocol_HTTP
+			w.NativeHbone = true
+		}
+		return w
+	})
+	_ = Workloads
+
+	t.Log("pod1 create")
+	_, err := c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	time.Sleep(time.Millisecond * 50)
+
+	t.Log("pod2 create")
+	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: map[string]string{"app": "bar"}},
+	}, metav1.CreateOptions{})
+	time.Sleep(time.Millisecond * 50)
+
+	t.Log("svc create")
+	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
+	}, metav1.CreateOptions{})
+	time.Sleep(time.Millisecond * 50)
+
 	//	// Read from MeshConfig. There is only one of these, so we don't need any filters.
 	//	mtlsMode := FetchOneNamed(MeshConfig).MtlsMode;
 	//	// Fetch a list of Services, but only ones in the same namespace as Pod that select Pod
@@ -173,4 +238,80 @@ func TestWorkload(t *testing.T) {
 	//				Protocol: protocol,
 	//			}
 	//		})
+}
+
+func constructVIPs(p *corev1.Pod, services []*corev1.Service) map[string]*workloadapi.PortList {
+	vips := map[string]*workloadapi.PortList{}
+	for _, svc := range services {
+		for _, vip := range getVIPs(svc) {
+			if vips[vip] == nil {
+				vips[vip] = &workloadapi.PortList{}
+			}
+			for _, port := range svc.Spec.Ports {
+				if port.Protocol != corev1.ProtocolTCP {
+					continue
+				}
+				targetPort, err := controller.FindPort(p, &port)
+				if err != nil {
+					log.Debug(err)
+					continue
+				}
+				vips[vip].Ports = append(vips[vip].Ports, &workloadapi.Port{
+					ServicePort: uint32(port.Port),
+					TargetPort:  uint32(targetPort),
+				})
+			}
+		}
+	}
+	return vips
+}
+
+func getVIPs(svc *corev1.Service) []string {
+	res := []string{}
+	if svc.Spec.ClusterIP != "" && svc.Spec.ClusterIP != "None" {
+		res = append(res, svc.Spec.ClusterIP)
+	}
+	for _, ing := range svc.Status.LoadBalancer.Ingress {
+		res = append(res, ing.IP)
+	}
+	return res
+}
+
+func workloadNameAndType(pod *corev1.Pod) (string, workloadapi.WorkloadType) {
+	if len(pod.GenerateName) == 0 {
+		return pod.Name, workloadapi.WorkloadType_POD
+	}
+
+	// if the pod name was generated (or is scheduled for generation), we can begin an investigation into the controlling reference for the pod.
+	var controllerRef metav1.OwnerReference
+	controllerFound := false
+	for _, ref := range pod.GetOwnerReferences() {
+		if ref.Controller != nil && *ref.Controller {
+			controllerRef = ref
+			controllerFound = true
+			break
+		}
+	}
+
+	if !controllerFound {
+		return pod.Name, workloadapi.WorkloadType_POD
+	}
+
+	// heuristic for deployment detection
+	if controllerRef.Kind == "ReplicaSet" && strings.HasSuffix(controllerRef.Name, pod.Labels["pod-template-hash"]) {
+		name := strings.TrimSuffix(controllerRef.Name, "-"+pod.Labels["pod-template-hash"])
+		return name, workloadapi.WorkloadType_DEPLOYMENT
+	}
+
+	if controllerRef.Kind == "Job" {
+		// figure out how to go from Job -> CronJob
+		return controllerRef.Name, workloadapi.WorkloadType_JOB
+	}
+
+	if controllerRef.Kind == "CronJob" {
+		// figure out how to go from Job -> CronJob
+		return controllerRef.Name, workloadapi.WorkloadType_CRONJOB
+	}
+
+	return pod.Name, workloadapi.WorkloadType_POD
 }

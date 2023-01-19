@@ -6,8 +6,13 @@ import (
 	"sync"
 
 	"go.uber.org/atomic"
+	"istio.io/api/type/v1beta1"
+	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/kube/controllers"
+	"istio.io/istio/pkg/util/sets"
 	istiolog "istio.io/pkg/log"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 var log = istiolog.RegisterScope("cv2", "", 0)
@@ -18,13 +23,14 @@ type erasedCollection interface {
 }
 
 type Collection[T any] interface {
-	Get(k Key[T]) *T
+	GetKey(k Key[T]) *T
 	List(namespace string) []T
 	Register(f func(o controllers.Event))
 }
 
 type Singleton[T any] interface {
 	Get() *T
+	Register(f func(o controllers.Event))
 }
 
 // singletonAdapter exposes a singleton as a collection
@@ -37,7 +43,7 @@ func (s singletonAdapter[T]) Register(f func(o controllers.Event)) {
 	panic("implement me")
 }
 
-func (s singletonAdapter[T]) Get(k Key[T]) *T {
+func (s singletonAdapter[T]) GetKey(k Key[T]) *T {
 	return s.s.Get()
 }
 
@@ -54,6 +60,15 @@ var _ Collection[any] = &singletonAdapter[any]{}
 // Key is a string, but with a type associated to avoid mixing up keys
 type Key[O any] string
 
+func GetKey[O any](a O) Key[O] {
+	ao, ok := any(a).(controllers.Object)
+	if ok {
+		k, _ := cache.MetaNamespaceKeyFunc(ao)
+		return Key[O](k)
+	}
+	panic(fmt.Sprintf("Cannot get Key, got %T", a))
+	return ""
+}
 func Map[T, U any](data []T, f func(T) U) []U {
 	res := make([]U, 0, len(data))
 	for _, e := range data {
@@ -61,7 +76,6 @@ func Map[T, U any](data []T, f func(T) U) []U {
 	}
 	return res
 }
-
 
 func AppendNonNil[T any](data []T, i *T) []T {
 	if i != nil {
@@ -83,6 +97,7 @@ func Filter[T any](data []T, f func(T) bool) []T {
 type filter struct {
 	name      string
 	namespace string
+	selects   map[string]string
 }
 
 func GetName(a any) string {
@@ -103,6 +118,45 @@ func GetNamespace(a any) string {
 	return ""
 }
 
+func GetLabels(a any) map[string]string {
+	ak, ok := a.(controllers.Object)
+	if ok {
+		return ak.GetLabels()
+	}
+	panic(fmt.Sprintf("No Labels, got %T", a))
+	return nil
+}
+
+func GetLabelSelector(a any) map[string]string {
+	val := reflect.ValueOf(a)
+
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	specField := val.FieldByName("Spec")
+	if !specField.IsValid() {
+		log.Debugf("obj %T has no Spec", a)
+		return nil
+	}
+
+	labelsField := specField.FieldByName("Selector")
+	if !labelsField.IsValid() {
+		log.Debugf("obj %T has no Selector", a)
+		return nil
+	}
+
+	switch s := labelsField.Interface().(type) {
+	case *v1beta1.WorkloadSelector:
+		return s.MatchLabels
+	case map[string]string:
+		return s
+	default:
+		log.Debugf("obj %T has unknown Selector", s)
+		return nil
+	}
+}
+
 func (f filter) Matches(object any) bool {
 	if f.name != "" && f.name != GetName(object) {
 		log.Debugf("no match name: %q vs %q", f.name, GetName(object))
@@ -115,6 +169,12 @@ func (f filter) Matches(object any) bool {
 		return false
 	} else {
 		log.Debugf("matches namespace: %q vs %q", f.namespace, GetNamespace(object))
+	}
+	if f.selects != nil && !labels.Instance(f.selects).SubsetOf(GetLabelSelector(object)) {
+		log.Debugf("no match selects: %q vs %q", f.selects, GetLabelSelector(object))
+		return false
+	} else {
+		log.Debugf("matches selects: %q vs %q", f.selects, GetLabelSelector(object))
 	}
 	return true
 }
@@ -137,15 +197,37 @@ func (d depKey) String() string {
 }
 
 type dependencies struct {
-	deps    map[depKey]dependency
+	deps      map[depKey]dependency
 	finalized bool
 }
 
 type handler[T any] struct {
-	deps   dependencies
-	handle any
-	state   *atomic.Pointer[T]
-	execute func()
+	deps           dependencies
+	handle         any
+	state          *atomic.Pointer[T]
+	collectionState *mutexGuard[index[T]]
+	execute        func()
+	executeOne        func(i any) // always I but erased
+}
+
+type index[T any] struct {
+	objects   map[Key[T]]T
+	namespace map[string]sets.Set[Key[T]]
+}
+
+type mutexGuard[T any] struct {
+	mu   sync.Mutex
+	data T
+}
+
+func newMutex[T any](initial T) *mutexGuard[T] {
+	return &mutexGuard[T]{data: initial}
+}
+
+func (m *mutexGuard[T]) With(f func(T)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f(m.data)
 }
 
 type depper interface {
@@ -160,20 +242,19 @@ func (h handler[T]) Get() *T {
 	return h.state.Load()
 }
 
-func DependOnCollection[T any](c Collection[T], opts ...DepOption) Option {
-	return func(deps map[depKey]dependency) {
-		d := dependency{
-			dep: c,
-			key: depKey{dtype: getType[T]()},
-		}
-		for _, o := range opts {
-			o(&d)
-		}
-		if _, f := deps[d.key]; f {
-			panic(fmt.Sprintf("Conflicting dependency already registered, %+v", d.key))
-		}
-		deps[d.key] = d
-	}
+func (h *handler[T]) GetKey(k Key[T]) *T {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (h *handler[T]) List(namespace string) []T {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (h *handler[T]) Register(f func(o controllers.Event)) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func FilterName(name string) DepOption {
@@ -183,9 +264,9 @@ func FilterName(name string) DepOption {
 	}
 }
 
-func Named(name string) DepOption {
+func FilterSelects(lbls map[string]string) DepOption {
 	return func(h *dependency) {
-		h.key.name = name
+		h.filter.selects = lbls
 	}
 }
 
@@ -193,13 +274,7 @@ type HandlerContext interface {
 	_internalHandler()
 }
 
-type hc struct{}
-
-// TODO
-func (h hc) _internalHandler() {}
-
-
-func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T {
+func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	// First, set up the dependency. On first run, this will be new.
 	// One subsequent runs, we just validate
 	h := ctx.(depper)
@@ -219,23 +294,33 @@ func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T 
 		panic(fmt.Sprintf("dependency registered after initialization, %+v", d.key))
 	}
 	deps.deps[d.key] = d
+	log.Errorf("howardjohn: register %+v", d.key)
 
 	if !deps.finalized {
 		return nil
 	}
 
 	// Now we can do the real fetching
-	var res *T
+	var res []T
 	for _, c := range c.List(d.filter.namespace) {
 		c := c
 		if d.filter.Matches(c) {
-			if res != nil {
-				panic("FetchOne got multiple resources")
-			}
-			res = &c
+			res = append(res, c)
 		}
 	}
 	return res
+}
+
+func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T {
+	res := Fetch[T](ctx, c, opts...)
+	switch len(res) {
+	case 0:
+		return nil
+	case 1:
+		return &res[0]
+	default:
+		panic(fmt.Sprintf("FetchOne found for more than 1 item"))
+	}
 }
 
 func nilSafeDeref[T any](i *T) any {
@@ -245,46 +330,115 @@ func nilSafeDeref[T any](i *T) any {
 	return *i
 }
 
-// Todo.. we need a way to get the current context
-func FetchOneNamed[T any](ctx HandlerContext, name string) *T {
-	key := depKey{
-		name:  name,
-		dtype: getType[T](),
-	}
-	h := ctx.(depper)
-	d, f := h.getDeps().deps[key]
-	if !f {
-		panic(fmt.Sprintf("Dependency for %v not found", key))
-	}
-	dep := d.dep.(Collection[T])
-	// TODO: list it....
-	_ = d
-	// name is wrong
-	var res *T
-	for _, c := range dep.List(d.filter.namespace) {
-		if d.filter.Matches(c) {
-			if res != nil {
-				panic("FetchOne got multiple resources")
-			}
-			res = &c
-		}
-	}
-	return res
-}
-
 type DepOption func(*dependency)
 type Option func(map[depKey]dependency)
 
 type HandleEmpty[T any] func(ctx HandlerContext) *T
+type HandleSingle[I, O any] func(ctx HandlerContext, i I) *O
+
+func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O], opts ...Option) Collection[O] {
+	h := &handler[O]{
+		handle: hf,
+		deps: dependencies{
+			deps:      map[depKey]dependency{},
+			finalized: false,
+		},
+		collectionState: newMutex(index[O]{
+			objects:   map[Key[O]]O{},
+			namespace: map[string]sets.Set[Key[O]]{},
+		}),
+
+	}
+	h.executeOne = func(a any) {
+		i := a.(I)
+		// TODO: pass H with "I" key as context. Dependencies are keyed by I
+		res := hf(h, i)
+		// TODO: not 'state'
+		h.collectionState.With(func(i index[O]) {
+			// TODO: we need the old key and new key
+			// Otherwise we cannot delete
+			if res == nil {
+				log.Errorf("howardjohn: TODO!!! delete")
+			} else {
+				oKey := GetKey(*res)
+				oldRes := i.objects[oKey]
+				i.objects[oKey] = *res
+				updated := controllers.Equal(*res, oldRes)
+				log.Errorf("howardjohn: updated %v", updated)
+			}
+		})
+		// TODO: propogate event
+	}
+	for _, o := range opts {
+		o(h.deps.deps)
+	}
+	// TODO: wait for dependencies to be ready
+	for _, i := range c.List(metav1.NamespaceAll) {
+		h.executeOne(i)
+	}
+	h.deps.finalized = true
+	// Setup primary handler. On any change, trigger only that one
+	c.Register(func(o controllers.Event) {
+		log := log.WithLabels("dep", "primary")
+		log.Debugf("got event %v", o.Event)
+		switch o.Event {
+		case controllers.EventAdd:
+				h.executeOne(o.New)
+		case controllers.EventDelete:
+			// TODO: just delete, never need to re-run
+		case controllers.EventUpdate:
+			h.executeOne(o.New)
+		}
+	})
+	// TODO: handle sub-deps
+	//mu := sync.Mutex{}
+	//for _, dep := range h.deps.deps {
+	//	dep := dep
+	//	log := log.WithLabels("dep", dep.key)
+	//	log.Infof("insert dep, filter: %+v", dep.filter)
+	//	dep.dep.Register(func(o controllers.Event) {
+	//		mu.Lock()
+	//		defer mu.Unlock()
+	//		log.Debugf("got event %v", o.Event)
+	//		switch o.Event {
+	//		case controllers.EventAdd:
+	//			if dep.filter.Matches(o.New) {
+	//				log.Debugf("Add match %v", o.New.GetName())
+	//				h.executeOne()
+	//			} else {
+	//				log.Debugf("Add no match %v", o.New.GetName())
+	//			}
+	//		case controllers.EventDelete:
+	//			if dep.filter.Matches(o.Old) {
+	//				log.Debugf("delete match %v", o.Old.GetName())
+	//				h.executeOne()
+	//			} else {
+	//				log.Debugf("Add no match %v", o.Old.GetName())
+	//			}
+	//		case controllers.EventUpdate:
+	//			if dep.filter.Matches(o.New) {
+	//				log.Debugf("Update match %v", o.New.GetName())
+	//				h.executeOne()
+	//			} else if dep.filter.Matches(o.Old) {
+	//				log.Debugf("Update no match, but used to %v", o.New.GetName())
+	//				h.executeOne()
+	//			} else {
+	//				log.Debugf("Update no change")
+	//			}
+	//		}
+	//	})
+	//}
+	return h
+}
 
 func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 	h := &handler[T]{
 		handle: hf,
-		deps:   dependencies{
-			deps: map[depKey]dependency{},
+		deps: dependencies{
+			deps:      map[depKey]dependency{},
 			finalized: false,
 		},
-		state:  atomic.NewPointer[T](nil),
+		state: atomic.NewPointer[T](nil),
 	}
 	h.execute = func() {
 		res := hf(h)
@@ -344,10 +498,6 @@ func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 }
 
 func (h *handler[T]) _internalHandler() {
-
-}
-
-func (h *handler[T]) FetchOneNamed() {
 
 }
 
