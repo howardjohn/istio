@@ -18,14 +18,17 @@ import (
 	"context"
 	"fmt"
 
+	"istio.io/istio/pkg/ptr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
+	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/gateway-api/apis/v1alpha2"
+	"sigs.k8s.io/gateway-api/apis/v1beta1"
 	gwlister "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1alpha2"
 	"sigs.k8s.io/yaml"
 
@@ -189,6 +192,15 @@ func (rc *WaypointProxyController) Reconcile(name types.NamespacedName) error {
 		if err != nil {
 			return fmt.Errorf("waypoint deployment patch error: %v", err)
 		}
+		_, err = rc.client.Kube().
+			CoreV1().
+			Services(name.Namespace).
+			Apply(context.Background(), rc.RenderServiceApply(input), metav1.ApplyOptions{
+				Force: true, FieldManager: waypointFM,
+			})
+		if err != nil {
+			return fmt.Errorf("waypoint service patch error: %v", err)
+		}
 		rc.registerWaypointUpdate(gw, gatewaySA, log)
 	}
 	return nil
@@ -236,6 +248,13 @@ func (rc *WaypointProxyController) UpdateStatus(
 			Namespace: gw.Namespace,
 		},
 		Status: v1alpha2.GatewayStatus{
+			// Report Gateway Service Hostname as an address. This allows finding the instances (Pods) of the Gateway.
+			// In the current implementation, this is just a headless service to reduce the overhead of an unused ClusterIP, hence
+			// the Hostname type. If desired, an IP could be used (possibly in addition).
+			Addresses: []v1alpha2.GatewayAddress{{
+				Type:  ptr.From(v1beta1.HostnameAddressType),
+				Value: gw.Name,
+			}},
 			Conditions: istiogw.SetConditions(gw.Generation, nil, conditions),
 		},
 	}
@@ -264,6 +283,18 @@ func (rc *WaypointProxyController) ApplyObject(
 	waypointLog.Debugf("applying %v", string(j))
 
 	return rc.patcher(gvr, obj.GetName(), obj.GetNamespace(), j, subresources...)
+}
+
+func (rc *WaypointProxyController) RenderServiceApply(
+	input MergedInput,
+) *corev1ac.ServiceApplyConfiguration {
+	name := fmt.Sprintf("%s-waypoint-proxy", input.ServiceAccount)
+	return corev1ac.Service(name, input.Namespace).
+		WithLabels(map[string]string{istiogw.GatewayNameLabel: input.GatewayName}).
+		WithSpec(corev1ac.ServiceSpec().
+			WithClusterIP("None").
+			WithSelector(map[string]string{"ambient-proxy": name}).
+			WithPorts(corev1ac.ServicePort().WithPort(15008).WithName("hbone").WithAppProtocol("https")))
 }
 
 func (rc *WaypointProxyController) RenderDeploymentApply(
