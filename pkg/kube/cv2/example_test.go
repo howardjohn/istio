@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/atomic"
 	meshapi "istio.io/api/mesh/v1alpha1"
+	"istio.io/istio/pilot/pkg/ambient/ambientpod"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	kubelabels "istio.io/istio/pkg/kube/labels"
@@ -155,6 +156,7 @@ func TestWorkload(t *testing.T) {
 	AuthzPolicies := CollectionFor[*securityclient.AuthorizationPolicy](c)
 	Services := CollectionFor[*corev1.Service](c)
 	Pods := CollectionFor[*corev1.Pod](c)
+	Namespaces := CollectionFor[*corev1.Namespace](c)
 	c.RunAndWait(test.NewStop(t))
 
 	t.Log("spawn workload collectioner")
@@ -165,7 +167,8 @@ func TestWorkload(t *testing.T) {
 		policyNames := Map(policies, func(t *securityclient.AuthorizationPolicy) string {
 			return t.Name
 		})
-		//meshCfg := FetchOne(ctx, MeshConfig)
+		meshCfg := FetchOne(ctx, MeshConfig.AsCollection())
+		namespace := Flatten(FetchOne(ctx, Namespaces, FilterName(p.Namespace)))
 		services := Fetch(ctx, Services, FilterSelects(p.GetLabels()))
 		vips := constructVIPs(p, services)
 		w := &workloadapi.Workload{
@@ -186,11 +189,10 @@ func TestWorkload(t *testing.T) {
 		}
 		w.WorkloadName, w.WorkloadType = workloadNameAndType(p)
 		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
-		// TODO:
-		//if c.AmbientEnabled(pod) {
-		//	Configured for override
-		//wl.Protocol = workloadapi.Protocol_HTTP
-		//}
+		if ambientpod.ShouldPodBeInIpset(namespace, p, meshCfg.GetAmbientMesh().GetMode().String(), true) {
+			//Configured for override
+			w.Protocol = workloadapi.Protocol_HTTP
+		}
 		// Otherwise supports tunnel directly
 		if model.SupportsTunnel(p.Labels, model.TunnelHTTP) {
 			w.Protocol = workloadapi.Protocol_HTTP
@@ -227,19 +229,32 @@ func TestWorkload(t *testing.T) {
 		return Workloads.GetKey("10.0.0.3") != nil
 	}, retry.Timeout(time.Second))
 
-
 	t.Log("svc create")
 	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
 		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}, ClusterIP: "10.1.0.1"},
 	}, metav1.CreateOptions{})
 	retry.UntilOrFail(t, func() bool {
-		w :=  Workloads.GetKey("10.0.0.2")
+		w := Workloads.GetKey("10.0.0.2")
 		if w == nil {
 			return false
 		}
 		_, f := w.VirtualIps["10.1.0.1"]
 		return f
+	}, retry.Timeout(time.Second))
+
+
+	t.Log("namespace create NOP")
+	c.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "not-default", Labels: map[string]string{"istio.io/dataplane-mode":"ambient"}},
+	}, metav1.CreateOptions{})
+
+	t.Log("namespace create")
+	c.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "default", Labels: map[string]string{"istio.io/dataplane-mode":"ambient"}},
+	}, metav1.CreateOptions{})
+	retry.UntilOrFail(t, func() bool {
+		return Workloads.GetKey("10.0.0.3").Protocol == workloadapi.Protocol_HTTP
 	}, retry.Timeout(time.Second))
 
 

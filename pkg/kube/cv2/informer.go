@@ -44,10 +44,49 @@ func (i informer[I]) GetKey(k Key[I]) *I {
 }
 
 
-func (i informer[I]) Register(f func(o controllers.Event)) {
-	i.inf.AddEventHandler(controllers.EventHandler(f))
+func (i informer[I]) Register(f func(o Event)) {
+	i.inf.AddEventHandler(EventHandler(f))
 }
 
+func EventHandler(handler func(o Event)) cache.ResourceEventHandler {
+	return cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj any) {
+			o := controllers.ExtractObject(obj)
+			if o == nil {
+				return
+			}
+			handler(Event{
+				New:   o,
+				Event: controllers.EventAdd,
+			})
+		},
+		UpdateFunc: func(oldInterface, newInterface any) {
+			oldObj := controllers.ExtractObject(oldInterface)
+			if oldObj == nil {
+				return
+			}
+			newObj := controllers.ExtractObject(newInterface)
+			if newObj == nil {
+				return
+			}
+			handler(Event{
+				Old:   oldObj,
+				New:   newObj,
+				Event: controllers.EventUpdate,
+			})
+		},
+		DeleteFunc: func(obj any) {
+			o := controllers.ExtractObject(obj)
+			if o == nil {
+				return
+			}
+			handler(Event{
+				Old:   o,
+				Event: controllers.EventDelete,
+			})
+		},
+	}
+}
 
 func InformerToWatcher[I controllers.Object](r kube.Registerer, i cache.SharedIndexInformer) Collection[I] {
 	return informer[I]{r, i}

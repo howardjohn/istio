@@ -20,18 +20,19 @@ var log = istiolog.RegisterScope("cv2", "", 0)
 
 type erasedCollection interface {
 	// TODO: cannot use Event as it assumes Object
-	Register(f func(o controllers.Event))
+	Register(f func(o Event))
 }
 
 type Collection[T any] interface {
 	GetKey(k Key[T]) *T
 	List(namespace string) []T
-	Register(f func(o controllers.Event))
+	Register(f func(o Event))
 }
 
 type Singleton[T any] interface {
 	Get() *T
-	Register(f func(o controllers.Event))
+	Register(f func(o Event))
+	AsCollection() Collection[T]
 }
 
 // singletonAdapter exposes a singleton as a collection
@@ -39,9 +40,8 @@ type singletonAdapter[T any] struct {
 	s Singleton[T]
 }
 
-func (s singletonAdapter[T]) Register(f func(o controllers.Event)) {
-	//TODO implement me
-	panic("implement me")
+func (s singletonAdapter[T]) Register(f func(o Event)) {
+	s.s.Register(f)
 }
 
 func (s singletonAdapter[T]) GetKey(k Key[T]) *T {
@@ -115,6 +115,7 @@ func GetName(a any) string {
 	if ok {
 		return ak.GetName()
 	}
+	log.Debugf("No Name, got %T", a)
 	panic(fmt.Sprintf("No Name, got %T", a))
 	return ""
 }
@@ -169,22 +170,22 @@ func GetLabelSelector(a any) map[string]string {
 
 func (f filter) Matches(object any) bool {
 	if f.name != "" && f.name != GetName(object) {
-		log.Debugf("no match name: %q vs %q", f.name, GetName(object))
+		//log.Debugf("no match name: %q vs %q", f.name, GetName(object))
 		return false
 	} else {
-		log.Debugf("matches name: %q vs %q", f.name, GetName(object))
+		//log.Debugf("matches name: %q vs %q", f.name, GetName(object))
 	}
 	if f.namespace != "" && f.namespace != GetNamespace(object) {
-		log.Debugf("no match namespace: %q vs %q", f.namespace, GetNamespace(object))
+		//log.Debugf("no match namespace: %q vs %q", f.namespace, GetNamespace(object))
 		return false
 	} else {
-		log.Debugf("matches namespace: %q vs %q", f.namespace, GetNamespace(object))
+		//log.Debugf("matches namespace: %q vs %q", f.namespace, GetNamespace(object))
 	}
 	if f.selects != nil && !labels.Instance(f.selects).SubsetOf(GetLabelSelector(object)) {
-		log.Debugf("no match selects: %q vs %q", f.selects, GetLabelSelector(object))
+		//log.Debugf("no match selects: %q vs %q", f.selects, GetLabelSelector(object))
 		return false
 	} else {
-		log.Debugf("matches selects: %q vs %q", f.selects, GetLabelSelector(object))
+		//log.Debugf("matches selects: %q vs %q", f.selects, GetLabelSelector(object))
 	}
 	return true
 }
@@ -214,18 +215,19 @@ type dependencies struct {
 type handler2[I, O any] struct {
 	collectionState *mutexGuard[index[O]]
 	handle          HandleSingle[I, O]
-	handlers map[erasedCollection]struct{}
+	handlers        map[erasedCollection]struct{}
 	parent          Collection[I]
 	executeOne      func(i any)
 	deps            map[Key[I]]dependencies
-	mu sync.Mutex
+	mu              sync.Mutex
 }
 
 type handler[T any] struct {
-	deps    dependencies
-	handle  any
-	state   *atomic.Pointer[T]
-	execute func()
+	deps     dependencies
+	handle   any
+	handlers []func(o Event)
+	state    *atomic.Pointer[T]
+	execute  func()
 }
 
 type index[T any] struct {
@@ -273,9 +275,21 @@ func (h *handler[T]) List(namespace string) []T {
 	panic("implement me")
 }
 
-func (h *handler[T]) Register(f func(o controllers.Event)) {
-	//TODO implement me
-	panic("implement me")
+type Event struct {
+	Old   any
+	New   any
+	Event controllers.EventType
+}
+
+func (e Event) Latest() any {
+	if e.New != nil {
+		return e.New
+	}
+	return e.Old
+}
+
+func (h *handler[T]) Register(f func(o Event)) {
+	h.handlers = append(h.handlers, f)
 }
 
 func (h *handler2[I, O]) GetKey(k Key[O]) (res *O) {
@@ -301,7 +315,7 @@ func (h *handler2[I, O]) List(namespace string) (res []O) {
 	return
 }
 
-func (h *handler2[I, O]) Register(f func(o controllers.Event)) {
+func (h *handler2[I, O]) Register(f func(o Event)) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -411,15 +425,15 @@ func (i *indexedHandler2[I, O]) register(e erasedCollection) {
 	}
 }
 
-func (h *handler2[I, O]) handler() func(o controllers.Event) {
-	return func(o controllers.Event) {
+func (h *handler2[I, O]) handler() func(o Event) {
+	return func(o Event) {
 		item := o.Latest()
 		h.mu.Lock()
 		// Got an event. Now we need to find out who depends on it..
 		ks := sets.Set[Key[I]]{}
 		for i, v := range h.deps {
 			named := depKey{
-				name:  item.GetName(),
+				name:  GetName(item),
 				dtype: getTypeOf(item),
 			}
 			if d, f := v.deps[named]; f {
@@ -456,10 +470,10 @@ func (h *handler2[I, O]) handler() func(o controllers.Event) {
 func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[O] {
 	// We need a set of handlers
 	h := &handler2[I, O]{
-		handle: hf,
-		parent: c,
+		handle:   hf,
+		parent:   c,
 		handlers: map[erasedCollection]struct{}{},
-		deps:   map[Key[I]]dependencies{},
+		deps:     map[Key[I]]dependencies{},
 		collectionState: newMutex(index[O]{
 			objects:   map[Key[O]]O{},
 			namespace: map[string]sets.Set[Key[O]]{},
@@ -505,7 +519,7 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 		h.executeOne(i)
 	}
 	// Setup primary handler. On any change, trigger only that one
-	c.Register(func(o controllers.Event) {
+	c.Register(func(o Event) {
 		log := log.WithLabels("dep", "primary")
 		log.Debugf("got event %v", o.Event)
 		switch o.Event {
@@ -523,26 +537,26 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 	//	dep := dep
 	//	log := log.WithLabels("dep", dep.key)
 	//	log.Infof("insert dep, filter: %+v", dep.filter)
-	//	dep.dep.Register(func(o controllers.Event) {
+	//	dep.dep.Register(func(o Event) {
 	//		mu.Lock()
 	//		defer mu.Unlock()
 	//		log.Debugf("got event %v", o.Event)
 	//		switch o.Event {
-	//		case controllers.EventAdd:
+	//		case EventAdd:
 	//			if dep.filter.Matches(o.New) {
 	//				log.Debugf("Add match %v", o.New.GetName())
 	//				h.executeOne()
 	//			} else {
 	//				log.Debugf("Add no match %v", o.New.GetName())
 	//			}
-	//		case controllers.EventDelete:
+	//		case EventDelete:
 	//			if dep.filter.Matches(o.Old) {
 	//				log.Debugf("delete match %v", o.Old.GetName())
 	//				h.executeOne()
 	//			} else {
 	//				log.Debugf("Add no match %v", o.Old.GetName())
 	//			}
-	//		case controllers.EventUpdate:
+	//		case EventUpdate:
 	//			if dep.filter.Matches(o.New) {
 	//				log.Debugf("Update match %v", o.New.GetName())
 	//				h.executeOne()
@@ -571,8 +585,22 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 		res := hf(h)
 		oldRes := h.state.Swap(res)
 		updated := !controllers.Equal(res, oldRes)
-		log.Errorf("howardjohn: updated %v", updated) // TODO: compare
-		// TODO: propogate event
+		log.Errorf("howardjohn: updated %v", updated)
+		if updated {
+			for _, handler := range h.handlers {
+				event := controllers.EventUpdate
+				if oldRes == nil {
+					event = controllers.EventAdd
+				} else if res == nil {
+					event = controllers.EventDelete
+				}
+				handler(Event{
+					Old:   oldRes,
+					New:   res,
+					Event: event,
+				})
+			}
+		}
 	}
 	// Run the handler, but do not persist state. This is just to register dependencies
 	// I suppose we could make this also persist state
@@ -586,31 +614,31 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 		dep := dep
 		log := log.WithLabels("dep", dep.key)
 		log.Infof("insert dep, filter: %+v", dep.filter)
-		dep.dep.Register(func(o controllers.Event) {
+		dep.dep.Register(func(o Event) {
 			mu.Lock()
 			defer mu.Unlock()
 			log.Debugf("got event %v", o.Event)
 			switch o.Event {
 			case controllers.EventAdd:
 				if dep.filter.Matches(o.New) {
-					log.Debugf("Add match %v", o.New.GetName())
+					log.Debugf("Add match %v", GetName(o.New))
 					h.execute()
 				} else {
-					log.Debugf("Add no match %v", o.New.GetName())
+					log.Debugf("Add no match %v", GetName(o.New))
 				}
 			case controllers.EventDelete:
 				if dep.filter.Matches(o.Old) {
-					log.Debugf("delete match %v", o.Old.GetName())
+					log.Debugf("delete match %v", GetName(o.Old))
 					h.execute()
 				} else {
-					log.Debugf("Add no match %v", o.Old.GetName())
+					log.Debugf("Add no match %v", GetName(o.Old))
 				}
 			case controllers.EventUpdate:
 				if dep.filter.Matches(o.New) {
-					log.Debugf("Update match %v", o.New.GetName())
+					log.Debugf("Update match %v", GetName(o.New))
 					h.execute()
 				} else if dep.filter.Matches(o.Old) {
-					log.Debugf("Update no match, but used to %v", o.New.GetName())
+					log.Debugf("Update no match, but used to %v", GetName(o.New))
 					h.execute()
 				} else {
 					log.Debugf("Update no change")
@@ -625,14 +653,33 @@ func (h *handler[T]) _internalHandler() {
 
 }
 
+func (h *handler[T]) AsCollection() Collection[T] {
+	return singletonAdapter[T]{h}
+}
+
 func (h *handler2[I, O]) _internalHandler() {
 
 }
 
 func getType[T any]() reflect.Type {
-	return reflect.TypeOf(*new(T)).Elem()
+	t := reflect.TypeOf(*new(T))
+	if t.Kind() != reflect.Struct {
+		return t.Elem()
+	}
+	return t
 }
 
 func getTypeOf(a any) reflect.Type {
-	return reflect.TypeOf(a).Elem()
+	t := reflect.TypeOf(a)
+	if t.Kind() != reflect.Struct {
+		return t.Elem()
+	}
+	return t
+}
+
+func Flatten[T any](t **T) *T {
+	if t == nil {
+		return (*T)(nil)
+	}
+	return *t
 }
