@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/atomic"
 	meshapi "istio.io/api/mesh/v1alpha1"
 	"istio.io/istio/pilot/pkg/ambient/ambientpod"
 	"istio.io/istio/pilot/pkg/model"
@@ -50,73 +49,58 @@ func makeConfigMapWithName(name, resourceVersion string, data map[string]string)
 	}
 }
 
-func meshConfig(t *testing.T, c kube.Client) Singleton[meshapi.MeshConfig] {
-	meshh := MeshConfigWatcher(c, test.NewStop(t))
-	cur := atomic.NewString("")
-	_ = cur
-	//meshh.Register(func(config *meshapi.MeshConfig) {
-	//	cur.Store(config.GetIngressClass())
-	//	log.Infof("New mesh cfg: %v", config.GetIngressClass())
-	//})
+func testMeshConfig(t *testing.T, c kube.Client, MeshConfig Singleton[meshapi.MeshConfig]) {
+	t.Run("MeshConfig", func(t *testing.T) {
 
-	cmCore := makeConfigMapWithName("istio", "1", map[string]string{
-		"mesh": "ingressClass: core",
+		cmCore := makeConfigMapWithName("istio", "1", map[string]string{
+			"mesh": "ingressClass: core",
+		})
+		cmUser := makeConfigMapWithName("istio-user", "1", map[string]string{
+			"mesh": "ingressClass: user",
+		})
+		cmCoreAlt := makeConfigMapWithName("istio", "1", map[string]string{
+			"mesh": "ingressClass: alt",
+		})
+		cms := c.Kube().CoreV1().ConfigMaps("istio-system")
+
+		t.Log("insert user")
+		if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		retry.UntilOrFail(t, func() bool { return MeshConfig.Get().GetIngressClass() == "user" }, retry.Timeout(time.Second))
+
+		t.Log("create core")
+		if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		retry.UntilOrFail(t, func() bool { return MeshConfig.Get().GetIngressClass() == "core" }, retry.Timeout(time.Second))
+
+		t.Log("update core to alt")
+		if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		retry.UntilOrFail(t, func() bool { return MeshConfig.Get().GetIngressClass() == "alt" }, retry.Timeout(time.Second))
+
+		t.Log("NOP change")
+		cmCoreAlt.Annotations = map[string]string{"a": "B"}
+		if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		retry.UntilOrFail(t, func() bool { return MeshConfig.Get().GetIngressClass() == "alt" }, retry.Timeout(time.Second))
+
+		t.Log("update core back")
+		if _, err := cms.Update(context.Background(), cmCore, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		retry.UntilOrFail(t, func() bool { return MeshConfig.Get().GetIngressClass() == "core" }, retry.Timeout(time.Second))
+
+		t.Log("delete core")
+		if err := cms.Delete(context.Background(), cmCoreAlt.Name, metav1.DeleteOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		retry.UntilOrFail(t, func() bool { return MeshConfig.Get().GetIngressClass() == "user" }, retry.Timeout(time.Second))
+		t.Log("done")
 	})
-	cmUser := makeConfigMapWithName("istio-user", "1", map[string]string{
-		"mesh": "ingressClass: user",
-	})
-	cmCoreAlt := makeConfigMapWithName("istio", "1", map[string]string{
-		"mesh": "ingressClass: alt",
-	})
-	cms := c.Kube().CoreV1().ConfigMaps("istio-system")
-
-	t.Log("insert user")
-	if _, err := cms.Create(context.Background(), cmUser, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(time.Millisecond * 50)
-	t.Log(meshh.Get().GetIngressClass())
-	retry.UntilOrFail(t, func() bool { return meshh.Get().GetIngressClass() == "user" }, retry.Timeout(time.Second))
-
-	t.Log("create core")
-	if _, err := cms.Create(context.Background(), cmCore, metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	retry.UntilOrFail(t, func() bool { return meshh.Get().GetIngressClass() == "core" }, retry.Timeout(time.Second))
-	time.Sleep(time.Millisecond * 50)
-
-	t.Log("update core to alt")
-	if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	retry.UntilOrFail(t, func() bool { return meshh.Get().GetIngressClass() == "alt" }, retry.Timeout(time.Second))
-	time.Sleep(time.Millisecond * 50)
-
-	t.Log("NOP change")
-	cmCoreAlt.Annotations = map[string]string{"a": "B"}
-	if _, err := cms.Update(context.Background(), cmCoreAlt, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	retry.UntilOrFail(t, func() bool { return meshh.Get().GetIngressClass() == "alt" }, retry.Timeout(time.Second))
-	time.Sleep(time.Millisecond * 50)
-
-	t.Log("update core back")
-	if _, err := cms.Update(context.Background(), cmCore, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	retry.UntilOrFail(t, func() bool { return meshh.Get().GetIngressClass() == "core" }, retry.Timeout(time.Second))
-	time.Sleep(time.Millisecond * 50)
-
-	t.Log("delete core")
-	if err := cms.Delete(context.Background(), cmCoreAlt.Name, metav1.DeleteOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	retry.UntilOrFail(t, func() bool { return meshh.Get().GetIngressClass() == "user" }, retry.Timeout(time.Second))
-	time.Sleep(time.Millisecond * 50)
-
-	t.Log("done")
-
-	return meshh
 }
 
 func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.MeshConfig] {
@@ -147,41 +131,32 @@ func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.Mesh
 	return MeshConfig
 }
 
-func TestWorkload(t *testing.T) {
-	log.SetOutputLevel(istiolog.DebugLevel)
-	c := kube.NewFakeClient()
-	MeshConfig := meshConfig(t, c)
-	_ = MeshConfig
-	//Namespaces := Watch[Namespaces]()
+func WorkloadWatcher(t test.Failer, c kube.Client, MeshConfig Singleton[meshapi.MeshConfig]) Collection[model.WorkloadInfo] {
 	AuthzPolicies := CollectionFor[*securityclient.AuthorizationPolicy](c)
 	Services := CollectionFor[*corev1.Service](c)
 	Pods := CollectionFor[*corev1.Pod](c)
 	Namespaces := CollectionFor[*corev1.Namespace](c)
 	c.RunAndWait(test.NewStop(t))
 
-	t.Log("spawn workload collectioner")
-	Workloads := NewCollection(Pods, func(ctx HandlerContext, p *corev1.Pod) *model.WorkloadInfo {
-		log.Errorf("howardjohn: computing workload for pod %v", p.Name)
+	return NewCollection(Pods, func(ctx HandlerContext, p *corev1.Pod) *model.WorkloadInfo {
 		// TODO: only selector ones
 		policies := Fetch(ctx, AuthzPolicies, FilterSelects(p.Labels))
-		policyNames := Map(policies, func(t *securityclient.AuthorizationPolicy) string {
-			return t.Name
-		})
 		meshCfg := FetchOne(ctx, MeshConfig.AsCollection())
 		namespace := Flatten(FetchOne(ctx, Namespaces, FilterName(p.Namespace)))
 		services := Fetch(ctx, Services, FilterSelects(p.GetLabels()))
-		vips := constructVIPs(p, services)
 		w := &workloadapi.Workload{
-			Name:                  p.Name,
-			Namespace:             p.Namespace,
-			Address:               parseAddr(p.Status.PodIP).AsSlice(),
-			Network:               "TODO", // TODO: this is just an example. Real in In controller
-			ServiceAccount:        p.Spec.ServiceAccountName,
-			WaypointAddresses:     nil, // TODO
-			Node:                  p.Spec.NodeName,
-			NativeHbone:           false,
-			VirtualIps:            vips,
-			AuthorizationPolicies: policyNames,
+			Name:              p.Name,
+			Namespace:         p.Namespace,
+			Address:           parseAddr(p.Status.PodIP).AsSlice(),
+			Network:           "TODO", // TODO: this is just an example.
+			ServiceAccount:    p.Spec.ServiceAccountName,
+			WaypointAddresses: nil, // TODO
+			Node:              p.Spec.NodeName,
+			NativeHbone:       false, // TODO
+			VirtualIps:        constructVIPs(p, services),
+			AuthorizationPolicies: Map(policies, func(t *securityclient.AuthorizationPolicy) string {
+				return t.Name
+			}),
 		}
 
 		if td := spiffe.GetTrustDomain(); td != "cluster.local" {
@@ -189,8 +164,8 @@ func TestWorkload(t *testing.T) {
 		}
 		w.WorkloadName, w.WorkloadType = workloadNameAndType(p)
 		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
+
 		if ambientpod.ShouldPodBeInIpset(namespace, p, meshCfg.GetAmbientMesh().GetMode().String(), true) {
-			//Configured for override
 			w.Protocol = workloadapi.Protocol_HTTP
 		}
 		// Otherwise supports tunnel directly
@@ -200,68 +175,79 @@ func TestWorkload(t *testing.T) {
 		}
 		return &model.WorkloadInfo{Workload: w}
 	})
-	_ = Workloads
+}
 
-	t.Log("pod1 create")
-	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
-		Status:     corev1.PodStatus{PodIP: "10.0.0.1"},
-	}, metav1.CreateOptions{})
-	retry.UntilOrFail(t, func() bool {
-		return Workloads.GetKey("10.0.0.1") != nil
-	}, retry.Timeout(time.Second))
+func TestWorkload(t *testing.T) {
+	log.SetOutputLevel(istiolog.DebugLevel)
+	c := kube.NewFakeClient()
+	MeshConfig := MeshConfigWatcher(c, test.NewStop(t))
+	testMeshConfig(t, c, MeshConfig)
+	Workloads := WorkloadWatcher(t, c, MeshConfig)
+	testWorkloads(t, c, Workloads)
+}
 
-	t.Log("pod2 create")
-	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: map[string]string{"app": "bar"}},
-		Status:     corev1.PodStatus{PodIP: "10.0.0.2"},
-	}, metav1.CreateOptions{})
-	retry.UntilOrFail(t, func() bool {
-		return Workloads.GetKey("10.0.0.2") != nil
-	}, retry.Timeout(time.Second))
+func testWorkloads(t *testing.T, c kube.Client, Workloads Collection[model.WorkloadInfo]) {
+	t.Run("Workloads", func(t *testing.T) {
 
-	t.Log("pod3 create")
-	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod3", Labels: map[string]string{"app": "not-bar"}},
-		Status:     corev1.PodStatus{PodIP: "10.0.0.3"},
-	}, metav1.CreateOptions{})
-	retry.UntilOrFail(t, func() bool {
-		return Workloads.GetKey("10.0.0.3") != nil
-	}, retry.Timeout(time.Second))
+		t.Log("pod1 create")
+		c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
+			Status:     corev1.PodStatus{PodIP: "10.0.0.1"},
+		}, metav1.CreateOptions{})
+		retry.UntilOrFail(t, func() bool {
+			return Workloads.GetKey("10.0.0.1") != nil
+		}, retry.Timeout(time.Second))
 
-	t.Log("svc create")
-	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
-		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}, ClusterIP: "10.1.0.1"},
-	}, metav1.CreateOptions{})
-	retry.UntilOrFail(t, func() bool {
-		w := Workloads.GetKey("10.0.0.2")
-		if w == nil {
-			return false
+		t.Log("pod2 create")
+		c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: map[string]string{"app": "bar"}},
+			Status:     corev1.PodStatus{PodIP: "10.0.0.2"},
+		}, metav1.CreateOptions{})
+		retry.UntilOrFail(t, func() bool {
+			return Workloads.GetKey("10.0.0.2") != nil
+		}, retry.Timeout(time.Second))
+
+		t.Log("pod3 create")
+		c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "pod3", Labels: map[string]string{"app": "not-bar"}},
+			Status:     corev1.PodStatus{PodIP: "10.0.0.3"},
+		}, metav1.CreateOptions{})
+		retry.UntilOrFail(t, func() bool {
+			return Workloads.GetKey("10.0.0.3") != nil
+		}, retry.Timeout(time.Second))
+
+		t.Log("svc create")
+		c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
+			Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}, ClusterIP: "10.1.0.1"},
+		}, metav1.CreateOptions{})
+		retry.UntilOrFail(t, func() bool {
+			w := Workloads.GetKey("10.0.0.2")
+			if w == nil {
+				return false
+			}
+			_, f := w.VirtualIps["10.1.0.1"]
+			return f
+		}, retry.Timeout(time.Second))
+
+		t.Log("namespace create NOP")
+		c.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: "not-default", Labels: map[string]string{"istio.io/dataplane-mode": "ambient"}},
+		}, metav1.CreateOptions{})
+
+		t.Log("namespace create")
+		c.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: "default", Labels: map[string]string{"istio.io/dataplane-mode": "ambient"}},
+		}, metav1.CreateOptions{})
+		retry.UntilOrFail(t, func() bool {
+			return Workloads.GetKey("10.0.0.3").Protocol == workloadapi.Protocol_HTTP
+		}, retry.Timeout(time.Second))
+
+		for _, wl := range Workloads.List(metav1.NamespaceAll) {
+			t.Logf("Final workload: %+v", wl)
 		}
-		_, f := w.VirtualIps["10.1.0.1"]
-		return f
-	}, retry.Timeout(time.Second))
-
-
-	t.Log("namespace create NOP")
-	c.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "not-default", Labels: map[string]string{"istio.io/dataplane-mode":"ambient"}},
-	}, metav1.CreateOptions{})
-
-	t.Log("namespace create")
-	c.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "default", Labels: map[string]string{"istio.io/dataplane-mode":"ambient"}},
-	}, metav1.CreateOptions{})
-	retry.UntilOrFail(t, func() bool {
-		return Workloads.GetKey("10.0.0.3").Protocol == workloadapi.Protocol_HTTP
-	}, retry.Timeout(time.Second))
-
-
-	for _, wl := range Workloads.List(metav1.NamespaceAll) {
-		t.Logf("Final workload: %+v", wl)
-	}
-	t.Log(Workloads.GetKey("10.0.0.1"))
+		t.Log(Workloads.GetKey("10.0.0.1"))
+	})
 }
 
 func constructVIPs(p *corev1.Pod, services []*corev1.Service) map[string]*workloadapi.PortList {
