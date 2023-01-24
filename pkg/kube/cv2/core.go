@@ -278,13 +278,14 @@ func (h *handler[T]) Register(f func(o controllers.Event)) {
 	panic("implement me")
 }
 
-func (h *handler2[I, O]) getDeps() dependencies {
-	panic("!")
-}
-
-func (h *handler2[I, O]) GetKey(k Key[O]) *O {
-	//TODO implement me
-	panic("implement me")
+func (h *handler2[I, O]) GetKey(k Key[O]) (res *O) {
+	h.collectionState.With(func(i index[O]) {
+		rf, f := i.objects[k]
+		if f {
+			res = &rf
+		}
+	})
+	return
 }
 
 func (h *handler2[I, O]) List(namespace string) (res []O) {
@@ -343,12 +344,8 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	}
 	deps.deps[d.key] = d
 	if rr, ok := ctx.(registerer); ok {
-		log.Errorf("howardjohn: registerer")
 		rr.register(c)
-	} else {
-		log.Errorf("howardjohn: %T not a registerer", ctx)
 	}
-	log.Errorf("howardjohn: Fetch: register %+v: %+v", d.key, d.filter)
 
 	if !deps.finalized {
 		return nil
@@ -362,6 +359,7 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 			res = append(res, c)
 		}
 	}
+	log.WithLabels("key", d.key, "type", getType[T](), "filter", d.filter, "size", len(res)).Debugf("Fetch")
 	return res
 }
 
@@ -407,7 +405,7 @@ func (i *indexedHandler2[I, O]) _internalHandler() {
 func (i *indexedHandler2[I, O]) register(e erasedCollection) {
 	if _, f := i.h.handlers[e]; !f {
 		i.h.handlers[e] = struct{}{}
-		log.Errorf("howardjohn: register handler")
+		log.Debugf("register handler %T", e)
 		e.Register(i.h.handler())
 		return
 	}
@@ -416,14 +414,10 @@ func (i *indexedHandler2[I, O]) register(e erasedCollection) {
 func (h *handler2[I, O]) handler() func(o controllers.Event) {
 	return func(o controllers.Event) {
 		item := o.Latest()
-		log.Errorf("howardjohn: handler2 call for %v, deps=%v", GetKey(item), len(h.deps))
 		h.mu.Lock()
-		log.Errorf("howardjohn: handler2 lock")
-		// Got an event. Now we need to find out who depends on it
-
+		// Got an event. Now we need to find out who depends on it..
 		ks := sets.Set[Key[I]]{}
 		for i, v := range h.deps {
-			_ = i
 			named := depKey{
 				name:  item.GetName(),
 				dtype: getTypeOf(item),
@@ -438,9 +432,6 @@ func (h *handler2[I, O]) handler() func(o controllers.Event) {
 			unnamed := depKey{
 				dtype: getTypeOf(item),
 			}
-			for k := range v.deps {
-				log.Errorf("howardjohn: deps %v, compare to %v and %v", k, named, unnamed)
-			}
 			if d, f := v.deps[unnamed]; f {
 				match := d.filter.Matches(item)
 				log.WithLabels("match", match).Infof("event for %v", unnamed)
@@ -450,11 +441,11 @@ func (h *handler2[I, O]) handler() func(o controllers.Event) {
 			}
 		}
 		h.mu.Unlock()
-		log.Errorf("howardjohn: handler2 call matched=%v", len(ks))
+		log.WithLabels("key", GetKey(item), "event", o.Event).Debugf("handler event, trigger %v dependencies", len(ks))
 		for i := range ks {
 			ii := h.parent.GetKey(i)
 			if ii == nil {
-				log.Errorf("Parent missing key!! %v", i)
+				log.Errorf("BUG: Parent missing key!! %v", i)
 			} else {
 				h.executeOne(*ii)
 			}
@@ -478,6 +469,7 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 		i := a.(I)
 
 		iKey := GetKey(i)
+		log := log.WithLabels("key", iKey)
 
 		h.mu.Lock()
 		d, f := h.deps[iKey]
@@ -503,7 +495,7 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 				oldRes := i.objects[oKey]
 				i.objects[oKey] = *res
 				updated := !controllers.Equal(*res, oldRes)
-				log.Errorf("howardjohn: updated %v", updated)
+				log.WithLabels("updated", updated).Debugf("handled")
 			}
 		})
 		// TODO: propogate event

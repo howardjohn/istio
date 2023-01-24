@@ -13,8 +13,6 @@ import (
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
 	kubelabels "istio.io/istio/pkg/kube/labels"
 	"istio.io/istio/pkg/spiffe"
-	"istio.io/istio/pkg/test/util/assert"
-
 	//security "istio.io/api/security/v1beta1"
 	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
 	"istio.io/istio/pkg/config/mesh"
@@ -169,7 +167,6 @@ func TestWorkload(t *testing.T) {
 		})
 		//meshCfg := FetchOne(ctx, MeshConfig)
 		services := Fetch(ctx, Services, FilterSelects(p.GetLabels()))
-		log.Errorf("howardjohn: got %v services", len(services))
 		vips := constructVIPs(p, services)
 		w := &workloadapi.Workload{
 			Name:                  p.Name,
@@ -204,37 +201,52 @@ func TestWorkload(t *testing.T) {
 	_ = Workloads
 
 	t.Log("pod1 create")
-	_, err := c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
-		Status: corev1.PodStatus{PodIP: "10.0.0.1"},
+		Status:     corev1.PodStatus{PodIP: "10.0.0.1"},
 	}, metav1.CreateOptions{})
-	assert.NoError(t, err)
-	time.Sleep(time.Millisecond * 50)
+	retry.UntilOrFail(t, func() bool {
+		return Workloads.GetKey("10.0.0.1") != nil
+	}, retry.Timeout(time.Second))
 
 	t.Log("pod2 create")
 	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: map[string]string{"app": "bar"}},
-		Status: corev1.PodStatus{PodIP: "10.0.0.2"},
+		Status:     corev1.PodStatus{PodIP: "10.0.0.2"},
 	}, metav1.CreateOptions{})
-	time.Sleep(time.Millisecond * 50)
+	retry.UntilOrFail(t, func() bool {
+		return Workloads.GetKey("10.0.0.2") != nil
+	}, retry.Timeout(time.Second))
 
 	t.Log("pod3 create")
 	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod3", Labels: map[string]string{"app": "not-bar"}},
-		Status: corev1.PodStatus{PodIP: "10.0.0.3"},
+		Status:     corev1.PodStatus{PodIP: "10.0.0.3"},
 	}, metav1.CreateOptions{})
-	time.Sleep(time.Millisecond * 50)
+	retry.UntilOrFail(t, func() bool {
+		return Workloads.GetKey("10.0.0.3") != nil
+	}, retry.Timeout(time.Second))
+
 
 	t.Log("svc create")
 	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
 		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}, ClusterIP: "10.1.0.1"},
 	}, metav1.CreateOptions{})
-	time.Sleep(time.Millisecond * 50)
+	retry.UntilOrFail(t, func() bool {
+		w :=  Workloads.GetKey("10.0.0.2")
+		if w == nil {
+			return false
+		}
+		_, f := w.VirtualIps["10.1.0.1"]
+		return f
+	}, retry.Timeout(time.Second))
+
 
 	for _, wl := range Workloads.List(metav1.NamespaceAll) {
 		t.Logf("Final workload: %+v", wl)
 	}
+	t.Log(Workloads.GetKey("10.0.0.1"))
 }
 
 func constructVIPs(p *corev1.Pod, services []*corev1.Service) map[string]*workloadapi.PortList {
