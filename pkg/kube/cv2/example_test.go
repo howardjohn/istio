@@ -169,6 +169,7 @@ func TestWorkload(t *testing.T) {
 		})
 		//meshCfg := FetchOne(ctx, MeshConfig)
 		services := Fetch(ctx, Services, FilterSelects(p.GetLabels()))
+		log.Errorf("howardjohn: got %v services", len(services))
 		vips := constructVIPs(p, services)
 		w := &workloadapi.Workload{
 			Name:                  p.Name,
@@ -219,7 +220,7 @@ func TestWorkload(t *testing.T) {
 
 	t.Log("pod3 create")
 	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: map[string]string{"app": "not-bar"}},
+		ObjectMeta: metav1.ObjectMeta{Name: "pod3", Labels: map[string]string{"app": "not-bar"}},
 		Status: corev1.PodStatus{PodIP: "10.0.0.3"},
 	}, metav1.CreateOptions{})
 	time.Sleep(time.Millisecond * 50)
@@ -227,7 +228,7 @@ func TestWorkload(t *testing.T) {
 	t.Log("svc create")
 	c.Kube().CoreV1().Services("default").Create(context.Background(), &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "svc1"},
-		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "bar"}, ClusterIP: "10.1.0.1"},
 	}, metav1.CreateOptions{})
 	time.Sleep(time.Millisecond * 50)
 

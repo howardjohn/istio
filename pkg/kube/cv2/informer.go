@@ -27,12 +27,11 @@ func (i informer[I]) Name() string {
 	return fmt.Sprintf("informer[%T]", *new(I))
 }
 
-func (i informer[I]) List(namespace string) []I {
-	var res []I
+func (i informer[I]) List(namespace string) (res []I) {
 	cache.ListAllByNamespace(i.inf.GetIndexer(), namespace, klabels.Everything(), func(i interface{}) {
 		res = append(res, i.(I))
 	})
-	return res
+	return
 }
 
 func (i informer[I]) GetKey(k Key[I]) *I {

@@ -213,16 +213,19 @@ type dependencies struct {
 
 type handler2[I, O any] struct {
 	collectionState *mutexGuard[index[O]]
-	handle         HandleSingle[I, O]
-	executeOne        func(i I)
-	deps           map[Key[I]]dependencies
-
+	handle          HandleSingle[I, O]
+	handlers map[erasedCollection]struct{}
+	parent          Collection[I]
+	executeOne      func(i any)
+	deps            map[Key[I]]dependencies
+	mu sync.Mutex
 }
+
 type handler[T any] struct {
-	deps           dependencies
-	handle         any
-	state          *atomic.Pointer[T]
-	execute        func()
+	deps    dependencies
+	handle  any
+	state   *atomic.Pointer[T]
+	execute func()
 }
 
 type index[T any] struct {
@@ -245,6 +248,9 @@ func (m *mutexGuard[T]) With(f func(T)) {
 	f(m.data)
 }
 
+type registerer interface {
+	register(c erasedCollection)
+}
 type depper interface {
 	getDeps() dependencies
 }
@@ -330,12 +336,18 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	deps := h.getDeps()
 	_, exists := deps.deps[d.key]
 	if exists && !deps.finalized {
-		panic(fmt.Sprintf("dependency already registered, %+v", d.key))
+		//panic(fmt.Sprintf("dependency already registered, %+v", d.key))
 	}
 	if !exists && deps.finalized {
-		panic(fmt.Sprintf("dependency registered after initialization, %+v", d.key))
+		//panic(fmt.Sprintf("dependency registered after initialization, %+v", d.key))
 	}
 	deps.deps[d.key] = d
+	if rr, ok := ctx.(registerer); ok {
+		log.Errorf("howardjohn: registerer")
+		rr.register(c)
+	} else {
+		log.Errorf("howardjohn: %T not a registerer", ctx)
+	}
 	log.Errorf("howardjohn: Fetch: register %+v: %+v", d.key, d.filter)
 
 	if !deps.finalized {
@@ -379,9 +391,11 @@ type HandleEmpty[T any] func(ctx HandlerContext) *T
 type HandleSingle[I, O any] func(ctx HandlerContext, i I) *O
 
 type indexedHandler2[I, O any] struct {
-	h handler2[I, O]
+	h *handler2[I, O]
 	d dependencies
 }
+
+var _ registerer = &indexedHandler2[any, any]{}
 
 func (i *indexedHandler2[I, O]) getDeps() dependencies {
 	return i.d
@@ -390,31 +404,94 @@ func (i *indexedHandler2[I, O]) getDeps() dependencies {
 func (i *indexedHandler2[I, O]) _internalHandler() {
 }
 
+func (i *indexedHandler2[I, O]) register(e erasedCollection) {
+	if _, f := i.h.handlers[e]; !f {
+		i.h.handlers[e] = struct{}{}
+		log.Errorf("howardjohn: register handler")
+		e.Register(i.h.handler())
+		return
+	}
+}
+
+func (h *handler2[I, O]) handler() func(o controllers.Event) {
+	return func(o controllers.Event) {
+		item := o.Latest()
+		log.Errorf("howardjohn: handler2 call for %v, deps=%v", GetKey(item), len(h.deps))
+		h.mu.Lock()
+		log.Errorf("howardjohn: handler2 lock")
+		// Got an event. Now we need to find out who depends on it
+
+		ks := sets.Set[Key[I]]{}
+		for i, v := range h.deps {
+			_ = i
+			named := depKey{
+				name:  item.GetName(),
+				dtype: getTypeOf(item),
+			}
+			if d, f := v.deps[named]; f {
+				match := d.filter.Matches(item)
+				log.WithLabels("match", match).Infof("event for %v", named)
+				if match {
+					ks.Insert(i)
+				}
+			}
+			unnamed := depKey{
+				dtype: getTypeOf(item),
+			}
+			for k := range v.deps {
+				log.Errorf("howardjohn: deps %v, compare to %v and %v", k, named, unnamed)
+			}
+			if d, f := v.deps[unnamed]; f {
+				match := d.filter.Matches(item)
+				log.WithLabels("match", match).Infof("event for %v", unnamed)
+				if match {
+					ks.Insert(i)
+				}
+			}
+		}
+		h.mu.Unlock()
+		log.Errorf("howardjohn: handler2 call matched=%v", len(ks))
+		for i := range ks {
+			ii := h.parent.GetKey(i)
+			if ii == nil {
+				log.Errorf("Parent missing key!! %v", i)
+			} else {
+				h.executeOne(*ii)
+			}
+		}
+	}
+}
+
 func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[O] {
+	// We need a set of handlers
 	h := &handler2[I, O]{
 		handle: hf,
-		deps: map[Key[I]]dependencies{},
+		parent: c,
+		handlers: map[erasedCollection]struct{}{},
+		deps:   map[Key[I]]dependencies{},
 		collectionState: newMutex(index[O]{
 			objects:   map[Key[O]]O{},
 			namespace: map[string]sets.Set[Key[O]]{},
 		}),
-
 	}
-	executeOne := func(a any) {
+	h.executeOne = func(a any) {
 		i := a.(I)
 
 		iKey := GetKey(i)
+
+		h.mu.Lock()
 		d, f := h.deps[iKey]
 		if !f {
 			// TODO mutex
 			d = dependencies{
-				deps: map[depKey]dependency{},
-				finalized: false, // TODO: set this to rtue at some point
+				deps:      map[depKey]dependency{},
+				finalized: true, // TODO: set this to rtue at some point
 			}
 			h.deps[iKey] = d
 		}
+		h.mu.Unlock()
 		// Give them a context for this specific input
-		ctx := &indexedHandler2[I, O]{*h, d}
+		ctx := &indexedHandler2[I, O]{h, d}
 		res := hf(ctx, i)
 		h.collectionState.With(func(i index[O]) {
 			// TODO: we need the old key and new key
@@ -441,11 +518,11 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 		log.Debugf("got event %v", o.Event)
 		switch o.Event {
 		case controllers.EventAdd:
-				executeOne(o.New)
+			h.executeOne(o.New)
 		case controllers.EventDelete:
 			// TODO: just delete, never need to re-run
 		case controllers.EventUpdate:
-			executeOne(o.New)
+			h.executeOne(o.New)
 		}
 	})
 	// TODO: handle sub-deps
@@ -562,4 +639,8 @@ func (h *handler2[I, O]) _internalHandler() {
 
 func getType[T any]() reflect.Type {
 	return reflect.TypeOf(*new(T)).Elem()
+}
+
+func getTypeOf(a any) reflect.Type {
+	return reflect.TypeOf(a).Elem()
 }
