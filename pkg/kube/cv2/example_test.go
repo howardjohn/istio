@@ -160,10 +160,10 @@ func TestWorkload(t *testing.T) {
 	c.RunAndWait(test.NewStop(t))
 
 	t.Log("spawn workload collectioner")
-	Workloads := NewCollection(Pods, func(ctx HandlerContext, p *corev1.Pod) *workloadapi.Workload {
+	Workloads := NewCollection(Pods, func(ctx HandlerContext, p *corev1.Pod) *model.WorkloadInfo {
 		log.Errorf("howardjohn: computing workload for pod %v", p.Name)
 		// TODO: only selector ones
-		policies := Fetch(ctx, AuthzPolicies)
+		policies := Fetch(ctx, AuthzPolicies, FilterSelects(p.Labels))
 		policyNames := Map(policies, func(t *securityclient.AuthorizationPolicy) string {
 			return t.Name
 		})
@@ -173,7 +173,7 @@ func TestWorkload(t *testing.T) {
 		w := &workloadapi.Workload{
 			Name:                  p.Name,
 			Namespace:             p.Namespace,
-			Address:               netip.MustParseAddr(p.Status.PodIP).AsSlice(),
+			Address:               parseAddr(p.Status.PodIP).AsSlice(),
 			Network:               "TODO", // TODO: this is just an example. Real in In controller
 			ServiceAccount:        p.Spec.ServiceAccountName,
 			WaypointAddresses:     nil, // TODO
@@ -182,6 +182,7 @@ func TestWorkload(t *testing.T) {
 			VirtualIps:            vips,
 			AuthorizationPolicies: policyNames,
 		}
+
 		if td := spiffe.GetTrustDomain(); td != "cluster.local" {
 			w.TrustDomain = td
 		}
@@ -197,13 +198,14 @@ func TestWorkload(t *testing.T) {
 			w.Protocol = workloadapi.Protocol_HTTP
 			w.NativeHbone = true
 		}
-		return w
+		return &model.WorkloadInfo{Workload: w}
 	})
 	_ = Workloads
 
 	t.Log("pod1 create")
 	_, err := c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
+		Status: corev1.PodStatus{PodIP: "10.0.0.1"},
 	}, metav1.CreateOptions{})
 	assert.NoError(t, err)
 	time.Sleep(time.Millisecond * 50)
@@ -211,6 +213,14 @@ func TestWorkload(t *testing.T) {
 	t.Log("pod2 create")
 	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: map[string]string{"app": "bar"}},
+		Status: corev1.PodStatus{PodIP: "10.0.0.2"},
+	}, metav1.CreateOptions{})
+	time.Sleep(time.Millisecond * 50)
+
+	t.Log("pod3 create")
+	c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: map[string]string{"app": "not-bar"}},
+		Status: corev1.PodStatus{PodIP: "10.0.0.3"},
 	}, metav1.CreateOptions{})
 	time.Sleep(time.Millisecond * 50)
 
@@ -221,23 +231,9 @@ func TestWorkload(t *testing.T) {
 	}, metav1.CreateOptions{})
 	time.Sleep(time.Millisecond * 50)
 
-	//	// Read from MeshConfig. There is only one of these, so we don't need any filters.
-	//	mtlsMode := FetchOneNamed(MeshConfig).MtlsMode;
-	//	// Fetch a list of Services, but only ones in the same namespace as Pod that select Pod
-	//	services := Fetch(Services, select.Namespace(p.Namespace), select.SelectorLabels(p.labels))
-	//		namespace := FetchOneNamed(Namespace, select.Name(p.Namespace))
-	//			protocol := "Plaintext"
-	//			if mtlsMode == ALWAYS || (mtlsMode == LABEL && namespace.Labels[MtlsEnabled] == "true") {
-	//				protocol = "Mtls"
-	//			}
-	//			return Workload {
-	//				Name: p.Name,
-	//				Namespace: p.Namespace,
-	//				IP: p.Spec.IP,
-	//				Services: FetchIP(services),
-	//				Protocol: protocol,
-	//			}
-	//		})
+	for _, wl := range Workloads.List(metav1.NamespaceAll) {
+		t.Logf("Final workload: %+v", wl)
+	}
 }
 
 func constructVIPs(p *corev1.Pod, services []*corev1.Service) map[string]*workloadapi.PortList {
@@ -314,4 +310,12 @@ func workloadNameAndType(pod *corev1.Pod) (string, workloadapi.WorkloadType) {
 	}
 
 	return pod.Name, workloadapi.WorkloadType_POD
+}
+
+func parseAddr(s string) netip.Addr {
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Addr{}
+	}
+	return a
 }

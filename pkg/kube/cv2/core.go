@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 	"istio.io/api/type/v1beta1"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/kube/controllers"
@@ -60,15 +61,24 @@ var _ Collection[any] = &singletonAdapter[any]{}
 // Key is a string, but with a type associated to avoid mixing up keys
 type Key[O any] string
 
+type resourceNamer interface {
+	ResourceName() string
+}
+
 func GetKey[O any](a O) Key[O] {
 	ao, ok := any(a).(controllers.Object)
 	if ok {
 		k, _ := cache.MetaNamespaceKeyFunc(ao)
 		return Key[O](k)
 	}
+	arn, ok := any(a).(resourceNamer)
+	if ok {
+		return Key[O](arn.ResourceName())
+	}
 	panic(fmt.Sprintf("Cannot get Key, got %T", a))
 	return ""
 }
+
 func Map[T, U any](data []T, f func(T) U) []U {
 	res := make([]U, 0, len(data))
 	for _, e := range data {
@@ -201,13 +211,18 @@ type dependencies struct {
 	finalized bool
 }
 
+type handler2[I, O any] struct {
+	collectionState *mutexGuard[index[O]]
+	handle         HandleSingle[I, O]
+	executeOne        func(i I)
+	deps           map[Key[I]]dependencies
+
+}
 type handler[T any] struct {
 	deps           dependencies
 	handle         any
 	state          *atomic.Pointer[T]
-	collectionState *mutexGuard[index[T]]
 	execute        func()
-	executeOne        func(i any) // always I but erased
 }
 
 type index[T any] struct {
@@ -257,6 +272,33 @@ func (h *handler[T]) Register(f func(o controllers.Event)) {
 	panic("implement me")
 }
 
+func (h *handler2[I, O]) getDeps() dependencies {
+	panic("!")
+}
+
+func (h *handler2[I, O]) GetKey(k Key[O]) *O {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (h *handler2[I, O]) List(namespace string) (res []O) {
+	h.collectionState.With(func(i index[O]) {
+		if namespace == "" {
+			res = maps.Values(i.objects)
+		} else {
+			for key := range i.namespace[namespace] {
+				res = append(res, i.objects[key])
+			}
+		}
+	})
+	return
+}
+
+func (h *handler2[I, O]) Register(f func(o controllers.Event)) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func FilterName(name string) DepOption {
 	return func(h *dependency) {
 		h.filter.name = name
@@ -294,7 +336,7 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 		panic(fmt.Sprintf("dependency registered after initialization, %+v", d.key))
 	}
 	deps.deps[d.key] = d
-	log.Errorf("howardjohn: register %+v", d.key)
+	log.Errorf("howardjohn: Fetch: register %+v: %+v", d.key, d.filter)
 
 	if !deps.finalized {
 		return nil
@@ -336,24 +378,44 @@ type Option func(map[depKey]dependency)
 type HandleEmpty[T any] func(ctx HandlerContext) *T
 type HandleSingle[I, O any] func(ctx HandlerContext, i I) *O
 
-func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O], opts ...Option) Collection[O] {
-	h := &handler[O]{
+type indexedHandler2[I, O any] struct {
+	h handler2[I, O]
+	d dependencies
+}
+
+func (i *indexedHandler2[I, O]) getDeps() dependencies {
+	return i.d
+}
+
+func (i *indexedHandler2[I, O]) _internalHandler() {
+}
+
+func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[O] {
+	h := &handler2[I, O]{
 		handle: hf,
-		deps: dependencies{
-			deps:      map[depKey]dependency{},
-			finalized: false,
-		},
+		deps: map[Key[I]]dependencies{},
 		collectionState: newMutex(index[O]{
 			objects:   map[Key[O]]O{},
 			namespace: map[string]sets.Set[Key[O]]{},
 		}),
 
 	}
-	h.executeOne = func(a any) {
+	executeOne := func(a any) {
 		i := a.(I)
-		// TODO: pass H with "I" key as context. Dependencies are keyed by I
-		res := hf(h, i)
-		// TODO: not 'state'
+
+		iKey := GetKey(i)
+		d, f := h.deps[iKey]
+		if !f {
+			// TODO mutex
+			d = dependencies{
+				deps: map[depKey]dependency{},
+				finalized: false, // TODO: set this to rtue at some point
+			}
+			h.deps[iKey] = d
+		}
+		// Give them a context for this specific input
+		ctx := &indexedHandler2[I, O]{*h, d}
+		res := hf(ctx, i)
 		h.collectionState.With(func(i index[O]) {
 			// TODO: we need the old key and new key
 			// Otherwise we cannot delete
@@ -363,31 +425,27 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O], opts ...Opt
 				oKey := GetKey(*res)
 				oldRes := i.objects[oKey]
 				i.objects[oKey] = *res
-				updated := controllers.Equal(*res, oldRes)
+				updated := !controllers.Equal(*res, oldRes)
 				log.Errorf("howardjohn: updated %v", updated)
 			}
 		})
 		// TODO: propogate event
 	}
-	for _, o := range opts {
-		o(h.deps.deps)
-	}
 	// TODO: wait for dependencies to be ready
 	for _, i := range c.List(metav1.NamespaceAll) {
 		h.executeOne(i)
 	}
-	h.deps.finalized = true
 	// Setup primary handler. On any change, trigger only that one
 	c.Register(func(o controllers.Event) {
 		log := log.WithLabels("dep", "primary")
 		log.Debugf("got event %v", o.Event)
 		switch o.Event {
 		case controllers.EventAdd:
-				h.executeOne(o.New)
+				executeOne(o.New)
 		case controllers.EventDelete:
 			// TODO: just delete, never need to re-run
 		case controllers.EventUpdate:
-			h.executeOne(o.New)
+			executeOne(o.New)
 		}
 	})
 	// TODO: handle sub-deps
@@ -431,7 +489,7 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O], opts ...Opt
 	return h
 }
 
-func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
+func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 	h := &handler[T]{
 		handle: hf,
 		deps: dependencies{
@@ -443,12 +501,9 @@ func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 	h.execute = func() {
 		res := hf(h)
 		oldRes := h.state.Swap(res)
-		updated := controllers.Equal(res, oldRes)
+		updated := !controllers.Equal(res, oldRes)
 		log.Errorf("howardjohn: updated %v", updated) // TODO: compare
 		// TODO: propogate event
-	}
-	for _, o := range opts {
-		o(h.deps.deps)
 	}
 	// Run the handler, but do not persist state. This is just to register dependencies
 	// I suppose we could make this also persist state
@@ -498,6 +553,10 @@ func NewSingleton[T any](hf HandleEmpty[T], opts ...Option) Singleton[T] {
 }
 
 func (h *handler[T]) _internalHandler() {
+
+}
+
+func (h *handler2[I, O]) _internalHandler() {
 
 }
 
