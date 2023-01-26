@@ -370,10 +370,10 @@ func meshConfigMapData(cm *v1.ConfigMap) string {
 }
 
 type Waypoint struct {
-	ServiceAccount string
-	Name           string
-	Namespace      string
-	Address        []byte
+	ForServiceAccount string
+	Name              string
+	Namespace         string
+	Address           []byte
 }
 
 func (w Waypoint) ResourceName() string {
@@ -418,11 +418,12 @@ func (c *Controller) setupIndex() *AmbientIndex {
 		if err != nil {
 			return nil
 		}
+		sa := p.Annotations["istio.io/service-account"]
 		return &Waypoint{
-			ServiceAccount: p.Spec.ServiceAccountName,
-			Namespace:      p.Namespace,
-			Name:           p.Name,
-			Address:        addr.AsSlice(),
+			ForServiceAccount: sa,
+			Namespace:         p.Namespace,
+			Name:              p.Name,
+			Address:           addr.AsSlice(),
 		}
 	})
 	Workloads := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *model.WorkloadInfo {
@@ -434,10 +435,6 @@ func (c *Controller) setupIndex() *AmbientIndex {
 		if !IsPodReady(p) {
 			return nil
 		}
-		if p.Labels[constants.ManagedGatewayLabel] == constants.ManagedGatewayMeshController {
-			// We don't include waypoints
-			return nil
-		}
 		policies := cv2.Fetch(ctx, AuthzPolicies, cv2.FilterSelects(p.Labels), cv2.FilterGeneric(func(a any) bool {
 			// We only want label selector ones, we handle global ones through another mechanism
 			return a.(*securityclient.AuthorizationPolicy).Spec.GetSelector().GetMatchLabels() != nil
@@ -446,7 +443,12 @@ func (c *Controller) setupIndex() *AmbientIndex {
 		namespace := cv2.Flatten(cv2.FetchOne(ctx, Namespaces, cv2.FilterName(p.Namespace)))
 		services := cv2.Fetch(ctx, Services, cv2.FilterSelects(p.GetLabels()))
 		waypoints := cv2.Fetch(ctx, Waypoints, cv2.FilterGeneric(func(a any) bool {
-			return a.(Waypoint).ServiceAccount == p.Spec.ServiceAccountName
+			w := a.(Waypoint)
+			if w.Namespace != p.Namespace {
+				// TODO: FilterNamespace
+				return false
+			}
+			return w.ForServiceAccount == "" || w.ForServiceAccount == p.Spec.ServiceAccountName
 		}))
 		w := &workloadapi.Workload{
 			Name:           p.Name,
