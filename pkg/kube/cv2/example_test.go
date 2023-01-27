@@ -111,7 +111,7 @@ func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.Mesh
 	// Create a new MeshConfig type. Unlike ConfigMaps, this is derived from other
 	MeshConfig := NewSingleton[meshapi.MeshConfig](
 		func(ctx HandlerContext) *meshapi.MeshConfig {
-			log.Errorf("howardjohn: Computing mesh config")
+			log.Infof("Recomputing mesh config")
 			meshCfg := mesh.DefaultMeshConfig()
 			cms := []*corev1.ConfigMap{}
 			cms = AppendNonNil(cms, FetchOne(ctx, ConfigMaps, FilterName("istio-user")))
@@ -125,7 +125,6 @@ func MeshConfigWatcher(c kube.Client, stop chan struct{}) Singleton[meshapi.Mesh
 				}
 				meshCfg = n
 			}
-			log.Errorf("howardjohn: computed mesh config to %v", meshCfg.GetIngressClass())
 			return meshCfg
 		},
 	)

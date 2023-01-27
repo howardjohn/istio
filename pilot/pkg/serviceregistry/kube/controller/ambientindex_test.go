@@ -146,7 +146,6 @@ func TestAmbientIndex(t *testing.T) {
 	addPods("127.0.0.1", "name1", "sa1", map[string]string{"app": "a"})
 	assertWorkloads("", "name1")
 	assertEvent("127.0.0.1")
-	t.Log(controller.ambientIndex.workloads.List(""))
 
 	addPods("127.0.0.2", "name2", "sa1", map[string]string{"app": "a", "other": "label"})
 	time.Sleep(time.Millisecond * 100)
@@ -177,6 +176,7 @@ func TestAmbientIndex(t *testing.T) {
 	assertWorkloads("10.0.0.1")
 	fx.Clear()
 
+	t.Log("!!!!!!!!!!!!!!!!!")
 	createService(controller, "svc1", "ns1",
 		map[string]string{},
 		[]int32{80}, map[string]string{"app": "a"}, t)

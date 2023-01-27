@@ -143,35 +143,39 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 
 func (h *collection[I, O]) handler() func(o Event[any]) {
 	return func(o Event[any]) {
-		item := o.Latest()
 		h.mu.Lock()
 		// Got an event. Now we need to find out who depends on it..
 		ks := sets.Set[Key[I]]{}
+		// Check old and new
 		for i, v := range h.deps {
-			named := depKey{
-				name:  GetName(item),
-				dtype: GetTypeOf(item),
-			}
-			if d, f := v.deps[named]; f {
-				match := d.filter.Matches(item)
-				log.WithLabels("match", match).Infof("event for %v", named)
-				if match {
-					ks.Insert(i)
+			for _, item := range o.Items() {
+				named := depKey{
+					name:  GetName(item),
+					dtype: GetTypeOf(item),
 				}
-			}
-			unnamed := depKey{
-				dtype: GetTypeOf(item),
-			}
-			if d, f := v.deps[unnamed]; f {
-				match := d.filter.Matches(item)
-				log.WithLabels("match", match).Infof("event for collection %v", named)
-				if match {
-					ks.Insert(i)
+				if d, f := v.deps[named]; f {
+					match := d.filter.Matches(item)
+					log.WithLabels("match", match).Infof("event for %v", named)
+					if match {
+						ks.Insert(i)
+						break
+					}
+				}
+				unnamed := depKey{
+					dtype: GetTypeOf(item),
+				}
+				if d, f := v.deps[unnamed]; f {
+					match := d.filter.Matches(item)
+					log.WithLabels("match", match).Infof("event for collection %v", named)
+					if match {
+						ks.Insert(i)
+						break
+					}
 				}
 			}
 		}
 		h.mu.Unlock()
-		log.WithLabels("key", GetKey(item), "event", o.Event).Debugf("singleton event, trigger %v dependencies", len(ks))
+		log.WithLabels("key", GetKey(o.Latest()), "event", o.Event).Infof("singleton event, trigger %v dependencies", len(ks))
 		for i := range ks {
 			ii := h.parent.GetKey(i)
 			if ii == nil {

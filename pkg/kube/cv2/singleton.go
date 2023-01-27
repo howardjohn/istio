@@ -44,7 +44,6 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 		res := hf(h)
 		oldRes := h.state.Swap(res)
 		updated := !controllers.Equal(res, oldRes)
-		log.Errorf("howardjohn: updated %v", updated)
 		if updated {
 			for _, handler := range h.handlers {
 				event := controllers.EventUpdate

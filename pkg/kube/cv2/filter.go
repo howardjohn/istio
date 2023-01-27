@@ -48,20 +48,20 @@ func (f filter) Matches(object any) bool {
 	} else {
 		// log.Debugf("matches namespace: %q vs %q", f.namespace, GetNamespace(object))
 	}
-	if f.selects != nil && !labels.Instance(f.selects).SubsetOf(GetLabelSelector(object)) {
+	if f.selects != nil && !labels.Instance(GetLabelSelector(object)).SubsetOf(f.selects) {
 		// log.Debugf("no match selects: %q vs %q", f.selects, GetLabelSelector(object))
 		return false
 	} else {
 		// log.Debugf("matches selects: %q vs %q", f.selects, GetLabelSelector(object))
 	}
-	if f.labels != nil && !labels.Instance(GetLabels(object)).SubsetOf(f.labels) {
-		// log.Debugf("no match selects: %q vs %q", f.selects, GetLabelSelector(object))
+	if f.labels != nil && !labels.Instance(f.labels).SubsetOf(GetLabels(object)) {
+		// log.Debugf("no match labels: %q vs %q", f.labels, GetLabels(object))
 		return false
 	} else {
-		// log.Debugf("matches selects: %q vs %q", f.selects, GetLabelSelector(object))
+		// log.Debugf("matches selects: %q vs %q", f.labels, GetLabels(object))
 	}
 	if f.generic != nil && !f.generic(object) {
-		// log.Debugf("no match selects: %q vs %q", f.selects, GetLabelSelector(object))
+		// log.Debugf("no match generic")
 		return false
 	} else {
 		// log.Debugf("matches selects: %q vs %q", f.selects, GetLabelSelector(object))

@@ -113,6 +113,17 @@ type Event[T any] struct {
 	Event controllers.EventType
 }
 
+func (e Event[T]) Items() []T {
+	res := make([]T, 0, 2)
+	if e.Old != nil {
+		res = append(res, *e.Old)
+	}
+	if e.New != nil {
+		res = append(res, *e.New)
+	}
+	return res
+}
+
 func (e Event[T]) Latest() T {
 	if e.New != nil {
 		return *e.New

@@ -46,19 +46,7 @@ func (i informer[I]) GetKey(k Key[I]) *I {
 
 func (i informer[I]) Register(f func(o Event[I])) {
 	i.inf.AddEventHandler(EventHandler(func(o Event[any]) {
-		log.Errorf("howardjohn: %T %v", o.Old, o.Old)
 		f(castEvent[any, I](o))
-		return
-		e := Event[I]{
-			Event: o.Event,
-		}
-		if o.Old != nil {
-			e.Old = Ptr((*o.Old).(I))
-		}
-		if o.New != nil {
-			e.New = Ptr((*o.New).(I))
-		}
-		f(e)
 	}))
 }
 

@@ -59,18 +59,18 @@ func CreateIndex[I any, K comparable](
 		idx.mu.Lock()
 		defer idx.mu.Unlock()
 
+		if o.Old != nil {
+			obj := *o.Old
+			key := GetKey(obj)
+			for _, indexKey := range extract(obj) {
+				sets.DeleteCleanupLast(idx.objects, indexKey, key)
+			}
+		}
 		if o.New != nil {
 			obj := *o.New
 			key := GetKey(obj)
 			for _, indexKey := range extract(obj) {
 				idx.objects[indexKey] = sets.InsertOrNew(idx.objects[indexKey], key)
-			}
-		}
-		if !IsNil(o.Old) {
-			obj := *o.Old
-			key := GetKey(obj)
-			for _, indexKey := range extract(obj) {
-				sets.DeleteCleanupLast(idx.objects, indexKey, key)
 			}
 		}
 	})
