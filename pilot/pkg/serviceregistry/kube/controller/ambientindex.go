@@ -62,10 +62,9 @@ type AmbientIndex struct {
 	byPod map[string]*model.WorkloadInfo
 
 	// Map of ServiceAccount -> IP
-	waypoints map[types.NamespacedName]sets.String
-
-	handlePods func(pods []*v1.Pod)
-	workloads  cv2.Collection[model.WorkloadInfo]
+	waypoints             map[types.NamespacedName]sets.String
+handlePods func(pods []*v1.Pod)	workloads             cv2.Collection[model.WorkloadInfo]
+	workloadServicesIndex *cv2.Index[model.WorkloadInfo, string]
 }
 
 // Lookup finds a given IP address.
@@ -75,8 +74,7 @@ func (a *AmbientIndex) Lookup(ip string) []*model.WorkloadInfo {
 		if res != nil {
 			return []*model.WorkloadInfo{res}
 		}
-		// TODO: fallback to service lookup. need an index
-		return nil
+		return cv2.Map(a.workloadServicesIndex.Lookup(ip), cv2.Ptr[model.WorkloadInfo])
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -584,6 +582,7 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 	Workloads := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *model.WorkloadInfo {
 		// TODO:
 		// * Test updating a pod attributes used as filter
+		// * Create passthrough Filter type, on the fly filtering for the discovery thing
 		log.Errorf("howardjohn: input... %v/%v", p.Name, IsPodReady(p))
 		if !IsPodReady(p) {
 			return nil
@@ -629,16 +628,21 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 		log.Errorf("howardjohn: made workload: %v", w)
 		return &model.WorkloadInfo{Workload: w}
 	})
-	Workloads.Register(func(o cv2.Event) {
-		log.Errorf("howardjohn: event %v", o.Latest().(*model.WorkloadInfo).ResourceName())
+	Workloads.Register(func(o cv2.Event[model.WorkloadInfo]) {
+		log.Errorf("howardjohn: event %v", o.Latest().ResourceName())
 		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
 			Full:           false,
-			ConfigsUpdated: sets.New(model.ConfigKey{Kind: kind.Address, Name: o.Latest().(*model.WorkloadInfo).ResourceName()}),
+			ConfigsUpdated: sets.New(model.ConfigKey{Kind: kind.Address, Name: o.Latest().ResourceName()}),
 			Reason:         []model.TriggerReason{model.AmbientUpdate},
 		})
 	})
+
+	WorkloadServiceIndex := cv2.CreateIndex[model.WorkloadInfo, string](Workloads, func(o model.WorkloadInfo) []string {
+		return maps.Keys(o.VirtualIps)
+	})
 	return &AmbientIndex{
-		workloads: Workloads,
+		workloads:             Workloads,
+		workloadServicesIndex: WorkloadServiceIndex,
 	}
 }
 

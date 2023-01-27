@@ -19,7 +19,7 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	// One subsequent runs, we just validate
 	h := ctx.(depper)
 	d := dependency{
-		dep: c,
+		dep: eraseCollection(c),
 		key: depKey{dtype: GetType[T]()},
 	}
 	for _, o := range opts {
@@ -37,7 +37,7 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	}
 	deps.deps[d.key] = d
 	if rr, ok := ctx.(registerer); ok {
-		rr.register(c)
+		rr.register(d.dep)
 	}
 
 	if !deps.finalized {

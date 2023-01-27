@@ -13,8 +13,8 @@ import (
 type collection[I, O any] struct {
 	collectionState *mutexGuard[index[O]]
 	handle          HandleSingle[I, O]
-	dependencies    map[erasedCollection]struct{}
-	handlers        []func(o Event)
+	dependencies    sets.String
+	handlers        []func(o Event[O])
 	parent          Collection[I]
 	executeOne      func(i any)
 	deps            map[Key[I]]dependencies
@@ -26,7 +26,7 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 	h := &collection[I, O]{
 		handle:       hf,
 		parent:       c,
-		dependencies: map[erasedCollection]struct{}{},
+		dependencies: sets.New[string](),
 		deps:         map[Key[I]]dependencies{},
 		collectionState: newMutex(index[O]{
 			objects:   map[Key[O]]O{},
@@ -63,19 +63,20 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 				oldRes, oldExists := i.objects[oKey]
 				i.objects[oKey] = *res
 				updated := !controllers.Equal(*res, oldRes)
-
+				e := Event[O]{}
+				if !oldExists {
+					e.Event = controllers.EventAdd
+					e.New = res
+				} else if res == nil {
+					e.Event = controllers.EventDelete
+					e.Old = &oldRes
+				} else {
+					e.Event = controllers.EventUpdate
+					e.New = res
+					e.Old = &oldRes
+				}
 				for _, handler := range h.handlers {
-					event := controllers.EventUpdate
-					if !oldExists {
-						event = controllers.EventAdd
-					} else if res == nil {
-						event = controllers.EventDelete
-					}
-					handler(Event{
-						Old:   oldRes,
-						New:   res,
-						Event: event,
-					})
+					handler(e)
 				}
 				log.WithLabels("updated", updated).Debugf("handled")
 			}
@@ -87,16 +88,16 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 		h.executeOne(i)
 	}
 	// Setup primary singleton. On any change, trigger only that one
-	c.Register(func(o Event) {
+	c.Register(func(o Event[I]) {
 		log := log.WithLabels("dep", "primary")
 		log.Debugf("got event %v", o.Event)
 		switch o.Event {
 		case controllers.EventAdd:
-			h.executeOne(o.New)
+			h.executeOne(*o.New)
 		case controllers.EventDelete:
 			// TODO: just delete, never need to re-run
 		case controllers.EventUpdate:
-			h.executeOne(o.New)
+			h.executeOne(*o.New)
 		}
 	})
 	// TODO: handle sub-deps
@@ -140,8 +141,8 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 	return h
 }
 
-func (h *collection[I, O]) handler() func(o Event) {
-	return func(o Event) {
+func (h *collection[I, O]) handler() func(o Event[any]) {
+	return func(o Event[any]) {
 		item := o.Latest()
 		h.mu.Lock()
 		// Got an event. Now we need to find out who depends on it..
@@ -208,7 +209,7 @@ func (h *collection[I, O]) List(namespace string) (res []O) {
 	return
 }
 
-func (h *collection[I, O]) Register(f func(o Event)) {
+func (h *collection[I, O]) Register(f func(o Event[O])) {
 	h.handlers = append(h.handlers, f)
 }
 
@@ -227,10 +228,8 @@ func (i *indexedCollection[I, O]) _internalHandler() {
 }
 
 func (i *indexedCollection[I, O]) register(e erasedCollection) {
-	if _, f := i.h.dependencies[e]; !f {
-		i.h.dependencies[e] = struct{}{}
+	if !i.h.dependencies.InsertContains(e.hash()) {
 		log.Debugf("register singleton %T", e)
-		e.Register(i.h.handler())
-		return
+		e.register(i.h.handler())
 	}
 }

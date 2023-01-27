@@ -14,19 +14,55 @@ var log = istiolog.RegisterScope("cv2", "", 0)
 type Collection[T any] interface {
 	GetKey(k Key[T]) *T
 	List(namespace string) []T
-	// TODO: generic Event
-	Register(f func(o Event))
+	Register(f func(o Event[T]))
 }
 
 type Singleton[T any] interface {
 	Get() *T
-	Register(f func(o Event))
+	Register(f func(o Event[T]))
 	AsCollection() Collection[T]
 }
 
 type erasedCollection interface {
-	// TODO: cannot use Event as it assumes Object
-	Register(f func(o Event))
+	register(f func(o Event[any]))
+	hash() string
+}
+
+type erasedCollectionImpl struct {
+	r func(f func(o Event[any]))
+	h string
+}
+
+func (e erasedCollectionImpl) hash() string {
+	return e.h
+}
+
+func (e erasedCollectionImpl) register(f func(o Event[any])) {
+	e.r(f)
+}
+
+func eraseCollection[T any](c Collection[T]) erasedCollection {
+	return erasedCollectionImpl{
+		h: fmt.Sprintf("%p", c),
+		r: func(f func(o Event[any])) {
+			c.Register(func(o Event[T]) {
+				f(castEvent[T, any](o))
+			})
+		},
+	}
+}
+
+func castEvent[I, O any](o Event[I]) Event[O] {
+	e := Event[O]{
+		Event: o.Event,
+	}
+	if o.Old != nil {
+		e.Old = Ptr(any(*o.Old).(O))
+	}
+	if o.New != nil {
+		e.New = Ptr(any(*o.New).(O))
+	}
+	return e
 }
 
 // Key is a string, but with a type associated to avoid mixing up keys
@@ -71,17 +107,17 @@ type depper interface {
 	getDeps() dependencies
 }
 
-type Event struct {
-	Old   any
-	New   any
+type Event[T any] struct {
+	Old   *T
+	New   *T
 	Event controllers.EventType
 }
 
-func (e Event) Latest() any {
+func (e Event[T]) Latest() T {
 	if e.New != nil {
-		return e.New
+		return *e.New
 	}
-	return e.Old
+	return *e.Old
 }
 
 type HandlerContext interface {
@@ -97,3 +133,7 @@ type (
 	HandleEmpty[T any]     func(ctx HandlerContext) *T
 	HandleSingle[I, O any] func(ctx HandlerContext, i I) *O
 )
+
+func IsNil(v any) bool {
+	return v == nil || (reflect.ValueOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).IsNil())
+}

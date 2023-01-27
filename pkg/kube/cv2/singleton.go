@@ -13,7 +13,7 @@ type singletonAdapter[T any] struct {
 	s Singleton[T]
 }
 
-func (s singletonAdapter[T]) Register(f func(o Event)) {
+func (s singletonAdapter[T]) Register(f func(o Event[T])) {
 	s.s.Register(f)
 }
 
@@ -53,7 +53,7 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 				} else if res == nil {
 					event = controllers.EventDelete
 				}
-				handler(Event{
+				handler(Event[T]{
 					Old:   oldRes,
 					New:   res,
 					Event: event,
@@ -73,7 +73,7 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 		dep := dep
 		log := log.WithLabels("dep", dep.key)
 		log.Infof("insert dep, filter: %+v", dep.filter)
-		dep.dep.Register(func(o Event) {
+		dep.dep.register(func(o Event[any]) {
 			mu.Lock()
 			defer mu.Unlock()
 			log.Debugf("got event %v", o.Event)
@@ -111,7 +111,7 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 type singleton[T any] struct {
 	deps     dependencies
 	handle   any
-	handlers []func(o Event)
+	handlers []func(o Event[T])
 	state    *atomic.Pointer[T]
 	execute  func()
 }
@@ -123,7 +123,7 @@ func (h *singleton[T]) AsCollection() Collection[T] {
 	return singletonAdapter[T]{h}
 }
 
-func (h *singleton[T]) Register(f func(o Event)) {
+func (h *singleton[T]) Register(f func(o Event[T])) {
 	h.handlers = append(h.handlers, f)
 }
 

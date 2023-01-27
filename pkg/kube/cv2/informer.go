@@ -3,10 +3,11 @@ package cv2
 import (
 	"fmt"
 
-	"istio.io/istio/pkg/kube"
-	"istio.io/istio/pkg/kube/controllers"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
+
+	"istio.io/istio/pkg/kube"
+	"istio.io/istio/pkg/kube/controllers"
 )
 
 type informer[I controllers.Object] struct {
@@ -43,45 +44,42 @@ func (i informer[I]) GetKey(k Key[I]) *I {
 	return &r
 }
 
-
-func (i informer[I]) Register(f func(o Event)) {
-	i.inf.AddEventHandler(EventHandler(f))
+func (i informer[I]) Register(f func(o Event[I])) {
+	i.inf.AddEventHandler(EventHandler(func(o Event[any]) {
+		log.Errorf("howardjohn: %T %v", o.Old, o.Old)
+		f(castEvent[any, I](o))
+		return
+		e := Event[I]{
+			Event: o.Event,
+		}
+		if o.Old != nil {
+			e.Old = Ptr((*o.Old).(I))
+		}
+		if o.New != nil {
+			e.New = Ptr((*o.New).(I))
+		}
+		f(e)
+	}))
 }
 
-func EventHandler(handler func(o Event)) cache.ResourceEventHandler {
+func EventHandler(handler func(o Event[any])) cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
-			o := controllers.ExtractObject(obj)
-			if o == nil {
-				return
-			}
-			handler(Event{
-				New:   o,
+			handler(Event[any]{
+				New:   &obj,
 				Event: controllers.EventAdd,
 			})
 		},
 		UpdateFunc: func(oldInterface, newInterface any) {
-			oldObj := controllers.ExtractObject(oldInterface)
-			if oldObj == nil {
-				return
-			}
-			newObj := controllers.ExtractObject(newInterface)
-			if newObj == nil {
-				return
-			}
-			handler(Event{
-				Old:   oldObj,
-				New:   newObj,
+			handler(Event[any]{
+				Old:   &oldInterface,
+				New:   &newInterface,
 				Event: controllers.EventUpdate,
 			})
 		},
 		DeleteFunc: func(obj any) {
-			o := controllers.ExtractObject(obj)
-			if o == nil {
-				return
-			}
-			handler(Event{
-				Old:   o,
+			handler(Event[any]{
+				Old:   &obj,
 				Event: controllers.EventDelete,
 			})
 		},
