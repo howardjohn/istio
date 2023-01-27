@@ -7,22 +7,24 @@ import (
 	"testing"
 	"time"
 
+	// security "istio.io/api/security/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	meshapi "istio.io/api/mesh/v1alpha1"
+	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
 	"istio.io/istio/pilot/pkg/ambient/ambientpod"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
-	kubelabels "istio.io/istio/pkg/kube/labels"
-	"istio.io/istio/pkg/spiffe"
-	//security "istio.io/api/security/v1beta1"
-	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
+	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/kube"
+	kubelabels "istio.io/istio/pkg/kube/labels"
+	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/retry"
 	"istio.io/istio/pkg/workloadapi"
 	istiolog "istio.io/pkg/log"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func meshConfigMapData(cm *corev1.ConfigMap) string {
@@ -51,7 +53,6 @@ func makeConfigMapWithName(name, resourceVersion string, data map[string]string)
 
 func testMeshConfig(t *testing.T, c kube.Client, MeshConfig Singleton[meshapi.MeshConfig]) {
 	t.Run("MeshConfig", func(t *testing.T) {
-
 		cmCore := makeConfigMapWithName("istio", "1", map[string]string{
 			"mesh": "ingressClass: core",
 		})
@@ -144,16 +145,21 @@ func WorkloadWatcher(t test.Failer, c kube.Client, MeshConfig Singleton[meshapi.
 		meshCfg := FetchOne(ctx, MeshConfig.AsCollection())
 		namespace := Flatten(FetchOne(ctx, Namespaces, FilterName(p.Namespace)))
 		services := Fetch(ctx, Services, FilterSelects(p.GetLabels()))
+		waypointPods := Fetch(ctx, Pods, FilterLabel(map[string]string{
+			constants.ManagedGatewayLabel: constants.ManagedGatewayMeshController,
+		}), FilterGeneric(func(a any) bool {
+			return a.(*corev1.Pod).Spec.ServiceAccountName == p.Spec.ServiceAccountName
+		}))
 		w := &workloadapi.Workload{
-			Name:              p.Name,
-			Namespace:         p.Namespace,
-			Address:           parseAddr(p.Status.PodIP).AsSlice(),
-			Network:           "TODO", // TODO: this is just an example.
-			ServiceAccount:    p.Spec.ServiceAccountName,
-			WaypointAddresses: nil, // TODO
-			Node:              p.Spec.NodeName,
-			NativeHbone:       false, // TODO
-			VirtualIps:        constructVIPs(p, services),
+			Name:           p.Name,
+			Namespace:      p.Namespace,
+			Address:        parseAddr(p.Status.PodIP).AsSlice(),
+			ServiceAccount: p.Spec.ServiceAccountName,
+			WaypointAddresses: Map(waypointPods, func(t *corev1.Pod) []byte {
+				return netip.MustParseAddr(t.Status.PodIP).AsSlice()
+			}),
+			Node:       p.Spec.NodeName,
+			VirtualIps: constructVIPs(p, services),
 			AuthorizationPolicies: Map(policies, func(t *securityclient.AuthorizationPolicy) string {
 				return t.Name
 			}),
@@ -188,7 +194,6 @@ func TestWorkload(t *testing.T) {
 
 func testWorkloads(t *testing.T, c kube.Client, Workloads Collection[model.WorkloadInfo]) {
 	t.Run("Workloads", func(t *testing.T) {
-
 		t.Log("pod1 create")
 		c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: map[string]string{"app": "bar"}},
@@ -211,6 +216,7 @@ func testWorkloads(t *testing.T, c kube.Client, Workloads Collection[model.Workl
 		c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{Name: "pod3", Labels: map[string]string{"app": "not-bar"}},
 			Status:     corev1.PodStatus{PodIP: "10.0.0.3"},
+			Spec:       corev1.PodSpec{ServiceAccountName: "foo"},
 		}, metav1.CreateOptions{})
 		retry.UntilOrFail(t, func() bool {
 			return Workloads.GetKey("10.0.0.3") != nil
@@ -241,6 +247,16 @@ func testWorkloads(t *testing.T, c kube.Client, Workloads Collection[model.Workl
 		}, metav1.CreateOptions{})
 		retry.UntilOrFail(t, func() bool {
 			return Workloads.GetKey("10.0.0.3").Protocol == workloadapi.Protocol_HTTP
+		}, retry.Timeout(time.Second))
+
+		t.Log("waypoint create")
+		c.Kube().CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "waypoint", Labels: map[string]string{constants.ManagedGatewayLabel: constants.ManagedGatewayMeshController}},
+			Status:     corev1.PodStatus{PodIP: "10.0.0.3"},
+			Spec:       corev1.PodSpec{ServiceAccountName: "foo"},
+		}, metav1.CreateOptions{})
+		retry.UntilOrFail(t, func() bool {
+			return len(Workloads.GetKey("10.0.0.3").WaypointAddresses) == 1
 		}, retry.Timeout(time.Second))
 
 		for _, wl := range Workloads.List(metav1.NamespaceAll) {
