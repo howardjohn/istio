@@ -1,6 +1,8 @@
 package cv2
 
 import (
+	"sync"
+
 	"golang.org/x/exp/maps"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -8,13 +10,24 @@ import (
 	"istio.io/istio/pkg/util/sets"
 )
 
+type collection[I, O any] struct {
+	collectionState *mutexGuard[index[O]]
+	handle          HandleSingle[I, O]
+	dependencies    map[erasedCollection]struct{}
+	handlers        []func(o Event)
+	parent          Collection[I]
+	executeOne      func(i any)
+	deps            map[Key[I]]dependencies
+	mu              sync.Mutex
+}
+
 func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[O] {
 	// We need a set of handlers
 	h := &collection[I, O]{
-		handle:   hf,
-		parent:   c,
-		handlers: map[erasedCollection]struct{}{},
-		deps:     map[Key[I]]dependencies{},
+		handle:       hf,
+		parent:       c,
+		dependencies: map[erasedCollection]struct{}{},
+		deps:         map[Key[I]]dependencies{},
 		collectionState: newMutex(index[O]{
 			objects:   map[Key[O]]O{},
 			namespace: map[string]sets.Set[Key[O]]{},
@@ -47,9 +60,23 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 				log.Errorf("howardjohn: TODO!!! delete")
 			} else {
 				oKey := GetKey(*res)
-				oldRes := i.objects[oKey]
+				oldRes, oldExists := i.objects[oKey]
 				i.objects[oKey] = *res
 				updated := !controllers.Equal(*res, oldRes)
+
+				for _, handler := range h.handlers {
+					event := controllers.EventUpdate
+					if !oldExists {
+						event = controllers.EventAdd
+					} else if res == nil {
+						event = controllers.EventDelete
+					}
+					handler(Event{
+						Old:   oldRes,
+						New:   res,
+						Event: event,
+					})
+				}
 				log.WithLabels("updated", updated).Debugf("handled")
 			}
 		})
@@ -136,7 +163,7 @@ func (h *collection[I, O]) handler() func(o Event) {
 			}
 			if d, f := v.deps[unnamed]; f {
 				match := d.filter.Matches(item)
-				log.WithLabels("match", match).Infof("event for %v", unnamed)
+				log.WithLabels("match", match).Infof("event for collection %v", named)
 				if match {
 					ks.Insert(i)
 				}
@@ -182,8 +209,7 @@ func (h *collection[I, O]) List(namespace string) (res []O) {
 }
 
 func (h *collection[I, O]) Register(f func(o Event)) {
-	// TODO implement me
-	panic("implement me")
+	h.handlers = append(h.handlers, f)
 }
 
 type indexedCollection[I, O any] struct {
@@ -201,8 +227,8 @@ func (i *indexedCollection[I, O]) _internalHandler() {
 }
 
 func (i *indexedCollection[I, O]) register(e erasedCollection) {
-	if _, f := i.h.handlers[e]; !f {
-		i.h.handlers[e] = struct{}{}
+	if _, f := i.h.dependencies[e]; !f {
+		i.h.dependencies[e] = struct{}{}
 		log.Debugf("register singleton %T", e)
 		e.Register(i.h.handler())
 		return

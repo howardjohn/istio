@@ -24,7 +24,6 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"go.uber.org/atomic"
-	"istio.io/istio/pkg/kube/controllers"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,6 +48,7 @@ import (
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/protocol"
 	kubelib "istio.io/istio/pkg/kube"
+	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/informer"
 	"istio.io/istio/pkg/kube/namespace"
 	"istio.io/istio/pkg/network"
@@ -399,7 +399,7 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 	c.registerHandlers(c.pods.informer, "Pods", c.pods.onEvent, c.pods.labelFilter)
 
 	c.configController = options.ConfigController
-	c.ambientIndex = c.setupIndex()
+	c.ambientIndex = c.setupIndex2()
 	c.exports = newServiceExportCache(c)
 	c.imports = newServiceImportCache(c)
 

@@ -43,6 +43,10 @@ func Map[T, U any](data []T, f func(T) U) []U {
 	return res
 }
 
+func Ptr[T any](data T) *T {
+	return &data
+}
+
 func AppendNonNil[T any](data []T, i *T) []T {
 	if i != nil {
 		data = append(data, *i)

@@ -32,14 +32,19 @@ import (
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	meshapi "istio.io/api/mesh/v1alpha1"
 	"istio.io/api/security/v1beta1"
+	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
+	"istio.io/istio/pilot/pkg/ambient/ambientpod"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/labels"
+	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/config/schema/kind"
 	"istio.io/istio/pkg/kube/controllers"
+	"istio.io/istio/pkg/kube/cv2"
 	kubelabels "istio.io/istio/pkg/kube/labels"
 	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/pkg/util/sets"
@@ -60,10 +65,19 @@ type AmbientIndex struct {
 	waypoints map[types.NamespacedName]sets.String
 
 	handlePods func(pods []*v1.Pod)
+	workloads  cv2.Collection[model.WorkloadInfo]
 }
 
 // Lookup finds a given IP address.
 func (a *AmbientIndex) Lookup(ip string) []*model.WorkloadInfo {
+	if a.workloads != nil {
+		res := a.workloads.GetKey(cv2.Key[model.WorkloadInfo](ip))
+		if res != nil {
+			return []*model.WorkloadInfo{res}
+		}
+		// TODO: fallback to service lookup. need an index
+		return nil
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	// First look at pod...
@@ -153,6 +167,9 @@ func (a *AmbientIndex) updateWaypoint(sa types.NamespacedName, ipStr string, isD
 
 // All return all known workloads. Result is un-ordered
 func (a *AmbientIndex) All() []*model.WorkloadInfo {
+	if a.workloads != nil {
+		return cv2.Map(a.workloads.List(metav1.NamespaceAll), cv2.Ptr[model.WorkloadInfo])
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	res := make([]*model.WorkloadInfo, 0, len(a.byPod))
@@ -525,6 +542,106 @@ func (c *Controller) extractWorkload(p *v1.Pod) *model.WorkloadInfo {
 	}
 }
 
+func meshConfigMapData(cm *v1.ConfigMap) string {
+	if cm == nil {
+		return ""
+	}
+
+	cfgYaml, exists := cm.Data["mesh"]
+	if !exists {
+		return ""
+	}
+
+	return cfgYaml
+}
+
+func (c *Controller) setupIndex2() *AmbientIndex {
+	ConfigMaps := cv2.CollectionFor[*v1.ConfigMap](c.client)
+	MeshConfig := cv2.NewSingleton[meshapi.MeshConfig](
+		func(ctx cv2.HandlerContext) *meshapi.MeshConfig {
+			log.Errorf("howardjohn: Computing mesh config")
+			meshCfg := mesh.DefaultMeshConfig()
+			cms := []*v1.ConfigMap{}
+			cms = cv2.AppendNonNil(cms, cv2.FetchOne(ctx, ConfigMaps, cv2.FilterName("istio-user")))
+			cms = cv2.AppendNonNil(cms, cv2.FetchOne(ctx, ConfigMaps, cv2.FilterName("istio")))
+
+			for _, c := range cms {
+				n, err := mesh.ApplyMeshConfig(meshConfigMapData(c), meshCfg)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				meshCfg = n
+			}
+			log.Errorf("howardjohn: computed mesh config to %v", meshCfg.GetIngressClass())
+			return meshCfg
+		},
+	)
+	AuthzPolicies := cv2.CollectionFor[*securityclient.AuthorizationPolicy](c.client)
+	Services := cv2.CollectionFor[*v1.Service](c.client)
+	Pods := cv2.CollectionFor[*v1.Pod](c.client)
+	Namespaces := cv2.CollectionFor[*v1.Namespace](c.client)
+	Workloads := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *model.WorkloadInfo {
+		// TODO:
+		// * Test updating a pod attributes used as filter
+		log.Errorf("howardjohn: input... %v/%v", p.Name, IsPodReady(p))
+		if !IsPodReady(p) {
+			return nil
+		}
+		policies := cv2.Fetch(ctx, AuthzPolicies, cv2.FilterSelects(p.Labels))
+		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
+		namespace := cv2.Flatten(cv2.FetchOne(ctx, Namespaces, cv2.FilterName(p.Namespace)))
+		services := cv2.Fetch(ctx, Services, cv2.FilterSelects(p.GetLabels()))
+		waypointPods := cv2.Fetch(ctx, Pods, cv2.FilterLabel(map[string]string{
+			constants.ManagedGatewayLabel: constants.ManagedGatewayMeshController,
+		}), cv2.FilterGeneric(func(a any) bool {
+			return a.(*v1.Pod).Spec.ServiceAccountName == p.Spec.ServiceAccountName
+		}))
+		w := &workloadapi.Workload{
+			Name:           p.Name,
+			Namespace:      p.Namespace,
+			Address:        netip.MustParseAddr(p.Status.PodIP).AsSlice(),
+			ServiceAccount: p.Spec.ServiceAccountName,
+			WaypointAddresses: cv2.Map(waypointPods, func(t *v1.Pod) []byte {
+				return netip.MustParseAddr(t.Status.PodIP).AsSlice()
+			}),
+			Node:       p.Spec.NodeName,
+			VirtualIps: constructVIPs(p, services),
+			AuthorizationPolicies: cv2.Map(policies, func(t *securityclient.AuthorizationPolicy) string {
+				return t.Name
+			}),
+		}
+
+		if td := spiffe.GetTrustDomain(); td != "cluster.local" {
+			w.TrustDomain = td
+		}
+		w.WorkloadName, w.WorkloadType = workloadNameAndType(p)
+		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
+
+		if ambientpod.ShouldPodBeInIpset(namespace, p, meshCfg.GetAmbientMesh().GetMode().String(), true) {
+			w.Protocol = workloadapi.Protocol_HTTP
+		}
+		// Otherwise supports tunnel directly
+		if model.SupportsTunnel(p.Labels, model.TunnelHTTP) {
+			w.Protocol = workloadapi.Protocol_HTTP
+			w.NativeHbone = true
+		}
+		log.Errorf("howardjohn: made workload: %v", w)
+		return &model.WorkloadInfo{Workload: w}
+	})
+	Workloads.Register(func(o cv2.Event) {
+		log.Errorf("howardjohn: event %v", o.Latest().(*model.WorkloadInfo).ResourceName())
+		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
+			Full:           false,
+			ConfigsUpdated: sets.New(model.ConfigKey{Kind: kind.Address, Name: o.Latest().(*model.WorkloadInfo).ResourceName()}),
+			Reason:         []model.TriggerReason{model.AmbientUpdate},
+		})
+	})
+	return &AmbientIndex{
+		workloads: Workloads,
+	}
+}
+
 func (c *Controller) updateEndpointsOnWaypointChange(name, namespace string) {
 	var errs *multierror.Error
 	esLabelSelector := endpointSliceSelectorForService(name)
@@ -791,6 +908,32 @@ func (c *Controller) PodInformation(addresses sets.Set[types.NamespacedName]) ([
 		}
 	}
 	return wls, removed
+}
+
+func constructVIPs(p *v1.Pod, services []*v1.Service) map[string]*workloadapi.PortList {
+	vips := map[string]*workloadapi.PortList{}
+	for _, svc := range services {
+		for _, vip := range getVIPs(svc) {
+			if vips[vip] == nil {
+				vips[vip] = &workloadapi.PortList{}
+			}
+			for _, port := range svc.Spec.Ports {
+				if port.Protocol != v1.ProtocolTCP {
+					continue
+				}
+				targetPort, err := FindPort(p, &port)
+				if err != nil {
+					log.Debug(err)
+					continue
+				}
+				vips[vip].Ports = append(vips[vip].Ports, &workloadapi.Port{
+					ServicePort: uint32(port.Port),
+					TargetPort:  uint32(targetPort),
+				})
+			}
+		}
+	}
+	return vips
 }
 
 func (c *Controller) constructWorkload(pod *v1.Pod, waypoints []string, policies []string) *workloadapi.Workload {

@@ -3,7 +3,6 @@ package cv2
 import (
 	"fmt"
 	"reflect"
-	"sync"
 
 	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/util/sets"
@@ -15,6 +14,7 @@ var log = istiolog.RegisterScope("cv2", "", 0)
 type Collection[T any] interface {
 	GetKey(k Key[T]) *T
 	List(namespace string) []T
+	// TODO: generic Event
 	Register(f func(o Event))
 }
 
@@ -56,16 +56,6 @@ func (d depKey) String() string {
 type dependencies struct {
 	deps      map[depKey]dependency
 	finalized bool
-}
-
-type collection[I, O any] struct {
-	collectionState *mutexGuard[index[O]]
-	handle          HandleSingle[I, O]
-	handlers        map[erasedCollection]struct{}
-	parent          Collection[I]
-	executeOne      func(i any)
-	deps            map[Key[I]]dependencies
-	mu              sync.Mutex
 }
 
 type index[T any] struct {
