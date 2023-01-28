@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	istiolog "istio.io/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -47,6 +48,7 @@ import (
 )
 
 func TestAmbientIndex(t *testing.T) {
+	istiolog.FindScope("cv2").SetOutputLevel(istiolog.DebugLevel)
 	cfg := memory.NewSyncController(memory.MakeSkipValidation(collections.PilotGatewayAPI))
 	controller, fx := NewFakeControllerWithOptions(t, FakeControllerOptions{
 		ConfigController: cfg,

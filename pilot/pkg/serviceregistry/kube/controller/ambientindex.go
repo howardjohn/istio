@@ -628,11 +628,16 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 		log.Errorf("howardjohn: made workload: %v", w)
 		return &model.WorkloadInfo{Workload: w}
 	})
-	Workloads.Register(func(o cv2.Event[model.WorkloadInfo]) {
-		log.Errorf("howardjohn: event %v", o.Latest().ResourceName())
+	Workloads.RegisterBatch(func(events []cv2.Event[model.WorkloadInfo]) {
+		cu := sets.New[model.ConfigKey]()
+		for _, e := range events {
+			for _, i := range e.Items() {
+				cu.Insert(model.ConfigKey{Kind: kind.Address, Name: i.ResourceName()})
+			}
+		}
 		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
 			Full:           false,
-			ConfigsUpdated: sets.New(model.ConfigKey{Kind: kind.Address, Name: o.Latest().ResourceName()}),
+			ConfigsUpdated: cu,
 			Reason:         []model.TriggerReason{model.AmbientUpdate},
 		})
 	})

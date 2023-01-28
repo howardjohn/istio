@@ -45,8 +45,12 @@ func (i informer[I]) GetKey(k Key[I]) *I {
 }
 
 func (i informer[I]) Register(f func(o Event[I])) {
+	batchedRegister[I](i, f)
+}
+
+func (i informer[I]) RegisterBatch(f func(o []Event[I])) {
 	i.inf.AddEventHandler(EventHandler(func(o Event[any]) {
-		f(castEvent[any, I](o))
+		f([]Event[I]{castEvent[any, I](o)})
 	}))
 }
 

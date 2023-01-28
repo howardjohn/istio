@@ -13,6 +13,12 @@ type singletonAdapter[T any] struct {
 	s Singleton[T]
 }
 
+func (s singletonAdapter[T]) RegisterBatch(f func(o []Event[T])) {
+	s.s.Register(func(o Event[T]) {
+		f([]Event[T]{o})
+	})
+}
+
 func (s singletonAdapter[T]) Register(f func(o Event[T])) {
 	s.s.Register(f)
 }
@@ -52,11 +58,11 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 				} else if res == nil {
 					event = controllers.EventDelete
 				}
-				handler(Event[T]{
+				handler([]Event[T]{{
 					Old:   oldRes,
 					New:   res,
 					Event: event,
-				})
+				}})
 			}
 		}
 	}
@@ -72,35 +78,45 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 		dep := dep
 		log := log.WithLabels("dep", dep.key)
 		log.Infof("insert dep, filter: %+v", dep.filter)
-		dep.dep.register(func(o Event[any]) {
+		dep.dep.register(func(events []Event[any]) {
 			mu.Lock()
 			defer mu.Unlock()
-			log.Debugf("got event %v", o.Event)
-			switch o.Event {
-			case controllers.EventAdd:
-				if dep.filter.Matches(o.New) {
-					log.Debugf("Add match %v", GetName(o.New))
-					h.execute()
-				} else {
-					log.Debugf("Add no match %v", GetName(o.New))
+			matched := false
+			for _, o := range events {
+				log.Debugf("got event %v", o.Event)
+				switch o.Event {
+				case controllers.EventAdd:
+					if dep.filter.Matches(o.New) {
+						log.Debugf("Add match %v", GetName(o.New))
+						matched = true
+						break
+					} else {
+						log.Debugf("Add no match %v", GetName(o.New))
+					}
+				case controllers.EventDelete:
+					if dep.filter.Matches(o.Old) {
+						log.Debugf("delete match %v", GetName(o.Old))
+						matched = true
+						break
+					} else {
+						log.Debugf("Add no match %v", GetName(o.Old))
+					}
+				case controllers.EventUpdate:
+					if dep.filter.Matches(o.New) {
+						log.Debugf("Update match %v", GetName(o.New))
+						matched = true
+						break
+					} else if dep.filter.Matches(o.Old) {
+						log.Debugf("Update no match, but used to %v", GetName(o.New))
+						matched = true
+						break
+					} else {
+						log.Debugf("Update no change")
+					}
 				}
-			case controllers.EventDelete:
-				if dep.filter.Matches(o.Old) {
-					log.Debugf("delete match %v", GetName(o.Old))
-					h.execute()
-				} else {
-					log.Debugf("Add no match %v", GetName(o.Old))
-				}
-			case controllers.EventUpdate:
-				if dep.filter.Matches(o.New) {
-					log.Debugf("Update match %v", GetName(o.New))
-					h.execute()
-				} else if dep.filter.Matches(o.Old) {
-					log.Debugf("Update no match, but used to %v", GetName(o.New))
-					h.execute()
-				} else {
-					log.Debugf("Update no change")
-				}
+			}
+			if matched {
+				h.execute()
 			}
 		})
 	}
@@ -110,7 +126,7 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 type singleton[T any] struct {
 	deps     dependencies
 	handle   any
-	handlers []func(o Event[T])
+	handlers []func(o []Event[T])
 	state    *atomic.Pointer[T]
 	execute  func()
 }
@@ -123,6 +139,10 @@ func (h *singleton[T]) AsCollection() Collection[T] {
 }
 
 func (h *singleton[T]) Register(f func(o Event[T])) {
+	batchedRegister[T](h, f)
+}
+
+func (h *singleton[T]) RegisterBatch(f func(o []Event[T])) {
 	h.handlers = append(h.handlers, f)
 }
 

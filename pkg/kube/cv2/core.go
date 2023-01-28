@@ -15,6 +15,7 @@ type Collection[T any] interface {
 	GetKey(k Key[T]) *T
 	List(namespace string) []T
 	Register(f func(o Event[T]))
+	RegisterBatch(f func(o []Event[T]))
 }
 
 type Singleton[T any] interface {
@@ -23,13 +24,21 @@ type Singleton[T any] interface {
 	AsCollection() Collection[T]
 }
 
+func batchedRegister[T any](c Collection[T], f func(o Event[T])) {
+	c.RegisterBatch(func(events []Event[T]) {
+		for _, o := range events {
+			f(o)
+		}
+	})
+}
+
 type erasedCollection interface {
-	register(f func(o Event[any]))
+	register(f func(o []Event[any]))
 	hash() string
 }
 
 type erasedCollectionImpl struct {
-	r func(f func(o Event[any]))
+	r func(f func(o []Event[any]))
 	h string
 }
 
@@ -37,16 +46,16 @@ func (e erasedCollectionImpl) hash() string {
 	return e.h
 }
 
-func (e erasedCollectionImpl) register(f func(o Event[any])) {
+func (e erasedCollectionImpl) register(f func(o []Event[any])) {
 	e.r(f)
 }
 
 func eraseCollection[T any](c Collection[T]) erasedCollection {
 	return erasedCollectionImpl{
 		h: fmt.Sprintf("%p", c),
-		r: func(f func(o Event[any])) {
-			c.Register(func(o Event[T]) {
-				f(castEvent[T, any](o))
+		r: func(f func(o []Event[any])) {
+			c.RegisterBatch(func(o []Event[T]) {
+				f(Map(o, castEvent[T, any]))
 			})
 		},
 	}

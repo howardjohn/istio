@@ -43,8 +43,23 @@ func Map[T, U any](data []T, f func(T) U) []U {
 	return res
 }
 
+func MapFilter[T, U any](data []T, f func(T) *U) []U {
+	res := make([]U, 0, len(data))
+	for _, e := range data {
+		r := f(e)
+		if r != nil {
+			res = append(res, *r)
+		}
+	}
+	return res
+}
+
 func Ptr[T any](data T) *T {
 	return &data
+}
+
+func Cast[I, O any](data I) O {
+	return any(data).(O)
 }
 
 func AppendNonNil[T any](data []T, i *T) []T {
