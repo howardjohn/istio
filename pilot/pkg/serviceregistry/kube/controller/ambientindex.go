@@ -584,6 +584,8 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 		// TODO:
 		// * Test updating a pod attributes used as filter
 		// * Create passthrough Filter type, on the fly filtering for the discovery thing
+		// * Race tests
+		// * inconsistent state for event - we must not be cleaning up properly (or racy)
 		if !IsPodReady(p) {
 			return nil
 		}
@@ -591,7 +593,11 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 			// We don't include waypoints
 			return nil
 		}
-		policies := cv2.Fetch(ctx, AuthzPolicies, cv2.FilterSelects(p.Labels))
+		policies := cv2.Fetch(ctx, AuthzPolicies, cv2.FilterSelects(p.Labels), cv2.FilterGeneric(func(a any) bool {
+			// We only want label selector ones, we handle global ones through another mechanism
+			return a.(*securityclient.AuthorizationPolicy).Spec.GetSelector().GetMatchLabels() != nil
+		}))
+		log.Errorf("howardjohn: got policies: %v", policies)
 		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
 		namespace := cv2.Flatten(cv2.FetchOne(ctx, Namespaces, cv2.FilterName(p.Namespace)))
 		services := cv2.Fetch(ctx, Services, cv2.FilterSelects(p.GetLabels()))
@@ -609,7 +615,7 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 			Node:              p.Spec.NodeName,
 			VirtualIps:        constructVIPs(p, services),
 			AuthorizationPolicies: cv2.Map(policies, func(t *securityclient.AuthorizationPolicy) string {
-				return t.Name
+				return t.Namespace + "/" + t.Name
 			}),
 		}
 

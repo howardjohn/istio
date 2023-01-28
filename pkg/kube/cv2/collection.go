@@ -1,6 +1,7 @@
 package cv2
 
 import (
+	"fmt"
 	"sync"
 
 	"golang.org/x/exp/maps"
@@ -72,7 +73,7 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 					delete(i.objects, oldKey)
 				}
 				if existed && !oldExists {
-					panic("inconsistent state")
+					panic(fmt.Sprintf("inconsistent state for event %+v, %v/%v\n%v", a, existed, oldExists, oldKey))
 				}
 				if res == nil || a.Event == controllers.EventDelete {
 					if existed {
@@ -96,9 +97,6 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 					if !oldExists {
 						e.Event = controllers.EventAdd
 						e.New = res
-					} else if res == nil {
-						e.Event = controllers.EventDelete
-						e.Old = &oldRes
 					} else {
 						e.Event = controllers.EventUpdate
 						e.New = res

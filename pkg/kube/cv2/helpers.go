@@ -130,7 +130,7 @@ func GetLabelSelector(a any) map[string]string {
 
 	switch s := labelsField.Interface().(type) {
 	case *v1beta1.WorkloadSelector:
-		return s.MatchLabels
+		return s.GetMatchLabels()
 	case map[string]string:
 		return s
 	default:

@@ -23,16 +23,17 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	authz "istio.io/api/security/v1beta1"
 	"istio.io/api/type/v1beta1"
+	clientsecurityv1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 	"istio.io/istio/pilot/pkg/config/kube/crd"
 	"istio.io/istio/pilot/pkg/config/memory"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/test/util"
-	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/schema/collections"
@@ -64,19 +65,18 @@ func TestAmbientIndex(t *testing.T) {
 				MatchLabels: selector,
 			}
 		}
-		p := config.Config{
-			Meta: config.Meta{
-				GroupVersionKind: gvk.AuthorizationPolicy,
-				Name:             name,
-				Namespace:        ns,
+		p := &clientsecurityv1beta1.AuthorizationPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
 			},
-			Spec: &authz.AuthorizationPolicy{
+			Spec: authz.AuthorizationPolicy{
 				Selector: sel,
 			},
 		}
-		_, err := cfg.Create(p)
-		if err != nil && strings.Contains(err.Error(), "item already exists") {
-			_, err = cfg.Update(p)
+		_, err := controller.client.Istio().SecurityV1beta1().AuthorizationPolicies(ns).Create(context.Background(), p, metav1.CreateOptions{})
+		if err != nil && kerrors.IsAlreadyExists(err) {
+			_, err = controller.client.Istio().SecurityV1beta1().AuthorizationPolicies(ns).Update(context.Background(), p, metav1.UpdateOptions{})
 		}
 		if err != nil {
 			t.Fatal(err)
@@ -293,13 +293,16 @@ func TestAmbientIndex(t *testing.T) {
 	deletePod("name2")
 	assertEvent("127.0.0.2")
 
+	t.Log("policy 1")
 	addPolicy("global", "istio-system", nil)
+	t.Log("policy 2")
 	addPolicy("namespace", "default", nil)
 	assert.Equal(t,
 		controller.ambientIndex.Lookup("127.0.0.1")[0].AuthorizationPolicies,
 		nil)
 	fx.Clear()
 
+	t.Log("policy 3")
 	addPolicy("selector", "ns1", map[string]string{"app": "a"})
 	assertEvent("127.0.0.1")
 	assert.Equal(t,
