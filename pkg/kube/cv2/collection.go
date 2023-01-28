@@ -11,14 +11,20 @@ import (
 )
 
 type collection[I, O any] struct {
-	collectionState *mutexGuard[index[O]]
+	collectionState *mutexGuard[index[I, O]]
 	handle          HandleSingle[I, O]
 	dependencies    sets.String
 	handlers        []func(o []Event[O])
 	parent          Collection[I]
-	execute         func(i []any)
+	execute         func(i []Event[any])
 	deps            map[Key[I]]dependencies
 	mu              sync.Mutex
+}
+
+type index[I, O any] struct {
+	objects   map[Key[O]]O
+	inputs    map[Key[I]]Key[O]
+	namespace map[string]sets.Set[Key[O]]
 }
 
 func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[O] {
@@ -28,15 +34,16 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 		parent:       c,
 		dependencies: sets.New[string](),
 		deps:         map[Key[I]]dependencies{},
-		collectionState: newMutex(index[O]{
+		collectionState: newMutex(index[I, O]{
 			objects:   map[Key[O]]O{},
+			inputs:    map[Key[I]]Key[O]{},
 			namespace: map[string]sets.Set[Key[O]]{},
 		}),
 	}
-	h.execute = func(items []any) {
+	h.execute = func(items []Event[any]) {
 		var events []Event[O]
 		for _, a := range items {
-			i := a.(I)
+			i := a.Latest().(I)
 
 			iKey := GetKey(i)
 			log := log.WithLabels("key", iKey)
@@ -55,16 +62,36 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 			// Give them a context for this specific input
 			ctx := &indexedCollection[I, O]{h, d}
 			res := hf(ctx, i)
-			h.collectionState.With(func(i index[O]) {
+			h.collectionState.With(func(i index[I, O]) {
 				// TODO: we need the old key and new key
 				// Otherwise we cannot delete
-				if res == nil {
-					log.Errorf("howardjohn: TODO!!! delete")
-				} else {
-					oKey := GetKey(*res)
-					oldRes, oldExists := i.objects[oKey]
-					i.objects[oKey] = *res
-					updated := !controllers.Equal(*res, oldRes)
+				oldKey, existed := i.inputs[iKey]
+				oldRes, oldExists := i.objects[oldKey]
+				if existed {
+					// Already have seen this, clear state in case it was removed or changed
+					delete(i.objects, oldKey)
+				}
+				if existed && !oldExists {
+					panic("inconsistent state")
+				}
+				if res == nil || a.Event == controllers.EventDelete {
+					if existed {
+						e := Event[O]{
+							// TODO: dupe below
+							Event: controllers.EventDelete,
+							Old:   &oldRes,
+						}
+						events = append(events, e)
+					}
+					log.WithLabels("deleted", true).Debugf("handled")
+					return
+				}
+				oKey := GetKey(*res)
+
+				i.inputs[iKey] = oKey
+				i.objects[oKey] = *res
+				updated := !controllers.Equal(*res, oldRes)
+				if updated {
 					e := Event[O]{}
 					if !oldExists {
 						e.Event = controllers.EventAdd
@@ -78,8 +105,8 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 						e.Old = &oldRes
 					}
 					events = append(events, e)
-					log.WithLabels("updated", updated).Debugf("handled")
 				}
+				log.WithLabels("updated", updated).Debugf("handled")
 			})
 		}
 		for _, handler := range h.handlers {
@@ -87,14 +114,17 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 		}
 	}
 	// TODO: wait for dependencies to be ready
-	h.execute(Map(c.List(metav1.NamespaceAll), Cast[I, any]))
+	h.execute(Map(c.List(metav1.NamespaceAll), func(t I) Event[any] {
+		return Event[any]{
+			New:   Ptr(any(t)),
+			Event: controllers.EventAdd,
+		}
+	}))
 	// Setup primary singleton. On any change, trigger only that one
 	c.RegisterBatch(func(events []Event[I]) {
 		log := log.WithLabels("dep", "primary")
 		log.Debugf("got event batch %v", len(events))
-		h.execute(Map(MapFilter(events, func(t Event[I]) *I {
-			return t.New
-		}), Cast[I, any]))
+		h.execute(Map(events, castEvent[I, any]))
 	})
 	return h
 }
@@ -125,7 +155,7 @@ func (h *collection[I, O]) handler() func(events []Event[any]) {
 					}
 					if d, f := v.deps[unnamed]; f {
 						match := d.filter.Matches(item)
-						log.WithLabels("match", match).Infof("event for collection %v", named)
+						log.WithLabels("match", match).Infof("event for collection %v", unnamed.dtype)
 						if match {
 							ks.Insert(i)
 							break
@@ -136,13 +166,17 @@ func (h *collection[I, O]) handler() func(events []Event[any]) {
 		}
 		h.mu.Unlock()
 		log.Infof("collection event size %v, trigger %v dependencies", len(events), len(ks))
-		toRun := make([]any, 0, len(ks))
+		toRun := make([]Event[any], 0, len(ks))
 		for i := range ks {
 			ii := h.parent.GetKey(i)
 			if ii == nil {
 				log.Errorf("BUG: Parent missing key!! %v", i)
 			} else {
-				toRun = append(toRun, *ii)
+				toRun = append(toRun, Event[any]{
+					Event: controllers.EventUpdate,
+					// TODO: is Update without old legal?
+					New: Ptr(any(*ii)),
+				})
 			}
 		}
 		h.execute(toRun)
@@ -153,7 +187,7 @@ func (h *collection[I, O]) _internalHandler() {
 }
 
 func (h *collection[I, O]) GetKey(k Key[O]) (res *O) {
-	h.collectionState.With(func(i index[O]) {
+	h.collectionState.With(func(i index[I, O]) {
 		rf, f := i.objects[k]
 		if f {
 			res = &rf
@@ -163,10 +197,11 @@ func (h *collection[I, O]) GetKey(k Key[O]) (res *O) {
 }
 
 func (h *collection[I, O]) List(namespace string) (res []O) {
-	h.collectionState.With(func(i index[O]) {
+	h.collectionState.With(func(i index[I, O]) {
 		if namespace == "" {
 			res = maps.Values(i.objects)
 		} else {
+			panic("! not implemented!")
 			for key := range i.namespace[namespace] {
 				res = append(res, i.objects[key])
 			}

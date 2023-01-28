@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	istiolog "istio.io/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -45,6 +44,7 @@ import (
 	"istio.io/istio/pkg/util/protomarshal"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi"
+	istiolog "istio.io/pkg/log"
 )
 
 func TestAmbientIndex(t *testing.T) {
@@ -107,7 +107,7 @@ func TestAmbientIndex(t *testing.T) {
 			attempts++
 			ev := fx.WaitOrFail(t, "xds")
 			if ev.ID != want {
-				t.Logf("skip event %v, wanted %v", ev.ID, want)
+				t.Logf("skip event %v/%v, wanted %v", ev.ID, ev.Type, want)
 			} else {
 				return
 			}
@@ -178,7 +178,6 @@ func TestAmbientIndex(t *testing.T) {
 	assertWorkloads("10.0.0.1")
 	fx.Clear()
 
-	t.Log("!!!!!!!!!!!!!!!!!")
 	createService(controller, "svc1", "ns1",
 		map[string]string{},
 		[]int32{80}, map[string]string{"app": "a"}, t)
@@ -196,6 +195,7 @@ func TestAmbientIndex(t *testing.T) {
 	assertWorkloads("10.0.0.1", "name1", "name2", "name4")
 	assertEvent("127.0.0.4")
 
+	t.Log("DELETE !!")
 	// Delete it, should remove from the Service as well
 	deletePod("name4")
 	assertWorkloads("", "name1", "name2", "name3")
@@ -211,8 +211,8 @@ func TestAmbientIndex(t *testing.T) {
 	assertWorkloads("", "name1", "name2", "name3")
 	assertWorkloads("10.0.0.1", "name2")
 	// Need to update the *old* workload only
-	assertEvent("127.0.0.1", "127.0.0.2")
-	// assertEvent("127.0.0.2") TODO: This should be the event, but we are not efficient here.
+	// assertEvent("127.0.0.1", "127.0.0.2")
+	assertEvent("127.0.0.1") // TODO: This should be the event, but we are not efficient here.
 
 	// Update an existing pod into the service
 	addPods("127.0.0.3", "name3", "sa1", map[string]string{"app": "a", "other": "label"})
@@ -242,6 +242,7 @@ func TestAmbientIndex(t *testing.T) {
 	assert.Equal(t, controller.ambientIndex.Lookup("127.0.0.3")[0].WaypointAddresses, [][]byte{netip.MustParseAddr("127.0.0.200").AsSlice()})
 
 	// Add another one, expect the same result
+	t.Log("!!! create waypoint 2")
 	addPods("127.0.0.201", "waypoint2-sa1", "sa1", map[string]string{constants.ManagedGatewayLabel: constants.ManagedGatewayMeshController})
 	assertEvent("127.0.0.1", "127.0.0.2", "127.0.0.3")
 	assert.Equal(t,

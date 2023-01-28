@@ -5,7 +5,6 @@ import (
 	"reflect"
 
 	"istio.io/istio/pkg/kube/controllers"
-	"istio.io/istio/pkg/util/sets"
 	istiolog "istio.io/pkg/log"
 )
 
@@ -101,11 +100,6 @@ func (d depKey) String() string {
 type dependencies struct {
 	deps      map[depKey]dependency
 	finalized bool
-}
-
-type index[T any] struct {
-	objects   map[Key[T]]T
-	namespace map[string]sets.Set[Key[T]]
 }
 
 type registerer interface {

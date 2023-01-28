@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/proto"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -583,8 +584,11 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 		// TODO:
 		// * Test updating a pod attributes used as filter
 		// * Create passthrough Filter type, on the fly filtering for the discovery thing
-		log.Errorf("howardjohn: input... %v/%v", p.Name, IsPodReady(p))
 		if !IsPodReady(p) {
+			return nil
+		}
+		if p.Labels[constants.ManagedGatewayLabel] == constants.ManagedGatewayMeshController {
+			// We don't include waypoints
 			return nil
 		}
 		policies := cv2.Fetch(ctx, AuthzPolicies, cv2.FilterSelects(p.Labels))
@@ -597,15 +601,13 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 			return a.(*v1.Pod).Spec.ServiceAccountName == p.Spec.ServiceAccountName
 		}))
 		w := &workloadapi.Workload{
-			Name:           p.Name,
-			Namespace:      p.Namespace,
-			Address:        netip.MustParseAddr(p.Status.PodIP).AsSlice(),
-			ServiceAccount: p.Spec.ServiceAccountName,
-			WaypointAddresses: cv2.Map(waypointPods, func(t *v1.Pod) []byte {
-				return netip.MustParseAddr(t.Status.PodIP).AsSlice()
-			}),
-			Node:       p.Spec.NodeName,
-			VirtualIps: constructVIPs(p, services),
+			Name:              p.Name,
+			Namespace:         p.Namespace,
+			Address:           netip.MustParseAddr(p.Status.PodIP).AsSlice(),
+			ServiceAccount:    p.Spec.ServiceAccountName,
+			WaypointAddresses: addresses(waypointPods),
+			Node:              p.Spec.NodeName,
+			VirtualIps:        constructVIPs(p, services),
 			AuthorizationPolicies: cv2.Map(policies, func(t *securityclient.AuthorizationPolicy) string {
 				return t.Name
 			}),
@@ -648,7 +650,22 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 	return &AmbientIndex{
 		workloads:             Workloads,
 		workloadServicesIndex: WorkloadServiceIndex,
+
+		byService: map[string][]*model.WorkloadInfo{},
+		byPod:     map[string]*model.WorkloadInfo{},
+		waypoints: map[types.NamespacedName]sets.String{},
 	}
+}
+
+func addresses(pods []*v1.Pod) [][]byte {
+	ips := cv2.MapFilter(pods, func(t *v1.Pod) *string {
+		if t.Status.PodIP == "" {
+			return nil
+		}
+		return &t.Status.PodIP
+	})
+	slices.Sort(ips)
+	return cv2.Map(ips, func(a string) []byte { return netip.MustParseAddr(a).AsSlice() })
 }
 
 func (c *Controller) updateEndpointsOnWaypointChange(name, namespace string) {

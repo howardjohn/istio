@@ -54,6 +54,18 @@ func MapFilter[T, U any](data []T, f func(T) *U) []U {
 	return res
 }
 
+func MapFilterError[T, U any](data []T, f func(T) (U, error)) []U {
+	res := make([]U, 0, len(data))
+	for _, e := range data {
+		r, err := f(e)
+		if err != nil {
+			continue
+		}
+		res = append(res, r)
+	}
+	return res
+}
+
 func Ptr[T any](data T) *T {
 	return &data
 }
