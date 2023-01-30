@@ -52,7 +52,6 @@ import (
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/util/sets"
-	"istio.io/istio/pkg/workloadapi"
 )
 
 func TestMergeUpdateRequest(t *testing.T) {
@@ -2708,7 +2707,7 @@ func (l *localServiceDiscovery) AdditionalPodSubscriptions(_ *Proxy, _, _ sets.S
 	return nil
 }
 
-func (l *localServiceDiscovery) Policies(requested sets.Set[ConfigKey]) []*workloadapi.Authorization {
+func (l *localServiceDiscovery) Policies(requested sets.Set[ConfigKey]) []WorkloadAuthorization {
 	return nil
 }
 

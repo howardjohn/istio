@@ -27,7 +27,6 @@ import (
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/util/sets"
-	"istio.io/istio/pkg/workloadapi"
 	"istio.io/pkg/log"
 )
 
@@ -62,8 +61,8 @@ func (c *Controller) AdditionalPodSubscriptions(proxy *model.Proxy, addr, cur se
 	return res
 }
 
-func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []*workloadapi.Authorization {
-	res := []*workloadapi.Authorization{}
+func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []model.WorkloadAuthorization {
+	res := []model.WorkloadAuthorization{}
 	for _, p := range c.registries {
 		res = append(res, p.Policies(requested)...)
 	}

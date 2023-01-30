@@ -223,6 +223,9 @@ func (h *collection[I, O]) List(namespace string) (res []O) {
 	defer h.mu.Unlock()
 	if namespace == "" {
 		res = maps.Values(h.collectionState.objects)
+		slices.SortFunc(res, func(a, b O) bool {
+			return GetKey(a) < GetKey(b)
+		})
 	} else {
 		panic("! not implemented!")
 		for key := range h.collectionState.namespace[namespace] {

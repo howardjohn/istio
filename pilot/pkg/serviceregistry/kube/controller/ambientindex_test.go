@@ -37,6 +37,7 @@ import (
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/schema/collections"
+	"istio.io/istio/pkg/kube/cv2"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/test/util/file"
@@ -44,11 +45,10 @@ import (
 	"istio.io/istio/pkg/util/protomarshal"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi"
-	istiolog "istio.io/pkg/log"
 )
 
 func TestAmbientIndex(t *testing.T) {
-	istiolog.FindScope("cv2").SetOutputLevel(istiolog.DebugLevel)
+	// istiolog.FindScope("cv2").SetOutputLevel(istiolog.DebugLevel)
 	cfg := memory.NewSyncController(memory.MakeSkipValidation(collections.PilotGatewayAPI))
 	controller, fx := NewFakeControllerWithOptions(t, FakeControllerOptions{
 		ConfigController: cfg,
@@ -325,11 +325,19 @@ func TestAmbientIndex(t *testing.T) {
 		controller.ambientIndex.Lookup("127.0.0.1")[0].AuthorizationPolicies,
 		[]string{"ns1/selector"})
 
-	controller.client.Istio().SecurityV1beta1().AuthorizationPolicies("ns1").Delete(context.Background(), "selector", metav1.DeleteOptions{})
+	assert.Equal(t, cv2.Map(controller.Policies(nil), func(t model.WorkloadAuthorization) string {
+		return t.ResourceName()
+	}), []string{"default/namespace", "istio-system/global", "istio-system/global-selector", "ns1/selector"})
+
+	controller.client.Istio().SecurityV1beta1().AuthorizationPolicies("ns1").
+		Delete(context.Background(), "selector", metav1.DeleteOptions{})
 	assertEvent("127.0.0.1", "127.0.0.2")
 	assert.Equal(t,
 		controller.ambientIndex.Lookup("127.0.0.1")[0].AuthorizationPolicies,
 		nil)
+	assert.Equal(t, cv2.Map(controller.Policies(nil), func(t model.WorkloadAuthorization) string {
+		return t.ResourceName()
+	}), []string{"default/namespace", "istio-system/global", "istio-system/global-selector"})
 
 	controller.client.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "ns1", Labels: map[string]string{constants.DataplaneMode: "ambient"}},
@@ -362,7 +370,14 @@ func TestRBACConvert(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			pol, _, err := crd.ParseInputs(file.AsStringOrFail(t, f))
 			assert.NoError(t, err)
-			o := convertAuthorizationPolicy("istio-system", pol[0])
+			o := convertAuthorizationPolicy("istio-system", &clientsecurityv1beta1.AuthorizationPolicy{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pol[0].Name,
+					Namespace: pol[0].Namespace,
+				},
+				Spec: *((pol[0].Spec).(*authz.AuthorizationPolicy)),
+			})
 			msg := ""
 			if o != nil {
 				msg, err = protomarshal.ToYAML(o)

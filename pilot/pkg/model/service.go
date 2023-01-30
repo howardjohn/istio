@@ -722,7 +722,7 @@ type ServiceDiscovery interface {
 	MCSServices() []MCSServiceInfo
 	PodInformation(addresses sets.Set[types.NamespacedName]) ([]*WorkloadInfo, []string)
 	AdditionalPodSubscriptions(proxy *Proxy, allAddresses sets.Set[types.NamespacedName], currentSubs sets.Set[types.NamespacedName]) sets.Set[types.NamespacedName]
-	Policies(requested sets.Set[ConfigKey]) []*workloadapi.Authorization
+	Policies(requested sets.Set[ConfigKey]) []WorkloadAuthorization
 }
 
 type WorkloadInfo struct {
@@ -732,6 +732,14 @@ type WorkloadInfo struct {
 func (i WorkloadInfo) ResourceName() string {
 	ii, _ := netip.AddrFromSlice(i.Address)
 	return ii.String()
+}
+
+type WorkloadAuthorization struct {
+	*workloadapi.Authorization
+}
+
+func (i WorkloadAuthorization) ResourceName() string {
+	return i.Namespace + "/" + i.Name
 }
 
 // MCSServiceInfo combines the name of a service with a particular Kubernetes cluster. This

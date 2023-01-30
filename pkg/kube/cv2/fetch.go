@@ -2,8 +2,6 @@ package cv2
 
 import (
 	"fmt"
-
-	"golang.org/x/exp/slices"
 )
 
 func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T {
@@ -41,9 +39,6 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 			res = append(res, c)
 		}
 	}
-	slices.SortFunc(res, func(a, b T) bool {
-		return GetKey(a) < GetKey(b)
-	})
 	log.WithLabels("key", d.key, "type", GetType[T](), "filter", d.filter, "size", len(res)).Debugf("Fetch")
 	return res
 }

@@ -22,6 +22,12 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"golang.org/x/exp/maps"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	klabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	listerv1 "k8s.io/client-go/listers/core/v1"
+
 	meshapi "istio.io/api/mesh/v1alpha1"
 	"istio.io/api/security/v1beta1"
 	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
@@ -38,11 +44,6 @@ import (
 	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	klabels "k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
-	listerv1 "k8s.io/client-go/listers/core/v1"
 )
 
 // AmbientIndex maintains an index of ambient WorkloadInfo objects by various keys.
@@ -50,6 +51,8 @@ import (
 type AmbientIndex struct {
 	workloads             cv2.Collection[model.WorkloadInfo]
 	workloadServicesIndex *cv2.Index[model.WorkloadInfo, string]
+
+	authorizationPolicies cv2.Collection[model.WorkloadAuthorization]
 }
 
 // Lookup finds a given IP address.
@@ -59,7 +62,6 @@ func (a *AmbientIndex) Lookup(ip string) []*model.WorkloadInfo {
 		return []*model.WorkloadInfo{res}
 	}
 	return cv2.Map(a.workloadServicesIndex.Lookup(ip), cv2.Ptr[model.WorkloadInfo])
-
 }
 
 // All return all known workloads. Result is un-ordered
@@ -67,17 +69,14 @@ func (a *AmbientIndex) All() []*model.WorkloadInfo {
 	return cv2.Map(a.workloads.List(metav1.NamespaceAll), cv2.Ptr[model.WorkloadInfo])
 }
 
-func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []*workloadapi.Authorization {
-	cfgs, err := c.configController.List(gvk.AuthorizationPolicy, metav1.NamespaceAll)
-	if err != nil {
-		log.Warnf("failed to list policies")
-		return nil
-	}
+func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []model.WorkloadAuthorization {
+	// TODO: use many Gets instead of List?
+	cfgs := c.ambientIndex.authorizationPolicies.List(metav1.NamespaceAll)
 	l := len(cfgs)
 	if len(requested) > 0 {
 		l = len(requested)
 	}
-	res := make([]*workloadapi.Authorization, 0, l)
+	res := make([]model.WorkloadAuthorization, 0, l)
 	for _, cfg := range cfgs {
 		k := model.ConfigKey{
 			Kind:      kind.AuthorizationPolicy,
@@ -87,11 +86,7 @@ func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []*workloadap
 		if len(requested) > 0 && !requested.Contains(k) {
 			continue
 		}
-		pol := convertAuthorizationPolicy(c.meshWatcher.Mesh().GetRootNamespace(), cfg)
-		if pol == nil {
-			continue
-		}
-		res = append(res, pol)
+		res = append(res, cfg)
 	}
 	return res
 }
@@ -150,8 +145,8 @@ func (c *Controller) getPodsInPolicy(ns string, sel map[string]string) []*v1.Pod
 	return pods
 }
 
-func convertAuthorizationPolicy(rootns string, obj config.Config) *workloadapi.Authorization {
-	pol := obj.Spec.(*v1beta1.AuthorizationPolicy)
+func convertAuthorizationPolicy(rootns string, obj *securityclient.AuthorizationPolicy) *workloadapi.Authorization {
+	pol := &obj.Spec
 
 	scope := workloadapi.Scope_WORKLOAD_SELECTOR
 	if pol.Selector == nil {
@@ -498,6 +493,14 @@ func (c *Controller) setupIndex() *AmbientIndex {
 			Reason:         []model.TriggerReason{model.AmbientUpdate},
 		})
 	})
+	Policies := cv2.NewCollection(AuthzPolicies, func(ctx cv2.HandlerContext, i *securityclient.AuthorizationPolicy) *model.WorkloadAuthorization {
+		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
+		pol := convertAuthorizationPolicy(meshCfg.GetRootNamespace(), i)
+		if pol == nil {
+			return nil
+		}
+		return &model.WorkloadAuthorization{Authorization: pol}
+	})
 
 	WorkloadServiceIndex := cv2.CreateIndex[model.WorkloadInfo, string](Workloads, func(o model.WorkloadInfo) []string {
 		return maps.Keys(o.VirtualIps)
@@ -505,6 +508,7 @@ func (c *Controller) setupIndex() *AmbientIndex {
 	return &AmbientIndex{
 		workloads:             Workloads,
 		workloadServicesIndex: WorkloadServiceIndex,
+		authorizationPolicies: Policies,
 	}
 }
 

@@ -3,6 +3,7 @@ package cv2
 import (
 	"fmt"
 
+	"golang.org/x/exp/slices"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
 
@@ -31,6 +32,9 @@ func (i informer[I]) Name() string {
 func (i informer[I]) List(namespace string) (res []I) {
 	cache.ListAllByNamespace(i.inf.GetIndexer(), namespace, klabels.Everything(), func(i interface{}) {
 		res = append(res, i.(I))
+	})
+	slices.SortFunc(res, func(a, b I) bool {
+		return GetKey(a) < GetKey(b)
 	})
 	return
 }
