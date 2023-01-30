@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 
+	"istio.io/istio/pkg/kube/cv2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -26,6 +27,7 @@ import (
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
 	gwlister "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1alpha2"
 	"sigs.k8s.io/yaml"
 
@@ -112,7 +114,25 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 		}
 	})
 
+	Gateways := cv2.CollectionFor[*gateway.Gateway](client)
+	Waypoint := cv2.NewCollection(Gateways, func(ctx cv2.HandlerContext, gw gateway.Gateway) *Waypoint {
+		// TODO: injectConfig as singleton
+		if rc.injectConfig().Values.Struct().GetGlobal().GetHub() == "" {
+			// Mostly used to avoid issues with local runs
+			return nil
+		}
+		log := waypointLog.WithLabels("gateway", gw.Name)
+		if gw.Spec.GatewayClassName != "istio-mesh" {
+			log.Debugf("mismatched class %q", gw.Spec.GatewayClassName)
+			return nil
+		}
+	})
+
 	return rc
+}
+
+type Waypoint struct {
+	Deployment *appsv1ac.DeploymentApplyConfiguration
 }
 
 func (rc *WaypointProxyController) Run(stop <-chan struct{}) {
