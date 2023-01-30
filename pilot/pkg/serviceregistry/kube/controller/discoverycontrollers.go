@@ -154,9 +154,6 @@ func (c *Controller) handleSelectedNamespace(endpointMode EndpointMode, ns strin
 	for _, pod := range pods {
 		errs = multierror.Append(errs, c.pods.onEvent(pod, model.EventAdd))
 	}
-	if c.ambientIndex != nil {
-		c.ambientIndex.handlePods(pods)
-	}
 
 	switch endpointMode {
 	case EndpointsOnly:

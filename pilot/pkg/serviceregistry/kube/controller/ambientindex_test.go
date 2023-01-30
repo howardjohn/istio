@@ -37,7 +37,6 @@ import (
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/schema/collections"
-	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/test/util/file"
@@ -55,7 +54,6 @@ func TestAmbientIndex(t *testing.T) {
 		ConfigController: cfg,
 		MeshWatcher:      mesh.NewFixedWatcher(&meshconfig.MeshConfig{RootNamespace: "istio-system"}),
 	})
-	cfg.RegisterEventHandler(gvk.AuthorizationPolicy, controller.AuthorizationPolicyHandler)
 	go cfg.Run(test.NewStop(t))
 	addPolicy := func(name, ns string, selector map[string]string) {
 		t.Helper()
@@ -226,7 +224,7 @@ func TestAmbientIndex(t *testing.T) {
 	assertWorkloads("", "name1", "name2", "name3")
 	assertWorkloads("10.0.0.1")
 	assertEvent("127.0.0.2")
-	assert.Equal(t, len(controller.ambientIndex.byService), 0)
+	assert.Equal(t, len(controller.ambientIndex.workloadServicesIndex.Lookup("10.0.0.1")), 0)
 
 	// Add a waypoint proxy
 	addPods("127.0.0.200", "waypoint-sa1", "sa1", map[string]string{constants.ManagedGatewayLabel: constants.ManagedGatewayMeshController})
@@ -334,20 +332,20 @@ func TestAmbientIndex(t *testing.T) {
 		nil)
 
 	controller.client.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "ns1", Labels: map[string]string{constants.DataplaneMode: "none"}},
+		ObjectMeta: metav1.ObjectMeta{Name: "ns1", Labels: map[string]string{constants.DataplaneMode: "ambient"}},
 	}, metav1.CreateOptions{})
 	assertEvent("127.0.0.1", "127.0.0.2")
 	assert.Equal(t,
 		controller.ambientIndex.Lookup("127.0.0.1")[0].Protocol,
-		workloadapi.Protocol_DIRECT)
+		workloadapi.Protocol_HTTP)
 
 	controller.client.Kube().CoreV1().Namespaces().Update(context.Background(), &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "ns1", Labels: map[string]string{constants.DataplaneMode: "ambient"}},
+		ObjectMeta: metav1.ObjectMeta{Name: "ns1", Labels: map[string]string{constants.DataplaneMode: "none"}},
 	}, metav1.UpdateOptions{})
 	assertEvent("127.0.0.1", "127.0.0.2")
 	assert.Equal(t,
 		controller.ambientIndex.Lookup("127.0.0.1")[0].Protocol,
-		workloadapi.Protocol_HTTP)
+		workloadapi.Protocol_DIRECT)
 }
 
 func TestRBACConvert(t *testing.T) {

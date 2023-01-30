@@ -399,7 +399,7 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 	c.registerHandlers(c.pods.informer, "Pods", c.pods.onEvent, c.pods.labelFilter)
 
 	c.configController = options.ConfigController
-	c.ambientIndex = c.setupIndex2()
+	c.ambientIndex = c.setupIndex()
 	c.exports = newServiceExportCache(c)
 	c.imports = newServiceImportCache(c)
 
