@@ -81,7 +81,7 @@ type MockClient struct {
 }
 
 func (c MockClient) DAG() *DAG {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 

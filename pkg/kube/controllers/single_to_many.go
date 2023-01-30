@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"golang.org/x/exp/maps"
+
 	"istio.io/istio/pkg/kube"
 )
 
@@ -15,7 +16,7 @@ type singleToMany[A any, B any, O any] struct {
 
 	parentA kube.Registerer
 	parentB kube.Registerer
-	name     string
+	name    string
 }
 
 func (j *singleToMany[A, B, O]) AddDependency(chain []string) {
@@ -78,7 +79,7 @@ func SingleToMany[A any, B any, O any](
 	}
 	j := &singleToMany[A, B, O]{
 		objects: make(map[Key[O]]ObjectDependencies[O]),
-		name: name,
+		name:    name,
 		parentA: a,
 		parentB: b,
 	}

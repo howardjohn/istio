@@ -325,8 +325,8 @@ func TestDependency(t *testing.T) {
 
 	ambientMode := Singleton[meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode, meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode]("AmbientMode",
 		Direct[*meshapi.MeshConfig, meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode]("_AmbientMode", meshh, func(m *meshapi.MeshConfig) *meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode {
-		return Ptr(m.GetAmbientMesh().GetMode())
-	}), Identity[meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode])
+			return Ptr(m.GetAmbientMesh().GetMode())
+		}), Identity[meshapi.MeshConfig_AmbientMeshConfig_AmbientMeshMode])
 	_ = ambientMode
 	_ = meshh
 	pods := InformerToWatcher[*corev1.Pod](c.DAG(), c.KubeInformer().Core().V1().Pods().Informer())
@@ -348,7 +348,7 @@ func TestDependency(t *testing.T) {
 			return &ServiceInfo{Name: k, Selector: i.Spec.Selector}
 		})
 
-	//c.RunAndWait(test.NewStop(t))
+	// c.RunAndWait(test.NewStop(t))
 	match := func(a PodInfo, b ServiceInfo) bool {
 		return labels.Instance(b.Selector).SubsetOf(a.Labels)
 	}

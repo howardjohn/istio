@@ -157,7 +157,6 @@ type Client interface {
 
 	// GetKubernetesVersion returns the Kubernetes server version
 	GetKubernetesVersion() (*kubeVersion.Info, error)
-
 	DAG() *DAG
 }
 

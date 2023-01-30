@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dominikbraun/graph"
+
 	"istio.io/pkg/log"
 )
 

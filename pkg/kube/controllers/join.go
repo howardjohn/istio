@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"golang.org/x/exp/maps"
-	"istio.io/istio/pkg/kube"
 
+	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/util/sets"
 )
 
@@ -17,8 +17,8 @@ type joined[A any, B any, O any] struct {
 }
 
 type join[A any, B any, O any] struct {
-	parentA kube.Registerer
-	parentB kube.Registerer
+	parentA  kube.Registerer
+	parentB  kube.Registerer
 	mu       sync.RWMutex
 	objects  map[Key[O]]joined[A, B, O]
 	aIndex   map[Key[A]]sets.Set[Key[O]]
@@ -88,7 +88,7 @@ func Join[A any, B any, O any](
 		objects: make(map[Key[O]]joined[A, B, O]),
 		aIndex:  map[Key[A]]sets.Set[Key[O]]{},
 		bIndex:  map[Key[B]]sets.Set[Key[O]]{},
-		name: name,
+		name:    name,
 		parentA: a,
 		parentB: b,
 	}

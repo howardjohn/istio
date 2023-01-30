@@ -4,14 +4,15 @@ import (
 	"fmt"
 
 	"go.uber.org/atomic"
+
 	"istio.io/istio/pkg/kube"
 )
 
 type singleton[O any] struct {
-	parent kube.Registerer
-	name string
+	parent   kube.Registerer
+	name     string
 	handlers []func(O)
-	item *atomic.Pointer[O]
+	item     *atomic.Pointer[O]
 }
 
 func (s *singleton[O]) Name() string {
@@ -23,6 +24,7 @@ func (s *singleton[O]) Handle(conv O) {
 		hh(conv)
 	}
 }
+
 func (s *singleton[O]) Register(f func(O)) {
 	s.handlers = append(s.handlers, f)
 }
@@ -50,8 +52,8 @@ func Singleton[I any, O any](name string, input Watcher[I], convert func(i I) O)
 		name = fmt.Sprintf("singleton[%T,%T]", ti, to)
 	}
 	h := &singleton[O]{
-		item: atomic.NewPointer[O](nil),
-		name: name,
+		item:   atomic.NewPointer[O](nil),
+		name:   name,
 		parent: input,
 	}
 	input.AddDependency([]string{h.name})

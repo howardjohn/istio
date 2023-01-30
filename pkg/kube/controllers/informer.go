@@ -3,8 +3,9 @@ package controllers
 import (
 	"fmt"
 
-	"istio.io/istio/pkg/kube"
 	"k8s.io/client-go/tools/cache"
+
+	"istio.io/istio/pkg/kube"
 )
 
 type informer[I Object] struct {

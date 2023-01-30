@@ -10,7 +10,6 @@ import (
 	"unsafe"
 )
 
-
 //go:embed main.go
 var fileContents string
 var Map5x = mapper(fileContents)
@@ -42,6 +41,7 @@ func mapper(fc string) func() {
 type Person struct {
 	First, Last string
 }
+
 var MapPerson = Person{}
 
 func main() {
@@ -59,7 +59,6 @@ func main() {
 	fmt.Println(Map4[Person, string](arr, unsafe.Offsetof(Person{}.Last)))
 	fmt.Println(Map5(arr, Person{}.Last))
 }
-
 
 func Map[T, U any](data []T, f func(T) U) []U {
 	res := make([]U, 0, len(data))

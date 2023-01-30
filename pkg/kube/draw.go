@@ -71,8 +71,8 @@ func generateDOT[K comparable, T any](g graph.Graph[K, T]) (description, error) 
 		if cur, f := names[n]; f {
 			return cur
 		}
-		names[n] =  fmt.Sprintf("id%d", len(names))
-		return 	names[n]
+		names[n] = fmt.Sprintf("id%d", len(names))
+		return names[n]
 	}
 	desc := description{
 		GraphType:    "graph",
@@ -98,7 +98,7 @@ func generateDOT[K comparable, T any](g graph.Graph[K, T]) (description, error) 
 
 		stmt := statement{
 			Source:           vertex,
-			Id: getId(vertex),
+			Id:               getId(vertex),
 			SourceWeight:     sourceProperties.Weight,
 			SourceAttributes: sourceProperties.Attributes,
 		}
@@ -107,9 +107,9 @@ func generateDOT[K comparable, T any](g graph.Graph[K, T]) (description, error) 
 		for adjacency, edge := range adjacencies {
 			stmt := statement{
 				Source:         vertex,
-				Id: getId(vertex),
+				Id:             getId(vertex),
 				Target:         adjacency,
-				TargetId: getId(adjacency),
+				TargetId:       getId(adjacency),
 				EdgeWeight:     edge.Properties.Weight,
 				EdgeAttributes: edge.Properties.Attributes,
 			}
