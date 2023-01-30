@@ -554,6 +554,17 @@ func meshConfigMapData(cm *v1.ConfigMap) string {
 	return cfgYaml
 }
 
+type Waypoint struct {
+	ServiceAccount string
+	Name           string
+	Namespace      string
+	Address        []byte
+}
+
+func (w Waypoint) ResourceName() string {
+	return w.Namespace + "/" + w.Name
+}
+
 func (c *Controller) setupIndex2() *AmbientIndex {
 	ConfigMaps := cv2.CollectionFor[*v1.ConfigMap](c.client)
 	MeshConfig := cv2.NewSingleton[meshapi.MeshConfig](
@@ -580,6 +591,25 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 	Services := cv2.CollectionFor[*v1.Service](c.client)
 	Pods := cv2.CollectionFor[*v1.Pod](c.client)
 	Namespaces := cv2.CollectionFor[*v1.Namespace](c.client)
+	Waypoints := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *Waypoint {
+		if !IsPodReady(p) {
+			return nil
+		}
+		if p.Labels[constants.ManagedGatewayLabel] != constants.ManagedGatewayMeshController {
+			// not a waypoint
+			return nil
+		}
+		addr, err := netip.ParseAddr(p.Status.PodIP)
+		if err != nil {
+			return nil
+		}
+		return &Waypoint{
+			ServiceAccount: p.Spec.ServiceAccountName,
+			Namespace:      p.Namespace,
+			Name:           p.Name,
+			Address:        addr.AsSlice(),
+		}
+	})
 	Workloads := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *model.WorkloadInfo {
 		// TODO:
 		// * Test updating a pod attributes used as filter
@@ -597,23 +627,22 @@ func (c *Controller) setupIndex2() *AmbientIndex {
 			// We only want label selector ones, we handle global ones through another mechanism
 			return a.(*securityclient.AuthorizationPolicy).Spec.GetSelector().GetMatchLabels() != nil
 		}))
-		log.Errorf("howardjohn: got policies: %v", policies)
 		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
 		namespace := cv2.Flatten(cv2.FetchOne(ctx, Namespaces, cv2.FilterName(p.Namespace)))
 		services := cv2.Fetch(ctx, Services, cv2.FilterSelects(p.GetLabels()))
-		waypointPods := cv2.Fetch(ctx, Pods, cv2.FilterLabel(map[string]string{
-			constants.ManagedGatewayLabel: constants.ManagedGatewayMeshController,
-		}), cv2.FilterGeneric(func(a any) bool {
-			return a.(*v1.Pod).Spec.ServiceAccountName == p.Spec.ServiceAccountName
+		waypoints := cv2.Fetch(ctx, Waypoints, cv2.FilterGeneric(func(a any) bool {
+			return a.(Waypoint).ServiceAccount == p.Spec.ServiceAccountName
 		}))
 		w := &workloadapi.Workload{
-			Name:              p.Name,
-			Namespace:         p.Namespace,
-			Address:           netip.MustParseAddr(p.Status.PodIP).AsSlice(),
-			ServiceAccount:    p.Spec.ServiceAccountName,
-			WaypointAddresses: addresses(waypointPods),
-			Node:              p.Spec.NodeName,
-			VirtualIps:        constructVIPs(p, services),
+			Name:           p.Name,
+			Namespace:      p.Namespace,
+			Address:        netip.MustParseAddr(p.Status.PodIP).AsSlice(),
+			ServiceAccount: p.Spec.ServiceAccountName,
+			WaypointAddresses: cv2.Map(waypoints, func(w Waypoint) []byte {
+				return w.Address
+			}),
+			Node:       p.Spec.NodeName,
+			VirtualIps: constructVIPs(p, services),
 			AuthorizationPolicies: cv2.Map(policies, func(t *securityclient.AuthorizationPolicy) string {
 				return t.Namespace + "/" + t.Name
 			}),

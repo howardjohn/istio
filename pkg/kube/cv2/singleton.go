@@ -1,6 +1,7 @@
 package cv2
 
 import (
+	"fmt"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -41,8 +42,8 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 	h := &singleton[T]{
 		handle: hf,
 		deps: dependencies{
-			deps:      map[depKey]dependency{},
-			finalized: false,
+			dependencies: map[depKey]dependency{},
+			finalized:    false,
 		},
 		state: atomic.NewPointer[T](nil),
 	}
@@ -74,11 +75,11 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 	h.execute()
 	h.deps.finalized = true
 	mu := sync.Mutex{}
-	for _, dep := range h.deps.deps {
+	for _, dep := range h.deps.dependencies {
 		dep := dep
 		log := log.WithLabels("dep", dep.key)
 		log.Infof("insert dep, filter: %+v", dep.filter)
-		dep.dep.register(func(events []Event[any]) {
+		dep.collection.register(func(events []Event[any]) {
 			mu.Lock()
 			defer mu.Unlock()
 			matched := false
@@ -146,8 +147,17 @@ func (h *singleton[T]) RegisterBatch(f func(o []Event[T])) {
 	h.handlers = append(h.handlers, f)
 }
 
-func (h *singleton[T]) getDeps() dependencies {
-	return h.deps
+// registerDependency creates a
+func (h *singleton[T]) registerDependency(d dependency) bool {
+	_, exists := h.deps.dependencies[d.key]
+	if exists && !h.deps.finalized {
+		panic(fmt.Sprintf("dependency already registered, %+v", d.key))
+	}
+	if !exists && h.deps.finalized {
+		panic(fmt.Sprintf("dependency registered after initialization, %+v", d.key))
+	}
+	h.deps.dependencies[d.key] = d
+	return h.deps.finalized
 }
 
 func (h *singleton[T]) Get() *T {

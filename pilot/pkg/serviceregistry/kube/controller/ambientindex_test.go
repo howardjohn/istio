@@ -150,11 +150,7 @@ func TestAmbientIndex(t *testing.T) {
 	assertEvent("127.0.0.1")
 
 	addPods("127.0.0.2", "name2", "sa1", map[string]string{"app": "a", "other": "label"})
-	time.Sleep(time.Millisecond * 100)
-	t.Log(controller.ambientIndex.workloads.List(""))
 	addPods("127.0.0.3", "name3", "sa1", map[string]string{"app": "other"})
-	time.Sleep(time.Millisecond * 100)
-	t.Log(controller.ambientIndex.workloads.List(""))
 	assertWorkloads("", "name1", "name2", "name3")
 	assertWorkloads("127.0.0.1", "name1")
 	assertWorkloads("127.0.0.2", "name2")
@@ -195,7 +191,6 @@ func TestAmbientIndex(t *testing.T) {
 	assertWorkloads("10.0.0.1", "name1", "name2", "name4")
 	assertEvent("127.0.0.4")
 
-	t.Log("DELETE !!")
 	// Delete it, should remove from the Service as well
 	deletePod("name4")
 	assertWorkloads("", "name1", "name2", "name3")
@@ -242,7 +237,6 @@ func TestAmbientIndex(t *testing.T) {
 	assert.Equal(t, controller.ambientIndex.Lookup("127.0.0.3")[0].WaypointAddresses, [][]byte{netip.MustParseAddr("127.0.0.200").AsSlice()})
 
 	// Add another one, expect the same result
-	t.Log("!!! create waypoint 2")
 	addPods("127.0.0.201", "waypoint2-sa1", "sa1", map[string]string{constants.ManagedGatewayLabel: constants.ManagedGatewayMeshController})
 	assertEvent("127.0.0.1", "127.0.0.2", "127.0.0.3")
 	assert.Equal(t,
@@ -293,16 +287,13 @@ func TestAmbientIndex(t *testing.T) {
 	deletePod("name2")
 	assertEvent("127.0.0.2")
 
-	t.Log("policy 1")
 	addPolicy("global", "istio-system", nil)
-	t.Log("policy 2")
 	addPolicy("namespace", "default", nil)
 	assert.Equal(t,
 		controller.ambientIndex.Lookup("127.0.0.1")[0].AuthorizationPolicies,
 		nil)
 	fx.Clear()
 
-	t.Log("policy 3")
 	addPolicy("selector", "ns1", map[string]string{"app": "a"})
 	assertEvent("127.0.0.1")
 	assert.Equal(t,
@@ -336,7 +327,7 @@ func TestAmbientIndex(t *testing.T) {
 		controller.ambientIndex.Lookup("127.0.0.1")[0].AuthorizationPolicies,
 		[]string{"ns1/selector"})
 
-	cfg.Delete(gvk.AuthorizationPolicy, "selector", "ns1", nil)
+	controller.client.Istio().SecurityV1beta1().AuthorizationPolicies("ns1").Delete(context.Background(), "selector", metav1.DeleteOptions{})
 	assertEvent("127.0.0.1", "127.0.0.2")
 	assert.Equal(t,
 		controller.ambientIndex.Lookup("127.0.0.1")[0].AuthorizationPolicies,

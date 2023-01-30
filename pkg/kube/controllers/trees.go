@@ -2,11 +2,12 @@ package controllers
 
 import (
 	"fmt"
+	"reflect"
 
 	"google.golang.org/protobuf/proto"
-	"istio.io/istio/pkg/kube"
 	"k8s.io/client-go/tools/cache"
 
+	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/util/sets"
 )
 
@@ -52,6 +53,7 @@ func Equal[O any](a, b O) bool {
 		return proto.Equal(ap, any(b).(proto.Message))
 	}
 	// todo: proto.Equal?
+	return reflect.DeepEqual(a, b)
 	panic(fmt.Sprintf("Should be Equaler or Object (probably?), got %T", a))
 	return false
 }

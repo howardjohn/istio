@@ -1,6 +1,10 @@
 package cv2
 
-import "fmt"
+import (
+	"fmt"
+
+	"golang.org/x/exp/slices"
+)
 
 func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T {
 	res := Fetch[T](ctx, c, opts...)
@@ -19,28 +23,13 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	// One subsequent runs, we just validate
 	h := ctx.(depper)
 	d := dependency{
-		dep: eraseCollection(c),
-		key: depKey{dtype: GetType[T]()},
+		collection: eraseCollection(c),
+		key:        depKey{dtype: GetType[T]()},
 	}
 	for _, o := range opts {
 		o(&d)
 	}
-	deps := h.getDeps()
-	_, exists := deps.deps[d.key]
-	if exists && !deps.finalized {
-		// TODO: make collection handle this and add it back
-		// panic(fmt.Sprintf("dependency already registered, %+v", d.key))
-	}
-	if !exists && deps.finalized {
-		// TODO: make collection handle this and add it back
-		// panic(fmt.Sprintf("dependency registered after initialization, %+v", d.key))
-	}
-	deps.deps[d.key] = d
-	if rr, ok := ctx.(registerer); ok {
-		rr.register(d.dep)
-	}
-
-	if !deps.finalized {
+	if !h.registerDependency(d) {
 		return nil
 	}
 
@@ -52,6 +41,9 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 			res = append(res, c)
 		}
 	}
+	slices.SortFunc(res, func(a, b T) bool {
+		return GetKey(a) < GetKey(b)
+	})
 	log.WithLabels("key", d.key, "type", GetType[T](), "filter", d.filter, "size", len(res)).Debugf("Fetch")
 	return res
 }

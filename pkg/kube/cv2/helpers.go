@@ -81,6 +81,11 @@ func AppendNonNil[T any](data []T, i *T) []T {
 	return data
 }
 
+func HasName(a any) bool {
+	_, ok := a.(controllers.Object)
+	return ok
+}
+
 func GetName(a any) string {
 	ak, ok := a.(controllers.Object)
 	if ok {

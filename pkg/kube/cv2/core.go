@@ -80,9 +80,13 @@ type resourceNamer interface {
 	ResourceName() string
 }
 
+// dependency is a specific thing that can be depdnended on
 type dependency struct {
-	key    depKey
-	dep    erasedCollection
+	// Key; can be a type or name+type
+	key depKey
+	// The actual collection containing this
+	collection erasedCollection
+	// Filter over the collection
 	filter filter
 }
 
@@ -98,16 +102,13 @@ func (d depKey) String() string {
 }
 
 type dependencies struct {
-	deps      map[depKey]dependency
-	finalized bool
-}
-
-type registerer interface {
-	register(c erasedCollection)
+	dependencies map[depKey]dependency
+	finalized    bool
 }
 
 type depper interface {
-	getDeps() dependencies
+	// Registers a dependency, returning true if it is finalized
+	registerDependency(dependency) bool
 }
 
 type Event[T any] struct {
