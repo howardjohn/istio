@@ -36,7 +36,7 @@ type index[I, O any] struct {
 	namespace map[string]sets.Set[Key[O]]
 }
 
-// onUpdate takes a list of I's that changed and reruns the onDependencyEvent over them.
+// onUpdate takes a list of I's that changed and reruns the the handler over them over them.
 func (h *collection[I, O]) onUpdate(items []Event[any]) {
 	var events []Event[O]
 	for _, a := range items {
@@ -111,6 +111,7 @@ func (h *collection[I, O]) onUpdate(items []Event[any]) {
 	handlers := slices.Clone(h.handlers)
 	h.handlersMu.RUnlock()
 
+	log.WithLabels("events", len(events), "handlers", len(handlers)).Debugf("calling handlers")
 	for _, handler := range handlers {
 		handler(events)
 	}
@@ -242,7 +243,15 @@ func (h *collection[I, O]) Register(f func(o Event[O])) {
 func (h *collection[I, O]) RegisterBatch(f func(o []Event[O])) {
 	h.handlersMu.Lock()
 	defer h.handlersMu.Unlock()
+	// TODO: locking here is probably not reliable to avoid duplicate events
 	h.handlers = append(h.handlers, f)
+	// Send all existing objects through handler
+	f(Map(h.List(metav1.NamespaceAll), func(t O) Event[O] {
+		return Event[O]{
+			New:   Ptr(t),
+			Event: controllers.EventAdd,
+		}
+	}))
 }
 
 type indexedCollection[I, O any] struct {

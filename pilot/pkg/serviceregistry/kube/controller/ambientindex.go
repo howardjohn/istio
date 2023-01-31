@@ -384,7 +384,6 @@ func (c *Controller) setupIndex() *AmbientIndex {
 	ConfigMaps := cv2.CollectionFor[*v1.ConfigMap](c.client)
 	MeshConfig := cv2.NewSingleton[meshapi.MeshConfig](
 		func(ctx cv2.HandlerContext) *meshapi.MeshConfig {
-			log.Errorf("howardjohn: Computing mesh config")
 			meshCfg := mesh.DefaultMeshConfig()
 			cms := []*v1.ConfigMap{}
 			cms = cv2.AppendNonNil(cms, cv2.FetchOne(ctx, ConfigMaps, cv2.FilterName("istio-user")))
@@ -398,7 +397,6 @@ func (c *Controller) setupIndex() *AmbientIndex {
 				}
 				meshCfg = n
 			}
-			log.Errorf("howardjohn: computed mesh config to %v", meshCfg.GetIngressClass())
 			return meshCfg
 		},
 	)
@@ -479,7 +477,6 @@ func (c *Controller) setupIndex() *AmbientIndex {
 			w.Protocol = workloadapi.Protocol_HTTP
 			w.NativeHbone = true
 		}
-		log.Errorf("howardjohn: made workload: %v", w)
 		return &model.WorkloadInfo{Workload: w}
 	})
 	Workloads.RegisterBatch(func(events []cv2.Event[model.WorkloadInfo]) {

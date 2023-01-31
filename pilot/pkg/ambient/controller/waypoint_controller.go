@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -88,6 +90,8 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 	//})
 
 	Gateways := cv2.CollectionFor[*gateway.Gateway](client)
+	Deployments := cv2.CollectionFor[*appsv1.Deployment](client)
+	ServiceAccounts := cv2.CollectionFor[*corev1.ServiceAccount](client)
 	Waypoints := cv2.NewCollection(Gateways, func(ctx cv2.HandlerContext, gw *gateway.Gateway) *Waypoint {
 		// TODO: injectConfig as singleton
 		if rc.injectConfig().Values.Struct().GetGlobal().GetHub() == "" {
@@ -117,11 +121,15 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 			ForServiceAccount: forSa,
 		}
 		proxySa := renderServiceAccountApply(input)
+		_ = cv2.FetchOne(ctx, ServiceAccounts, cv2.FilterName(*proxySa.Name))
 		proxyDeploy, err := renderDeploymentApply(input, rc.injectConfig())
 		if err != nil {
 			// TODO: we may need better error management
 			return nil
 		}
+		// Add dependency on Deployment, so when it changes we are re-ran
+		// TODO: this doesn't work because we will produce the same output and dedupe it.
+		_ = cv2.FetchOne(ctx, Deployments, cv2.FilterName(*proxyDeploy.Name))
 		gatewayStatus := renderGatewayApply(gw, gw.Annotations["istio.io/service-account"])
 		return &Waypoint{
 			Deployment:     proxyDeploy,

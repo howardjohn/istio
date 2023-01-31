@@ -10,6 +10,7 @@ type filter struct {
 	generic   func(any) bool
 }
 
+// TODO: namespace matters
 func FilterName(name string) DepOption {
 	return func(h *dependency) {
 		h.filter.name = name

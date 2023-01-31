@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -43,6 +44,9 @@ func InformerFor[I runtime.Object](c Client) cache.SharedIndexInformer {
 	}
 	if eq(&corev1.ServiceAccount{}) {
 		return c.KubeInformer().Core().V1().ServiceAccounts().Informer()
+	}
+	if eq(&appsv1.Deployment{}) {
+		return c.KubeInformer().Apps().V1().Deployments().Informer()
 	}
 	if eq(&securityclient.AuthorizationPolicy{}) {
 		return c.IstioInformer().Security().V1beta1().AuthorizationPolicies().Informer()
