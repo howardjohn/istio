@@ -5,14 +5,24 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
 //go:embed main.go
 var fileContents string
 var Map5x = mapper(fileContents)
+
+var types = sync.Map{}
+
+func it[T any]() *T {
+	t := new(T)
+	res, _ := types.LoadOrStore(reflect.TypeOf(t), t)
+	return res.(*T)
+}
 
 func mapper(fc string) func() {
 	lines := strings.Split(fc, "\n")
@@ -39,25 +49,26 @@ func mapper(fc string) func() {
 }
 
 type Person struct {
-	First, Last string
+	Age int
+	Name string
 }
 
 var MapPerson = Person{}
 
 func main() {
 	arr := []Person{
-		{First: "John", Last: "Doe"},
-		{First: "John", Last: "Smith"},
+		{Name: "John", Age: 4},
+		{Name: "Jane", Age: 3},
 	}
 
 	fmt.Println(Map(arr, func(t Person) string {
-		return t.Last
+		return t.Name
 	}))
 
-	fmt.Println(Map2(arr, &arr[0].Last))
-	fmt.Println(Map3(arr, Ptr(Person{}.Last)))
-	fmt.Println(Map4[Person, string](arr, unsafe.Offsetof(Person{}.Last)))
-	fmt.Println(Map5(arr, Person{}.Last))
+	fmt.Println("map2", Map2(arr, &arr[0].Name))
+	fmt.Println("map3", Map3(arr, &it[Person]().Name))
+	fmt.Println("map4", Map4[Person, string](arr, unsafe.Offsetof(Person{}.Name)))
+	fmt.Println("map5", Map5(arr, Person{}.Name))
 }
 
 func Map[T, U any](data []T, f func(T) U) []U {
@@ -71,14 +82,17 @@ func Map[T, U any](data []T, f func(T) U) []U {
 func Map2[T, U any](data []T, ptr *U) []U {
 	base := uintptr(unsafe.Pointer(&data[0]))
 	offset := uintptr(unsafe.Pointer(ptr))
-	fmt.Println("Offset", offset-base)
 	return Map(data, func(t T) U {
 		return *((*U)(unsafe.Add(unsafe.Pointer(&t), offset-base)))
 	})
 }
 
 func Map3[T, U any](data []T, ptr *U) []U {
-	return nil
+	base := uintptr(unsafe.Pointer(it[T]()))
+	offset := uintptr(unsafe.Pointer(ptr))
+	return Map(data, func(t T) U {
+		return *((*U)(unsafe.Add(unsafe.Pointer(&t), offset-base)))
+	})
 }
 
 func Map4[T, U any](data []T, offset uintptr) []U {
@@ -88,7 +102,7 @@ func Map4[T, U any](data []T, offset uintptr) []U {
 }
 
 func Map5[T, U any](data []T, offset U) []U {
-	Map5x()
+	//Map5x()
 	return nil
 	//return Map(data, func(t T) U {
 	//	return *((*U)(unsafe.Add(unsafe.Pointer(&t), offset)))
