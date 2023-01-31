@@ -19,17 +19,13 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
-	listerv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
-	gwlister "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1alpha2"
 	"sigs.k8s.io/yaml"
 
 	meshapi "istio.io/api/mesh/v1alpha1"
@@ -46,13 +42,8 @@ import (
 )
 
 type WaypointProxyController struct {
-	client          kubelib.Client
-	queue           controllers.Queue
-	serviceAccounts listerv1.ServiceAccountLister
-	saInformer      cache.SharedIndexInformer
-	gatewayInformer cache.SharedIndexInformer
-	gateways        gwlister.GatewayLister
-	patcher         istiogw.Patcher
+	client  kubelib.Client
+	patcher istiogw.Patcher
 
 	cluster cluster.ID
 
@@ -88,35 +79,16 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 		},
 	}
 
-	rc.queue = controllers.NewQueue("waypoint proxy",
-		controllers.WithReconciler(rc.Reconcile),
-		controllers.WithMaxAttempts(5))
-
-	gateways := rc.client.GatewayAPIInformer().Gateway().V1alpha2().Gateways()
-	rc.gateways = gateways.Lister()
-	rc.gatewayInformer = gateways.Informer()
-	rc.gatewayInformer.AddEventHandler(controllers.ObjectHandler(rc.queue.AddObject))
-
-	sas := rc.client.KubeInformer().Core().V1().ServiceAccounts()
-	rc.serviceAccounts = sas.Lister()
-	rc.saInformer = sas.Informer()
-	rc.saInformer.AddEventHandler(controllers.ObjectHandler(func(o controllers.Object) {
-		// Anytime SA change, trigger all gateways in the namespace. This could probably be more efficient...
-		gws, _ := rc.gateways.Gateways(o.GetNamespace()).List(klabels.Everything())
-		for _, gw := range gws {
-			rc.queue.AddObject(gw)
-		}
-	}))
-	// On injection template change, requeue all gateways
-	addHandler(func() {
-		gws, _ := rc.gateways.List(klabels.Everything())
-		for _, gw := range gws {
-			rc.queue.AddObject(gw)
-		}
-	})
+	//// On injection template change, requeue all gateways
+	//addHandler(func() {
+	//	gws, _ := rc.gateways.List(klabels.Everything())
+	//	for _, gw := range gws {
+	//		rc.queue.AddObject(gw)
+	//	}
+	//})
 
 	Gateways := cv2.CollectionFor[*gateway.Gateway](client)
-	Waypoint := cv2.NewCollection(Gateways, func(ctx cv2.HandlerContext, gw gateway.Gateway) *Waypoint {
+	Waypoints := cv2.NewCollection(Gateways, func(ctx cv2.HandlerContext, gw *gateway.Gateway) *Waypoint {
 		// TODO: injectConfig as singleton
 		if rc.injectConfig().Values.Struct().GetGlobal().GetHub() == "" {
 			// Mostly used to avoid issues with local runs
@@ -127,107 +99,102 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 			log.Debugf("mismatched class %q", gw.Spec.GatewayClassName)
 			return nil
 		}
+
+		gatewaySA := gw.Annotations["istio.io/service-account"]
+		forSa := gatewaySA
+		if gatewaySA == "" {
+			gatewaySA = "namespace"
+		}
+		gatewaySA += "-waypoint"
+
+		input := MergedInput{
+			Namespace:         gw.Namespace,
+			GatewayName:       gw.Name,
+			UID:               string(gw.UID),
+			ServiceAccount:    gatewaySA,
+			Cluster:           rc.cluster.String(),
+			ProxyConfig:       rc.injectConfig().MeshConfig.GetDefaultConfig(),
+			ForServiceAccount: forSa,
+		}
+		proxySa := renderServiceAccountApply(input)
+		proxyDeploy, err := renderDeploymentApply(input, rc.injectConfig())
+		if err != nil {
+			// TODO: we may need better error management
+			return nil
+		}
+		gatewayStatus := renderGatewayApply(gw, gw.Annotations["istio.io/service-account"])
+		return &Waypoint{
+			Deployment:     proxyDeploy,
+			ServiceAccount: proxySa,
+			GatewayStatus:  gatewayStatus,
+		}
+	})
+	Waypoints.Register(func(o cv2.Event[Waypoint]) {
+		if o.New == nil {
+			// Kubernetes will prune things by GC, no need to explicitly remove
+			return
+		}
+		obj := *o.New
+		_, err := rc.client.Kube().
+			CoreV1().
+			ServiceAccounts(*obj.ServiceAccount.Namespace).
+			Apply(context.Background(), obj.ServiceAccount, metav1.ApplyOptions{
+				Force: true, FieldManager: waypointFM,
+			})
+		if err != nil {
+			log.Errorf("waypoint service account patch error: %v", err)
+		}
+		_, err = rc.client.Kube().
+			AppsV1().
+			Deployments(*obj.Deployment.Namespace).
+			Apply(context.Background(), obj.Deployment, metav1.ApplyOptions{
+				Force: true, FieldManager: waypointFM,
+			})
+		if err != nil {
+			log.Errorf("waypoint deployment patch error: %v", err)
+		}
+		if err := rc.applyObject(obj.GatewayStatus, "status"); err != nil {
+			log.Errorf("update gateway status: %v", err)
+		}
 	})
 
 	return rc
 }
 
 type Waypoint struct {
-	Deployment *appsv1ac.DeploymentApplyConfiguration
+	Deployment     *appsv1ac.DeploymentApplyConfiguration
+	ServiceAccount *corev1ac.ServiceAccountApplyConfiguration
+	GatewayStatus  *gateway.Gateway
+}
+
+func (w Waypoint) ResourceName() string {
+	return w.GatewayStatus.Namespace + "/" + w.GatewayStatus.Name
 }
 
 func (rc *WaypointProxyController) Run(stop <-chan struct{}) {
 	kubelib.WaitForCacheSync(stop, rc.informerSynced)
 	waypointLog.Infof("controller start to run")
 
-	go rc.queue.Run(stop)
 	<-stop
 }
 
 func (rc *WaypointProxyController) informerSynced() bool {
-	return rc.gatewayInformer.HasSynced() && rc.saInformer.HasSynced()
+	// TODO
+	return true
 }
 
-func (rc *WaypointProxyController) Reconcile(name types.NamespacedName) error {
-	if rc.injectConfig().Values.Struct().GetGlobal().GetHub() == "" {
-		// Mostly used to avoid issues with local runs
-		return fmt.Errorf("injection config invalid, skipping reconile")
-	}
-	log := waypointLog.WithLabels("gateway", name.String())
-
-	gw, err := rc.gateways.Gateways(name.Namespace).Get(name.Name)
-	if err != nil || gw == nil {
-		// we'll ignore not-found errors, since they can't be fixed by an immediate
-		// requeue (we'll need to wait for a new notification), and we can get them
-		// on deleted requests.
-		if err := controllers.IgnoreNotFound(err); err != nil {
-			log.Errorf("unable to fetch Gateway: %v", err)
-			return err
-		}
-		return nil
-	}
-
-	if gw.Spec.GatewayClassName != "istio-mesh" {
-		log.Debugf("mismatched class %q", gw.Spec.GatewayClassName)
-		return nil
-	}
-
-	gatewaySA := gw.Annotations["istio.io/service-account"]
-	forSa := gatewaySA
-	if gatewaySA == "" {
-		gatewaySA = "namespace"
-	}
-	gatewaySA += "-waypoint"
-
-	input := MergedInput{
-		Namespace:         gw.Namespace,
-		GatewayName:       gw.Name,
-		UID:               string(gw.UID),
-		ServiceAccount:    gatewaySA,
-		Cluster:           rc.cluster.String(),
-		ProxyConfig:       rc.injectConfig().MeshConfig.GetDefaultConfig(),
-		ForServiceAccount: forSa,
-	}
-	log.Infof("Updating waypoint proxy %q", gw.Name+"-waypoint")
-	proxySa := rc.RenderServiceAccountApply(input)
-	_, err = rc.client.Kube().
-		CoreV1().
-		ServiceAccounts(name.Namespace).
-		Apply(context.Background(), proxySa, metav1.ApplyOptions{
-			Force: true, FieldManager: waypointFM,
-		})
-	if err != nil {
-		return fmt.Errorf("waypoint service account patch error: %v", err)
-	}
-
-	proxyDeploy, err := rc.RenderDeploymentApply(input)
-	if err != nil {
-		return err
-	}
-	// TODO: should support HPA, PDB, maybe others...
-	_, err = rc.client.Kube().
-		AppsV1().
-		Deployments(name.Namespace).
-		Apply(context.Background(), proxyDeploy, metav1.ApplyOptions{
-			Force: true, FieldManager: waypointFM,
-		})
-	if err != nil {
-		return fmt.Errorf("waypoint deployment patch error: %v", err)
-	}
-	rc.registerWaypointUpdate(gw, gatewaySA, log)
-	return nil
-}
-
-func (rc *WaypointProxyController) registerWaypointUpdate(
-	gw *v1alpha2.Gateway,
+func renderGatewayApply(
+	gw *gateway.Gateway,
 	gatewaySA string,
-	log *istiolog.Scope,
-) {
+) *gateway.Gateway {
 	msg := fmt.Sprintf("Deployed waypoint proxy to %q namespace", gw.Namespace)
 	if gatewaySA != "" {
 		msg += fmt.Sprintf(" for %q service account", gatewaySA)
 	}
-	err := rc.UpdateStatus(gw, map[string]*istiogw.Condition{
+	if gw == nil {
+		return nil
+	}
+	conditions := map[string]*istiogw.Condition{
 		string(v1alpha2.GatewayConditionReady): {
 			Reason:  string(v1alpha2.GatewayReasonReady),
 			Message: msg,
@@ -236,21 +203,8 @@ func (rc *WaypointProxyController) registerWaypointUpdate(
 			Reason:  string(v1alpha2.GatewayReasonAccepted),
 			Message: msg,
 		},
-	}, log)
-	if err != nil {
-		log.Errorf("unable to update Gateway status %v on create: %v", gw.Name, err)
 	}
-}
-
-func (rc *WaypointProxyController) UpdateStatus(
-	gw *v1alpha2.Gateway,
-	conditions map[string]*istiogw.Condition,
-	log *istiolog.Scope,
-) error {
-	if gw == nil {
-		return nil
-	}
-	gws := &v1alpha2.Gateway{
+	return &gateway.Gateway{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       gvk.KubernetesGateway.Kind,
 			APIVersion: gvk.KubernetesGateway.Group + "/" + gvk.KubernetesGateway.Version,
@@ -259,19 +213,14 @@ func (rc *WaypointProxyController) UpdateStatus(
 			Name:      gw.Name,
 			Namespace: gw.Namespace,
 		},
-		Status: v1alpha2.GatewayStatus{
-			Conditions: istiogw.SetConditions(gw.Generation, nil, conditions),
+		Status: gateway.GatewayStatus{
+			Conditions: istiogw.SetConditions(gw.Generation, gw.Status.Conditions, conditions),
 		},
 	}
-	if err := rc.ApplyObject(gws, "status"); err != nil {
-		return fmt.Errorf("update gateway status: %v", err)
-	}
-	log.Info("gateway updated")
-	return nil
 }
 
-// ApplyObject renders an object with the given input and (server-side) applies the results to the cluster.
-func (rc *WaypointProxyController) ApplyObject(
+// applyObject renders an object with the given input and (server-side) applies the results to the cluster.
+func (rc *WaypointProxyController) applyObject(
 	obj controllers.Object,
 	subresources ...string,
 ) error {
@@ -290,7 +239,7 @@ func (rc *WaypointProxyController) ApplyObject(
 	return rc.patcher(gvr, obj.GetName(), obj.GetNamespace(), j, subresources...)
 }
 
-func (rc *WaypointProxyController) RenderServiceAccountApply(input MergedInput) *corev1ac.ServiceAccountApplyConfiguration {
+func renderServiceAccountApply(input MergedInput) *corev1ac.ServiceAccountApplyConfiguration {
 	return corev1ac.ServiceAccount(input.ServiceAccount, input.Namespace).
 		WithLabels(map[string]string{istiogw.GatewayNameLabel: input.GatewayName}).
 		WithOwnerReferences(metav1ac.OwnerReference().
@@ -300,11 +249,10 @@ func (rc *WaypointProxyController) RenderServiceAccountApply(input MergedInput) 
 			WithAPIVersion(gvk.KubernetesGateway.GroupVersion()))
 }
 
-func (rc *WaypointProxyController) RenderDeploymentApply(
+func renderDeploymentApply(
 	input MergedInput,
+	cfg inject.WebhookConfig,
 ) (*appsv1ac.DeploymentApplyConfiguration, error) {
-	cfg := rc.injectConfig()
-
 	// TODO watch for template changes, update the Deployment if it does
 	podTemplate := cfg.Templates["waypoint"]
 	if podTemplate == nil {

@@ -87,28 +87,28 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 				log.Debugf("got event %v", o.Event)
 				switch o.Event {
 				case controllers.EventAdd:
-					if dep.filter.Matches(o.New) {
-						log.Debugf("Add match %v", GetName(o.New))
+					if dep.filter.Matches(*o.New) {
+						log.Debugf("Add match %v", GetName(*o.New))
 						matched = true
 						break
 					} else {
-						log.Debugf("Add no match %v", GetName(o.New))
+						log.Debugf("Add no match %v", GetName(*o.New))
 					}
 				case controllers.EventDelete:
-					if dep.filter.Matches(o.Old) {
-						log.Debugf("delete match %v", GetName(o.Old))
+					if dep.filter.Matches(*o.Old) {
+						log.Debugf("delete match %v", GetName(*o.Old))
 						matched = true
 						break
 					} else {
-						log.Debugf("Add no match %v", GetName(o.Old))
+						log.Debugf("Add no match %v", GetName(*o.Old))
 					}
 				case controllers.EventUpdate:
-					if dep.filter.Matches(o.New) {
-						log.Debugf("Update match %v", GetName(o.New))
+					if dep.filter.Matches(*o.New) {
+						log.Debugf("Update match %v", GetName(*o.New))
 						matched = true
 						break
-					} else if dep.filter.Matches(o.Old) {
-						log.Debugf("Update no match, but used to %v", GetName(o.New))
+					} else if dep.filter.Matches(*o.Old) {
+						log.Debugf("Update no match, but used to %v", GetName(*o.New))
 						matched = true
 						break
 					} else {

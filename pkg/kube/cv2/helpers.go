@@ -92,7 +92,7 @@ func GetName(a any) string {
 		return ak.GetName()
 	}
 	log.Debugf("No Name, got %T", a)
-	panic(fmt.Sprintf("No Name, got %T", a))
+	panic(fmt.Sprintf("No Name, got %T %+v", a, a))
 	return ""
 }
 

@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
+	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
 )
@@ -45,6 +46,9 @@ func InformerFor[I runtime.Object](c Client) cache.SharedIndexInformer {
 	}
 	if eq(&securityclient.AuthorizationPolicy{}) {
 		return c.IstioInformer().Security().V1beta1().AuthorizationPolicies().Informer()
+	}
+	if eq(&gateway.Gateway{}) {
+		return c.GatewayAPIInformer().Gateway().V1beta1().Gateways().Informer()
 	}
 	panic(fmt.Sprintf("Unknown type %T", i))
 }
