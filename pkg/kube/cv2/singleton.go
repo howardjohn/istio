@@ -38,6 +38,27 @@ func (s singletonAdapter[T]) List(namespace string) []T {
 
 var _ Collection[any] = &singletonAdapter[any]{}
 
+func (h *singleton[T]) execute() {
+	res := h.handle(h)
+	oldRes := h.state.Swap(res)
+	updated := !controllers.Equal(res, oldRes)
+	if updated {
+		for _, handler := range h.handlers {
+			event := controllers.EventUpdate
+			if oldRes == nil {
+				event = controllers.EventAdd
+			} else if res == nil {
+				event = controllers.EventDelete
+			}
+			handler([]Event[T]{{
+				Old:   oldRes,
+				New:   res,
+				Event: event,
+			}})
+		}
+	}
+}
+
 func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 	h := &singleton[T]{
 		handle: hf,
@@ -46,26 +67,6 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 			finalized:    false,
 		},
 		state: atomic.NewPointer[T](nil),
-	}
-	h.execute = func() {
-		res := hf(h)
-		oldRes := h.state.Swap(res)
-		updated := !controllers.Equal(res, oldRes)
-		if updated {
-			for _, handler := range h.handlers {
-				event := controllers.EventUpdate
-				if oldRes == nil {
-					event = controllers.EventAdd
-				} else if res == nil {
-					event = controllers.EventDelete
-				}
-				handler([]Event[T]{{
-					Old:   oldRes,
-					New:   res,
-					Event: event,
-				}})
-			}
-		}
 	}
 	// Run the singleton, but do not persist state. This is just to register dependencies
 	// I suppose we could make this also persist state
@@ -126,10 +127,9 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 
 type singleton[T any] struct {
 	deps     dependencies
-	handle   any
+	handle   HandleEmpty[T]
 	handlers []func(o []Event[T])
 	state    *atomic.Pointer[T]
-	execute  func()
 }
 
 func (h *singleton[T]) _internalHandler() {
@@ -172,4 +172,32 @@ func (h *singleton[T]) GetKey(k Key[T]) *T {
 func (h *singleton[T]) List(namespace string) []T {
 	// TODO implement me
 	panic("implement me")
+}
+
+type static[T any] struct {
+	*singleton[T]
+	state *atomic.Pointer[T]
+}
+
+func (s static[T]) Set(t *T) {
+	s.state.Store(t)
+	// Retrigger
+	s.execute()
+}
+
+type StaticSingleton[T any] interface {
+	Singleton[T]
+	Set(*T)
+}
+
+func NewStatic[T any](initial *T) StaticSingleton[T] {
+	state := atomic.NewPointer(initial)
+	s := NewSingleton[T](func(ctx HandlerContext) *T {
+		return state.Load()
+	})
+	x := &static[T]{
+		singleton: s.(*singleton[T]),
+		state:     state,
+	}
+	return x
 }
