@@ -422,10 +422,11 @@ func NewTestFieldManager[T runtime.Object](gvk schema.GroupVersionKind, subresou
 	m := NewFakeOpenAPIModels()
 	typeConverter := NewFakeTypeConverter(m)
 	//converter := newVersionConverter(typeConverter, &fakeObjectConvertor{}, gvk.GroupVersion())
-	smm, _ := fieldmanager.NewStructuredMergeManager(typeConverter, &fakeObjectConvertor{}, nil, gvk.GroupVersion(), gvk.GroupVersion(), nil)
-	converter := GetUnexportedField(reflect.ValueOf(smm).Elem().FieldByName("updater").FieldByName("Converter")).(merge.Converter)
-	apiVersion := fieldpath.APIVersion(gvk.GroupVersion().String())
-	objectConverter := &fakeObjectConvertor{converter, apiVersion}
+	//smm, _ := fieldmanager.NewStructuredMergeManager(typeConverter, &fakeObjectConvertor{}, nil, gvk.GroupVersion(), gvk.GroupVersion(), nil)
+	//converter := GetUnexportedField(reflect.ValueOf(smm).Elem().FieldByName("updater").FieldByName("Converter")).(merge.Converter)
+	//apiVersion := fieldpath.APIVersion(gvk.GroupVersion().String())
+
+	objectConverter := IstioScheme
 	f, err := fieldmanager.NewStructuredMergeManager(
 		typeConverter,
 		objectConverter,
@@ -437,7 +438,7 @@ func NewTestFieldManager[T runtime.Object](gvk schema.GroupVersionKind, subresou
 	if err != nil {
 		panic(err)
 	}
-	live := *new(T)
+	live, _ := objectConverter.New(gvk)
 	f = fieldmanager.NewLastAppliedUpdater(
 		fieldmanager.NewLastAppliedManager(
 			fieldmanager.NewProbabilisticSkipNonAppliedManager(
@@ -445,7 +446,7 @@ func NewTestFieldManager[T runtime.Object](gvk schema.GroupVersionKind, subresou
 					fieldmanager.NewManagedFieldsUpdater(
 						fieldmanager.NewStripMetaManager(f),
 					), gvk.GroupVersion(), subresource,
-				), &fakeObjectCreater[T]{gvk: gvk}, gvk, fieldmanager.DefaultTrackOnCreateProbability,
+				), objectConverter, gvk, fieldmanager.DefaultTrackOnCreateProbability,
 			), typeConverter, objectConverter, gvk.GroupVersion(),
 		),
 	)
