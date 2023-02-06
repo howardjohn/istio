@@ -44,6 +44,7 @@ func TestSynchronizer(t *testing.T) {
 			return controllers.Equal(&gen, liveac)
 		},
 		func(gen corev1ac.ConfigMapApplyConfiguration) {
+			log.Errorf("howardjohn: apply %v", gen.Data)
 			c.Kube().CoreV1().ConfigMaps(*gen.Namespace).Apply(context.Background(), &gen, metav1.ApplyOptions{
 				DryRun:       nil,
 				Force:        true,
@@ -84,4 +85,5 @@ func TestSynchronizer(t *testing.T) {
 	}, metav1.UpdateOptions{})
 	retry.UntilEqualOrFail(t, 2, func() int32 { return applies.Load() }, retry.Timeout(time.Second))
 	assert("default/name", map[string]string{"key": "value"})
+	time.Sleep(time.Second)
 }

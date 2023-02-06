@@ -24,7 +24,7 @@ func NewSynchronizer[G, L any](
 			live := l.GetKey(Key[L](genKey))
 			changed := true
 			if live != nil {
-				changed = compare(gen, *live)
+				changed = !compare(gen, *live)
 			}
 			log.WithLabels("changed", changed).Infof("generated update")
 			if changed {
@@ -44,7 +44,7 @@ func NewSynchronizer[G, L any](
 			if gen == nil {
 				return
 			}
-			changed := compare(*gen, live)
+			changed := !compare(*gen, live)
 			log.WithLabels("changed", changed).Infof("live update")
 			if changed {
 				apply(*gen)
