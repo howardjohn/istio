@@ -17,12 +17,12 @@ package deployment
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
 	"golang.org/x/sync/errgroup"
 
+	"istio.io/api/label"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/framework/components/echo"
 	"istio.io/istio/pkg/test/framework/components/echo/common/ports"
@@ -103,6 +103,11 @@ func (c *Config) fillDefaults(ctx resource.Context) error {
 		c.NamespaceCount = 1
 	}
 
+	inject := !ctx.Settings().Ambient
+	labels := map[string]string{}
+	if ctx.Settings().Ambient {
+		labels["istio.io/dataplane-mode"] = "ambient"
+	}
 	// Create the echo namespaces.
 	if len(c.Namespaces) == 0 {
 		c.Namespaces = make([]namespace.Getter, c.NamespaceCount)
@@ -111,7 +116,8 @@ func (c *Config) fillDefaults(ctx resource.Context) error {
 			g.Go(func() error {
 				ns, err := namespace.New(ctx, namespace.Config{
 					Prefix: "echo",
-					Inject: true,
+					Inject: inject,
+					Labels: labels,
 				})
 				if err != nil {
 					return err
@@ -125,7 +131,8 @@ func (c *Config) fillDefaults(ctx resource.Context) error {
 				g.Go(func() error {
 					ns, err := namespace.New(ctx, namespace.Config{
 						Prefix: fmt.Sprintf("echo%d", i+1),
-						Inject: true,
+						Inject: inject,
+						Labels: labels,
 					})
 					if err != nil {
 						return err
@@ -210,10 +217,8 @@ func (c *Config) DefaultEchoConfigs(t resource.Context) []echo.Config {
 		Ports:          ports.All(),
 		Subsets: []echo.SubsetConfig{
 			{
-				Annotations: map[echo.Annotation]*echo.AnnotationValue{
-					echo.SidecarInject: {
-						Value: strconv.FormatBool(false),
-					},
+				Labels: map[string]string{
+					label.SidecarInject.Name: "false",
 				},
 			},
 		},
@@ -247,11 +252,24 @@ func (c *Config) DefaultEchoConfigs(t resource.Context) []echo.Config {
 			ServiceAccount: true,
 			Ports:          ports.All(),
 			Subsets: []echo.SubsetConfig{{
+				Labels: map[string]string{
+					label.SidecarInject.Name: "true",
+				},
 				Annotations: echo.NewAnnotations().Set(echo.SidecarProxyConfig, `proxyMetadata:
 ISTIO_DELTA_XDS: "true"`),
 			}},
 		}
 		defaultConfigs = append(defaultConfigs, delta)
+	}
+
+	if t.Settings().Ambient {
+		waypointSvc := echo.Config{
+			Service:        WaypointSvc,
+			Ports:          ports.All(),
+			ServiceAccount: true,
+			WaypointProxy:  true,
+		}
+		defaultConfigs = append(defaultConfigs, waypointSvc)
 	}
 
 	if !t.Clusters().IsMulticluster() {
@@ -262,6 +280,9 @@ ISTIO_DELTA_XDS: "true"`),
 			Ports:          ports.All(),
 			Subsets: []echo.SubsetConfig{
 				{
+					Labels: map[string]string{
+						label.SidecarInject.Name: "true",
+					},
 					Annotations: map[echo.Annotation]*echo.AnnotationValue{
 						echo.SidecarInjectTemplates: {
 							Value: "grpc-agent",

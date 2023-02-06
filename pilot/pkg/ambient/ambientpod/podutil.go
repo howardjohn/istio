@@ -99,6 +99,17 @@ var LegacyLabelSelector = []*metav1.LabelSelector{
 	{
 		MatchExpressions: []metav1.LabelSelectorRequirement{
 			{
+				Key:      "sidecar.istio.io/inject",
+				Operator: metav1.LabelSelectorOpIn,
+				Values: []string{
+					"true",
+				},
+			},
+		},
+	},
+	{
+		MatchExpressions: []metav1.LabelSelectorRequirement{
+			{
 				Key:      label.IoIstioRev.Name,
 				Operator: metav1.LabelSelectorOpExists,
 			},

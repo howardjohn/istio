@@ -17,6 +17,7 @@ package deployment
 import (
 	"fmt"
 
+	"istio.io/istio/pkg/test/framework/components/ambient"
 	"istio.io/istio/pkg/test/framework/components/echo"
 	"istio.io/istio/pkg/test/framework/components/echo/deployment"
 	"istio.io/istio/pkg/test/framework/components/echo/match"
@@ -36,6 +37,7 @@ const (
 	ProxylessGRPCSvc = "proxyless-grpc"
 	NakedSvc         = "naked"
 	DeltaSvc         = "delta"
+	WaypointSvc      = "waypoint"
 )
 
 // EchoNamespace contains the echo instances for a single namespace.
@@ -63,6 +65,10 @@ type EchoNamespace struct {
 	VM echo.Instances
 	// DeltaXDS echo app uses the delta XDS protocol. This should be functionally equivalent to A.
 	DeltaXDS echo.Instances
+	// Waypoint echo app has a waypoint proxy in front of it.
+	Waypoint echo.Instances
+	// WaypointProxy represents the actual waypoint proxy instance. This differs from Waypoint which is an echo.
+	WaypointProxy ambient.WaypointProxy
 	// All echo apps in this namespace
 	All echo.Services
 }
@@ -96,6 +102,15 @@ func (n *EchoNamespace) loadValues(t resource.Context, echos echo.Instances, d *
 	}
 	if !skipDeltaXDS(t) {
 		n.DeltaXDS = match.ServiceName(echo.NamespacedName{Name: DeltaSvc, Namespace: ns}).GetMatches(echos)
+	}
+	if t.Settings().Ambient {
+		n.Waypoint = match.ServiceName(echo.NamespacedName{Name: WaypointSvc, Namespace: ns}).GetMatches(echos)
+
+		var err error
+		n.WaypointProxy, err = ambient.NewWaypointProxy(t, ns, WaypointSvc)
+		if err != nil {
+			return err
+		}
 	}
 
 	namespaces, err := namespace.GetAll(t)

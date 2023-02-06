@@ -167,6 +167,17 @@ var NoSelfCalls CombinationFilter = func(from echo.Instance, to echo.Instances) 
 	return match.Not(match.ServiceName(from.NamespacedName())).GetMatches(to)
 }
 
+var HasL7 CombinationFilter = func(from echo.Instance, to echo.Instances) echo.Instances {
+	if from.Config().HasSidecar() || from.Config().IsProxylessGRPC() {
+		// Client has L7, so it will always be L7
+		return to
+	}
+	// Otherwise, return all "to" with a waypoint which apply L7 on the server side
+	return match.Matcher(func(instance echo.Instance) bool {
+		return instance.Config().HasWaypointProxy()
+	}).GetMatches(to)
+}
+
 // ReachableDestinations filters out known-unreachable destinations given a source.
 // - from a naked pod, we can't reach cross-network endpoints or VMs
 // - we can't reach cross-cluster headless endpoints

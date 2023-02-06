@@ -4,6 +4,7 @@ kind: IstioOperator
 metadata:
   name: install
 spec:
+  profile: ambient
   components:
     ingressGateways:
       - name: istio-ingressgateway

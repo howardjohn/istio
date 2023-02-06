@@ -443,9 +443,10 @@ func buildWaypointInboundHTTPRouteConfig(lb *ListenerBuilder, svc *model.Service
 	}
 
 	inboundVHost := &route.VirtualHost{
-		Name:    inboundVirtualHostPrefix + strconv.Itoa(int(cc.port.Port)), // Format: "inbound|http|%d"
-		Domains: []string{"*"},
-		Routes:  routes,
+		Name:                       inboundVirtualHostPrefix + strconv.Itoa(int(cc.port.Port)), // Format: "inbound|http|%d"
+		Domains:                    []string{"*"},
+		Routes:                     routes,
+		IncludeRequestAttemptCount: true,
 	}
 
 	return &route.RouteConfiguration{

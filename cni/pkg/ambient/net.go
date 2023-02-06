@@ -294,7 +294,7 @@ func GetHostIP(kubeClient kubernetes.Interface) (string, error) {
 func (s *Server) CreateRulesOnNode(ztunnelVeth, ztunnelIP string, captureDNS bool) error {
 	var err error
 
-	log.Debugf("CreateRulesOnNode: ztunnelVeth=%s, ztunnelIP=%s", ztunnelVeth, ztunnelIP)
+	log.Debugf("CreateRulesOnNode: ztunnelVeth=%s, ztunnelIP=%s, dns=%v", ztunnelVeth, ztunnelIP, captureDNS)
 
 	// Check if chain exists, if it exists flush.. otherwise initialize
 	err = execute(s.IptablesCmd(), "-t", "mangle", "-C", "output", "-j", constants.ChainZTunnelOutput)

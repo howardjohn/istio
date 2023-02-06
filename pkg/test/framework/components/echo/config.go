@@ -349,7 +349,7 @@ func (c Config) IsDelta() bool {
 // - TProxy
 // - Multi-Subset
 func (c Config) IsRegularPod() bool {
-	return len(c.Subsets) == 1 && !c.IsVM() && !c.IsTProxy() && !c.IsNaked() && !c.IsHeadless() && !c.IsStatefulSet() && !c.IsProxylessGRPC()
+	return len(c.Subsets) == 1 && !c.IsVM() && !c.IsTProxy() && !c.IsNaked() && !c.IsHeadless() && !c.IsStatefulSet() && !c.IsProxylessGRPC() && !c.HasWaypointProxy()
 }
 
 // DeepCopy creates a clone of IstioEndpoint.

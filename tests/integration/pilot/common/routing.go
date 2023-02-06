@@ -167,6 +167,7 @@ func virtualServiceCases(t TrafficContext) {
 	// TODO include proxyless as different features become supported
 	t.SetDefaultSourceMatchers(match.NotNaked, match.NotHeadless, match.NotProxylessGRPC)
 	t.SetDefaultTargetMatchers(match.NotNaked, match.NotHeadless, match.NotProxylessGRPC)
+	t.SetDefaultComboFilter(echotest.HasL7)
 	includeProxyless := []match.Matcher{match.NotNaked, match.NotHeadless}
 
 	skipVM := t.Settings().Skip(echo.VM)
@@ -737,6 +738,7 @@ spec:
 		split := split
 		t.RunTraffic(TrafficTestCase{
 			name:           fmt.Sprintf("shifting-%d", split[0]),
+			skipAmbient:    "TODO: we don't yet have multiple L7 proxies",
 			toN:            len(split),
 			sourceMatchers: []match.Matcher{match.NotHeadless, match.NotNaked, match.NotProxylessGRPC},
 			targetMatchers: []match.Matcher{match.NotHeadless, match.NotNaked, match.NotExternal, match.NotProxylessGRPC},
@@ -1335,6 +1337,7 @@ spec:
 	t.RunTraffic(TrafficTestCase{
 		// https://github.com/istio/istio/issues/37196
 		name:             "client protocol - http1",
+		skipAmbient:      "https://github.com/istio/istio/issues/43161",
 		targetMatchers:   singleTarget,
 		workloadAgnostic: true,
 		viaIngress:       true,
@@ -1376,6 +1379,7 @@ spec:
 	t.RunTraffic(TrafficTestCase{
 		// https://github.com/istio/istio/issues/37196
 		name:             "client protocol - http2",
+		skipAmbient:      "https://github.com/istio/istio/issues/43161",
 		targetMatchers:   singleTarget,
 		workloadAgnostic: true,
 		viaIngress:       true,

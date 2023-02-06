@@ -87,6 +87,9 @@ type TrafficTestCase struct {
 
 	// minIstioVersion allows conditionally skipping based on required version
 	minIstioVersion string
+
+	// Skip test if in ambient mode, with a reason
+	skipAmbient string
 }
 
 func (c TrafficTestCase) RunForApps(t framework.TestContext, apps echo.Instances, namespace string) {
@@ -250,21 +253,21 @@ func RunAllTrafficTests(t framework.TestContext, i istio.Instance, apps deployme
 			}
 		})
 	}
-	RunSkipAmbient("jwt-claim-route", jwtClaimRoute, "ingress needed")
+	RunSkipAmbient("jwt-claim-route", jwtClaimRoute, "todo: ingress needed")
 	RunCase("virtualservice", virtualServiceCases)
 	RunCase("sniffing", protocolSniffingCases)
 	RunCase("selfcall", selfCallsCases)
 	RunCase("serverfirst", serverFirstTestCases)
 	RunCase("gateway", gatewayCases)
-	RunSkipAmbient("autopassthrough", autoPassthroughCases, "ingress needed")
+	RunSkipAmbient("autopassthrough", autoPassthroughCases, "todo: ingress needed")
 	RunCase("loop", trafficLoopCases)
 	RunCase("tls-origination", tlsOriginationCases)
-	RunSkipAmbient("instanceip", instanceIPTests, "not supported")
+	RunSkipAmbient("instanceip", instanceIPTests, "not fully supported")
 	RunCase("services", serviceCases)
 	RunCase("host", hostCases)
-	RunSkipAmbient("envoyfilter", envoyFilterCases, "not supported")
+	RunSkipAmbient("envoyfilter", envoyFilterCases, "not implemented yet")
 	RunCase("consistent-hash", consistentHashCases)
-	RunSkipAmbient("use-client-protocol", useClientProtocolCases, "not working for unknown reasons")
+	RunSkipAmbient("use-client-protocol", useClientProtocolCases, "https://github.com/istio/istio/issues/43161")
 	RunCase("destinationrule", destinationRuleCases)
 	RunCase("vm", VMTestCases(apps.VM))
 	RunCase("dns", DNSTestCases)
@@ -312,6 +315,12 @@ func (t *TrafficContext) SetDefaultComboFilter(f ...echotest.CombinationFilter) 
 }
 
 func (t TrafficContext) RunTraffic(tt TrafficTestCase) {
+	if len(tt.skipAmbient) > 0 && t.Settings().Ambient {
+		tt.skip = skip{
+			reason: tt.skipAmbient,
+			skip:   true,
+		}
+	}
 	if tt.sourceMatchers == nil {
 		tt.sourceMatchers = t.sourceMatchers
 	}
