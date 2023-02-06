@@ -41,6 +41,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -48,6 +49,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeVersion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/cli-runtime/pkg/resource"
@@ -68,6 +70,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/kube-openapi/pkg/util/proto"
 	"k8s.io/kubectl/pkg/cmd/apply"
 	kubectlDelete "k8s.io/kubectl/pkg/cmd/delete"
 	"k8s.io/kubectl/pkg/cmd/util"
@@ -246,6 +249,12 @@ func NewFakeClient(objects ...runtime.Object) CLIClient {
 	insertPatchReactor[*v1.ServiceAccount](f, "serviceaccounts", func(om metav1.ObjectMeta) *v1.ServiceAccount {
 		return &v1.ServiceAccount{ObjectMeta: om}
 	})
+	insertPatchReactor[*v1.Secret](f, "secrets", func(om metav1.ObjectMeta) *v1.Secret {
+		return &v1.Secret{ObjectMeta: om}
+	})
+	insertPatchReactor[*v1.ConfigMap](f, "configmaps", func(om metav1.ObjectMeta) *v1.ConfigMap {
+		return &v1.ConfigMap{ObjectMeta: om}
+	})
 
 	c.kube = f
 	c.kubeInformer = informers.NewSharedInformerFactory(c.kube, resyncInterval)
@@ -323,6 +332,7 @@ func NewFakeClient(objects ...runtime.Object) CLIClient {
 }
 
 func insertPatchReactor[T runtime.Object](f *fake.Clientset, resource string, fn func(om metav1.ObjectMeta) T) {
+	fieldmanager.NewTestFieldManager
 	f.PrependReactor(
 		"patch",
 		resource,
@@ -362,6 +372,81 @@ func insertPatchReactor[T runtime.Object](f *fake.Clientset, resource string, fn
 		},
 	)
 }
+
+
+func NewDefaultTestFieldManager(gvk schema.GroupVersionKind) TestFieldManager {
+	return NewTestFieldManager(gvk, "", nil)
+}
+
+func NewSubresourceTestFieldManager(gvk schema.GroupVersionKind) TestFieldManager {
+	return NewTestFieldManager(gvk, "scale", nil)
+}
+
+func NewTestFieldManager(gvk schema.GroupVersionKind, subresource string, chainFieldManager func(Manager) Manager) TestFieldManager {
+	m := NewFakeOpenAPIModels()
+	typeConverter := NewFakeTypeConverter(m)
+	converter := newVersionConverter(typeConverter, &fakeObjectConvertor{}, gvk.GroupVersion())
+	apiVersion := fieldpath.APIVersion(gvk.GroupVersion().String())
+	objectConverter := &fakeObjectConvertor{converter, apiVersion}
+	f, err := NewStructuredMergeManager(
+		typeConverter,
+		objectConverter,
+		&fakeObjectDefaulter{},
+		gvk.GroupVersion(),
+		gvk.GroupVersion(),
+		nil,
+	)
+	if err != nil {
+		panic(err)
+	}
+	live := &unstructured.Unstructured{}
+	live.SetKind(gvk.Kind)
+	live.SetAPIVersion(gvk.GroupVersion().String())
+	f = NewLastAppliedUpdater(
+		NewLastAppliedManager(
+			NewProbabilisticSkipNonAppliedManager(
+				NewBuildManagerInfoManager(
+					NewManagedFieldsUpdater(
+						NewStripMetaManager(f),
+					), gvk.GroupVersion(), subresource,
+				), &fakeObjectCreater{gvk: gvk}, gvk, DefaultTrackOnCreateProbability,
+			), typeConverter, objectConverter, gvk.GroupVersion(),
+		),
+	)
+	if chainFieldManager != nil {
+		f = chainFieldManager(f)
+	}
+	return TestFieldManager{
+		fieldManager: NewFieldManager(f, subresource),
+		apiVersion:   gvk.GroupVersion().String(),
+		emptyObj:     live,
+		liveObj:      live.DeepCopyObject(),
+	}
+}
+
+
+func NewFakeOpenAPIModels() proto.Models {
+	d, err := kubernetesSwaggerSchema.OpenAPISchema()
+	if err != nil {
+		panic(err)
+	}
+	m, err := proto.NewOpenAPIData(d)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+
+func NewFakeTypeConverter(m proto.Models) TypeConverter {
+	tc, err := NewTypeConverter(m, false)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to build TypeConverter: %v", err))
+	}
+	return tc
+}
+
+
 
 func NewFakeClientWithVersion(minor string, objects ...runtime.Object) CLIClient {
 	c := NewFakeClient(objects...).(*client)

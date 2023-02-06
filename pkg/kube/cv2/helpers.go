@@ -9,6 +9,7 @@ import (
 
 	"istio.io/api/type/v1beta1"
 	"istio.io/istio/pkg/kube/controllers"
+	acmetav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 func Filter[T any](data []T, f func(T) bool) []T {
@@ -30,6 +31,10 @@ func GetKey[O any](a O) Key[O] {
 	arn, ok := any(a).(resourceNamer)
 	if ok {
 		return Key[O](arn.ResourceName())
+	}
+	ack := GetApplyConfigKey(a)
+	if ack != nil {
+		return *ack
 	}
 	panic(fmt.Sprintf("Cannot get Key, got %T", a))
 	return ""
@@ -114,6 +119,23 @@ func GetLabels(a any) map[string]string {
 	return nil
 }
 
+func GetApplyConfigKey[O any](a O) *Key[O] {
+	val := reflect.ValueOf(a)
+
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	specField := val.FieldByName("ObjectMetaApplyConfiguration")
+	if !specField.IsValid() {
+		return nil
+	}
+	meta := specField.Interface().(*acmetav1.ObjectMetaApplyConfiguration)
+	if meta.Namespace != nil && len(*meta.Namespace) > 0 {
+		return Ptr(Key[O](*meta.Namespace + "/" + *meta.Name))
+	}
+	return Ptr(Key[O](*meta.Name))
+}
 func GetLabelSelector(a any) map[string]string {
 	val := reflect.ValueOf(a)
 

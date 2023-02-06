@@ -19,6 +19,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/testing/protocmp"
 	"istio.io/istio/pkg/test"
 	"istio.io/pkg/log"
 )
@@ -128,6 +131,45 @@ func UntilSuccessOrFail(t test.Failer, fn func() error, options ...Option) {
 }
 
 var ErrConditionNotMet = errors.New("expected condition not met")
+
+
+var compareErrors = cmp.Comparer(func(x, y error) bool {
+	switch {
+	case x == nil && y == nil:
+		return true
+	case x != nil && y == nil:
+		return false
+	case x == nil && y != nil:
+		return false
+	case x != nil && y != nil:
+		return x.Error() == y.Error()
+	default:
+		panic("unreachable")
+	}
+})
+
+
+var cmpOpts = []cmp.Option{protocmp.Transform(), cmpopts.EquateEmpty(), compareErrors}
+
+// UntilEqual retries the given function until it returns the expected value
+func UntilEqual[T any](want T, fn func() T, options ...Option) error {
+	return UntilSuccess(func() error {
+		got := fn()
+		if !cmp.Equal(got, want, cmpOpts...) {
+			return fmt.Errorf("wanted %v, got %v", want, got)
+		}
+		return nil
+	}, options...)
+}
+
+// UntilEqualOrFail retries the given function until it returns the expected value
+func UntilEqualOrFail[T any](t test.Failer, want T, fn func() T, options ...Option) {
+	t.Helper()
+	err := UntilEqual(want, fn, options...)
+	if err != nil {
+		t.Fatalf("retry.UntilEqualOrFail: %v", err)
+	}
+}
 
 // Until retries the given function until it returns true or hits the timeout timeout
 func Until(fn func() bool, options ...Option) error {
