@@ -140,11 +140,12 @@ func initForCluster(opts Options) *ambientController {
 				// TODO handle istiodless remote clusters
 				// copy to reset stop channel
 				opt := opts
+				globalStop := opt.Stop
 				opt.Stop = leaderStop
 				initAutolabel(opt)
 				if crdclient.WaitForCRD(gvk.KubernetesGateway, leaderStop) {
 					waypointController := NewWaypointProxyController(opts.Client, opts.ClusterID, opts.WebhookConfig, opts.addHandler)
-
+					opts.Client.RunAndWait(globalStop)
 					waypointController.Run(leaderStop)
 				}
 			})

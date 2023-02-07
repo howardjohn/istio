@@ -6,7 +6,7 @@ import (
 	"istio.io/istio/pkg/kube/controllers"
 )
 
-func NewSynchronizer[G, L any](
+func NewSyncer[G, L any](
 	g Collection[G],
 	l Collection[L],
 	compare func(G, L) bool,

@@ -24,20 +24,33 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
-	"unsafe"
 
-	"sigs.k8s.io/kustomize/kyaml/openapi/kubernetesapi"
-
-	openapi_v2 "github.com/google/gnostic/openapiv2"
 	"github.com/hashicorp/go-multierror"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/credentials"
-	protobuf "google.golang.org/protobuf/proto"
+	"istio.io/api/annotation"
+	"istio.io/api/label"
+	clientextensions "istio.io/client-go/pkg/apis/extensions/v1alpha1"
+	clientnetworkingalpha "istio.io/client-go/pkg/apis/networking/v1alpha3"
+	clientnetworkingbeta "istio.io/client-go/pkg/apis/networking/v1beta1"
+	clientsecurity "istio.io/client-go/pkg/apis/security/v1beta1"
+	clienttelemetry "istio.io/client-go/pkg/apis/telemetry/v1alpha1"
+	istioclient "istio.io/client-go/pkg/clientset/versioned"
+	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
+	istioinformer "istio.io/client-go/pkg/informers/externalversions"
+	"istio.io/istio/operator/pkg/apis"
+	"istio.io/istio/pkg/config/schema/gvk"
+	"istio.io/istio/pkg/kube/mcs"
+	"istio.io/istio/pkg/lazy"
+	"istio.io/istio/pkg/queue"
+	"istio.io/istio/pkg/sleep"
+	"istio.io/istio/pkg/test/util/yml"
+	"istio.io/pkg/log"
+	"istio.io/pkg/version"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -54,7 +67,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeVersion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/cli-runtime/pkg/resource"
@@ -75,7 +87,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
-	"k8s.io/kube-openapi/pkg/util/proto"
 	"k8s.io/kubectl/pkg/cmd/apply"
 	kubectlDelete "k8s.io/kubectl/pkg/cmd/delete"
 	"k8s.io/kubectl/pkg/cmd/util"
@@ -84,29 +95,6 @@ import (
 	gatewayapiclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gatewayapifake "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned/fake"
 	gatewayapiinformer "sigs.k8s.io/gateway-api/pkg/client/informers/externalversions"
-	"sigs.k8s.io/structured-merge-diff/v4/fieldpath"
-	"sigs.k8s.io/structured-merge-diff/v4/merge"
-	"sigs.k8s.io/structured-merge-diff/v4/typed"
-
-	"istio.io/api/annotation"
-	"istio.io/api/label"
-	clientextensions "istio.io/client-go/pkg/apis/extensions/v1alpha1"
-	clientnetworkingalpha "istio.io/client-go/pkg/apis/networking/v1alpha3"
-	clientnetworkingbeta "istio.io/client-go/pkg/apis/networking/v1beta1"
-	clientsecurity "istio.io/client-go/pkg/apis/security/v1beta1"
-	clienttelemetry "istio.io/client-go/pkg/apis/telemetry/v1alpha1"
-	istioclient "istio.io/client-go/pkg/clientset/versioned"
-	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
-	istioinformer "istio.io/client-go/pkg/informers/externalversions"
-	"istio.io/istio/operator/pkg/apis"
-	"istio.io/istio/pkg/config/schema/gvk"
-	"istio.io/istio/pkg/kube/mcs"
-	"istio.io/istio/pkg/lazy"
-	"istio.io/istio/pkg/queue"
-	"istio.io/istio/pkg/sleep"
-	"istio.io/istio/pkg/test/util/yml"
-	"istio.io/pkg/log"
-	"istio.io/pkg/version"
 )
 
 const (
@@ -340,8 +328,6 @@ func NewFakeClient(objects ...runtime.Object) CLIClient {
 }
 
 func insertPatchReactor[T runtime.Object](f *fake.Clientset, resource string, fn func(om metav1.ObjectMeta) T) {
-	// TODO: gvk
-
 	f.PrependReactor(
 		"patch",
 		resource,
@@ -371,158 +357,16 @@ func insertPatchReactor[T runtime.Object](f *fake.Clientset, resource string, fn
 					)
 				}
 
-				m := NewTestFieldManager[T](schema.GroupVersionKind{
-					Group:   "",
-					Version: "v1",
-					Kind:    "ConfigMap",
-				}, "", nil)
-				log.Errorf("howardjohn: Before %v", obj)
-				_ = m
-				//err = m.Apply(obj, "istio", true)
-
-				a, b, c := rfunc(clienttesting.NewPatchAction(
+				return rfunc(clienttesting.NewPatchAction(
 					pa.GetResource(),
 					pa.GetNamespace(),
 					pa.GetName(),
 					types.StrategicMergePatchType,
 					pa.GetPatch()))
-				log.Errorf("howardjohn: After %v/%v/%v", err, obj, b)
-				if obj != nil {
-					m.liveObj = obj
-					err = m.Apply(b, "istio", true)
-					log.Errorf("howardjohn: applied %v/%v", err, m.liveObj)
-					b = m.liveObj
-				}
-				return a, b, c
 			}
 			return false, nil, nil
 		},
 	)
-}
-
-type TestFieldManager struct {
-	fieldManager *fieldmanager.FieldManager
-	apiVersion   string
-	emptyObj     runtime.Object
-	liveObj      runtime.Object
-}
-
-func (f *TestFieldManager) Apply(obj runtime.Object, manager string, force bool) error {
-	out, err := f.fieldManager.Apply(f.liveObj, obj, manager, force)
-	if err == nil {
-		f.liveObj = out
-	}
-	return err
-}
-
-func GetUnexportedField(field reflect.Value) interface{} {
-	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
-}
-func NewTestFieldManager[T runtime.Object](gvk schema.GroupVersionKind, subresource string, chainFieldManager func(fieldmanager.Manager) fieldmanager.Manager) TestFieldManager {
-	m := NewFakeOpenAPIModels()
-	typeConverter := NewFakeTypeConverter(m)
-	//converter := newVersionConverter(typeConverter, &fakeObjectConvertor{}, gvk.GroupVersion())
-	//smm, _ := fieldmanager.NewStructuredMergeManager(typeConverter, &fakeObjectConvertor{}, nil, gvk.GroupVersion(), gvk.GroupVersion(), nil)
-	//converter := GetUnexportedField(reflect.ValueOf(smm).Elem().FieldByName("updater").FieldByName("Converter")).(merge.Converter)
-	//apiVersion := fieldpath.APIVersion(gvk.GroupVersion().String())
-
-	objectConverter := IstioScheme
-	f, err := fieldmanager.NewStructuredMergeManager(
-		typeConverter,
-		objectConverter,
-		&fakeObjectDefaulter{},
-		gvk.GroupVersion(),
-		gvk.GroupVersion(),
-		nil,
-	)
-	if err != nil {
-		panic(err)
-	}
-	live, _ := objectConverter.New(gvk)
-	f = fieldmanager.NewLastAppliedUpdater(
-		fieldmanager.NewLastAppliedManager(
-			fieldmanager.NewProbabilisticSkipNonAppliedManager(
-				fieldmanager.NewBuildManagerInfoManager(
-					fieldmanager.NewManagedFieldsUpdater(
-						fieldmanager.NewStripMetaManager(f),
-					), gvk.GroupVersion(), subresource,
-				), objectConverter, gvk, fieldmanager.DefaultTrackOnCreateProbability,
-			), typeConverter, objectConverter, gvk.GroupVersion(),
-		),
-	)
-	if chainFieldManager != nil {
-		f = chainFieldManager(f)
-	}
-	return TestFieldManager{
-		fieldManager: fieldmanager.NewFieldManager(f, subresource),
-		apiVersion:   gvk.GroupVersion().String(),
-		emptyObj:     live,
-		liveObj:      live.DeepCopyObject(),
-	}
-}
-
-type fakeObjectCreater[T runtime.Object] struct {
-	gvk schema.GroupVersionKind
-}
-
-var _ runtime.ObjectCreater = &fakeObjectCreater[runtime.Object]{}
-
-func (f *fakeObjectCreater[T]) New(_ schema.GroupVersionKind) (runtime.Object, error) {
-	return *new(T), nil
-}
-
-type fakeObjectDefaulter struct{}
-
-func (d *fakeObjectDefaulter) Default(in runtime.Object) {}
-
-type fakeObjectConvertor struct {
-	converter  merge.Converter
-	apiVersion fieldpath.APIVersion
-}
-
-//nolint:staticcheck,ineffassign // SA4009 backwards compatibility
-func (c *fakeObjectConvertor) Convert(in, out, context interface{}) error {
-	if typedValue, ok := in.(*typed.TypedValue); ok {
-		var err error
-		out, err = c.converter.Convert(typedValue, c.apiVersion)
-		return err
-	}
-	return nil
-}
-
-func (c *fakeObjectConvertor) ConvertToVersion(in runtime.Object, _ runtime.GroupVersioner) (runtime.Object, error) {
-	return in, nil
-}
-
-func (c *fakeObjectConvertor) ConvertFieldLabel(_ schema.GroupVersionKind, _, _ string) (string, string, error) {
-	return "", "", errors.New("not implemented")
-}
-
-func NewFakeOpenAPIModels() proto.Models {
-	assetName := filepath.Join(
-		"kubernetesapi",
-		kubernetesapi.DefaultOpenAPI,
-		"swagger.pb")
-	data := kubernetesapi.OpenAPIMustAsset[kubernetesapi.DefaultOpenAPI](assetName)
-
-	doc := &openapi_v2.Document{}
-	// We parse protobuf and get an openapi_v2.Document here.
-	if err := protobuf.Unmarshal(data, doc); err != nil {
-		panic(fmt.Sprintf("openapi proto unmarshalling failed: %w", err))
-	}
-	m, err := proto.NewOpenAPIData(doc)
-	if err != nil {
-		panic(err)
-	}
-	return m
-}
-
-func NewFakeTypeConverter(m proto.Models) fieldmanager.TypeConverter {
-	tc, err := fieldmanager.NewTypeConverter(m, false)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to build TypeConverter: %v", err))
-	}
-	return tc
 }
 
 func NewFakeClientWithVersion(minor string, objects ...runtime.Object) CLIClient {

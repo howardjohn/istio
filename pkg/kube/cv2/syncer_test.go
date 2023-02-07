@@ -13,7 +13,6 @@ import (
 	"istio.io/istio/pkg/kube/cv2"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/retry"
-	"istio.io/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
@@ -32,7 +31,8 @@ func TestSynchronizer(t *testing.T) {
 	})
 	applies := atomic.NewInt32(0)
 	LiveConfigMaps := cv2.CollectionFor[*corev1.ConfigMap](c)
-	cv2.NewSynchronizer(
+	// TODO: this is currently broken because client-go doesn't support managed fields
+	cv2.NewSyncer(
 		GeneratedConfigMap,
 		LiveConfigMaps,
 		func(gen corev1ac.ConfigMapApplyConfiguration, live *corev1.ConfigMap) bool {
@@ -40,11 +40,9 @@ func TestSynchronizer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			log.Errorf("howardjohn: compare\n%v\n%v\n%v\n%v", gen.Data, liveac.Data, live.Data, live.ManagedFields)
 			return controllers.Equal(&gen, liveac)
 		},
 		func(gen corev1ac.ConfigMapApplyConfiguration) {
-			log.Errorf("howardjohn: apply %v", gen.Data)
 			c.Kube().CoreV1().ConfigMaps(*gen.Namespace).Apply(context.Background(), &gen, metav1.ApplyOptions{
 				DryRun:       nil,
 				Force:        true,

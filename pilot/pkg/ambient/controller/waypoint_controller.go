@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,14 +94,16 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 	Deployments := cv2.CollectionFor[*appsv1.Deployment](client)
 	ServiceAccounts := cv2.CollectionFor[*corev1.ServiceAccount](client)
 	Waypoints := cv2.NewCollection(Gateways, func(ctx cv2.HandlerContext, gw *gateway.Gateway) *Waypoint {
+		log.Infof("handling Gateway %v", gw.Name)
 		// TODO: injectConfig as singleton
 		if rc.injectConfig().Values.Struct().GetGlobal().GetHub() == "" {
+			log.Errorf("no inject config")
 			// Mostly used to avoid issues with local runs
 			return nil
 		}
 		log := waypointLog.WithLabels("gateway", gw.Name)
 		if gw.Spec.GatewayClassName != "istio-mesh" {
-			log.Debugf("mismatched class %q", gw.Spec.GatewayClassName)
+			log.Warnf("mismatched class %q", gw.Spec.GatewayClassName)
 			return nil
 		}
 
@@ -121,15 +124,12 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 			ForServiceAccount: forSa,
 		}
 		proxySa := renderServiceAccountApply(input)
-		_ = cv2.FetchOne(ctx, ServiceAccounts, cv2.FilterName(*proxySa.Name))
 		proxyDeploy, err := renderDeploymentApply(input, rc.injectConfig())
 		if err != nil {
+			log.Errorf("failed to render: %v", err)
 			// TODO: we may need better error management
 			return nil
 		}
-		// Add dependency on Deployment, so when it changes we are re-ran
-		// TODO: this doesn't work because we will produce the same output and dedupe it.
-		_ = cv2.FetchOne(ctx, Deployments, cv2.FilterName(*proxyDeploy.Name))
 		gatewayStatus := renderGatewayApply(gw, gw.Annotations["istio.io/service-account"])
 		return &Waypoint{
 			Deployment:     proxyDeploy,
@@ -137,30 +137,44 @@ func NewWaypointProxyController(client kubelib.Client, clusterID cluster.ID,
 			GatewayStatus:  gatewayStatus,
 		}
 	})
+	cv2.NewSyncer(Waypoints, ServiceAccounts,
+		func(g Waypoint, l *corev1.ServiceAccount) bool {
+			liveac, _ := corev1ac.ExtractServiceAccount(l, waypointFM)
+			return controllers.Equal(g.ServiceAccount, liveac)
+		}, func(waypoint Waypoint) {
+			_, err := rc.client.Kube().
+				CoreV1().
+				ServiceAccounts(*waypoint.ServiceAccount.Namespace).
+				Apply(context.Background(), waypoint.ServiceAccount, metav1.ApplyOptions{
+					Force: true, FieldManager: waypointFM,
+				})
+			if err != nil {
+				log.Errorf("waypoint service account patch error: %v", err)
+			}
+		})
+	cv2.NewSyncer(Waypoints, Deployments,
+		func(g Waypoint, l *appsv1.Deployment) bool {
+			liveac, _ := appsv1ac.ExtractDeployment(l, waypointFM)
+			log.Errorf("howardjohn: compare %v", cmp.Diff(g.Deployment, liveac))
+			return controllers.Equal(g.Deployment, liveac)
+		}, func(waypoint Waypoint) {
+			log.Infof("Applying deployment %v", *waypoint.Deployment.Name)
+			_, err := rc.client.Kube().
+				AppsV1().
+				Deployments(*waypoint.Deployment.Namespace).
+				Apply(context.Background(), waypoint.Deployment, metav1.ApplyOptions{
+					Force: true, FieldManager: waypointFM,
+				})
+			if err != nil {
+				log.Errorf("waypoint deployment patch error: %v", err)
+			}
+		})
 	Waypoints.Register(func(o cv2.Event[Waypoint]) {
 		if o.New == nil {
 			// Kubernetes will prune things by GC, no need to explicitly remove
 			return
 		}
 		obj := *o.New
-		_, err := rc.client.Kube().
-			CoreV1().
-			ServiceAccounts(*obj.ServiceAccount.Namespace).
-			Apply(context.Background(), obj.ServiceAccount, metav1.ApplyOptions{
-				Force: true, FieldManager: waypointFM,
-			})
-		if err != nil {
-			log.Errorf("waypoint service account patch error: %v", err)
-		}
-		_, err = rc.client.Kube().
-			AppsV1().
-			Deployments(*obj.Deployment.Namespace).
-			Apply(context.Background(), obj.Deployment, metav1.ApplyOptions{
-				Force: true, FieldManager: waypointFM,
-			})
-		if err != nil {
-			log.Errorf("waypoint deployment patch error: %v", err)
-		}
 		if err := rc.applyObject(obj.GatewayStatus, "status"); err != nil {
 			log.Errorf("update gateway status: %v", err)
 		}
