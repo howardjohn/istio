@@ -15,16 +15,15 @@
 package forwarder
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
-	"time"
 
 	"github.com/gorilla/websocket"
 
-	"istio.io/istio/pkg/test/echo"
 	"istio.io/istio/pkg/test/echo/common"
 	"istio.io/istio/pkg/test/echo/proto"
 )
@@ -49,19 +48,19 @@ func (c *websocketProtocol) Close() error {
 
 func (c *websocketProtocol) makeRequest(ctx context.Context, cfg *Config, requestID int) (string, error) {
 	req := cfg.Request
-	var outBuffer bytes.Buffer
-	echo.ForwarderURLField.WriteForRequest(&outBuffer, requestID, req.Url)
+	// var outBuffer bytes.Buffer
+	// echo.ForwarderURLField.WriteForRequest(&outBuffer, requestID, req.Url)
 
 	// Set the special header to trigger the upgrade to WebSocket.
 	wsReq := cfg.headers.Clone()
 	if len(cfg.hostHeader) > 0 {
-		echo.HostField.WriteForRequest(&outBuffer, requestID, hostHeader)
+		// echo.HostField.WriteForRequest(&outBuffer, requestID, hostHeader)
 	}
-	writeForwardedHeaders(&outBuffer, requestID, wsReq)
+	// writeForwardedHeaders(&outBuffer, requestID, wsReq)
 	common.SetWebSocketHeader(wsReq)
 
 	if req.Message != "" {
-		echo.ForwarderMessageField.WriteForRequest(&outBuffer, requestID, req.Message)
+		// echo.ForwarderMessageField.WriteForRequest(&outBuffer, requestID, req.Message)
 	}
 
 	dialContext := func(network, addr string) (net.Conn, error) {
@@ -82,7 +81,8 @@ func (c *websocketProtocol) makeRequest(ctx context.Context, cfg *Config, reques
 	conn, _, err := dialer.Dial(req.Url, wsReq)
 	if err != nil {
 		// timeout or bad handshake
-		return outBuffer.String(), err
+		return "", err
+		// return outBuffer.String(), err
 	}
 	defer func() {
 		_ = conn.Close()
@@ -95,30 +95,34 @@ func (c *websocketProtocol) makeRequest(ctx context.Context, cfg *Config, reques
 	// Apply the deadline to the connection.
 	deadline, _ := ctx.Deadline()
 	if err := conn.SetWriteDeadline(deadline); err != nil {
-		return outBuffer.String(), err
+		return "", err
 	}
 	if err := conn.SetReadDeadline(deadline); err != nil {
-		return outBuffer.String(), err
+		return "", err
 	}
 
-	start := time.Now()
-	err = conn.WriteMessage(websocket.TextMessage, []byte(req.Message))
-	if err != nil {
-		return outBuffer.String(), err
-	}
+	// start := time.Now()
 
-	_, resp, err := conn.ReadMessage()
-	if err != nil {
-		return outBuffer.String(), err
-	}
+	s := bufio.NewScanner(os.Stdin)
+	for s.Scan() {
+		err = conn.WriteMessage(websocket.TextMessage, s.Bytes())
+		if err != nil {
+			return "", err
+		}
 
-	echo.LatencyField.WriteForRequest(&outBuffer, requestID, fmt.Sprintf("%v", time.Since(start)))
-	echo.ActiveRequestsField.WriteForRequest(&outBuffer, requestID, fmt.Sprintf("%d", c.e.ActiveRequests()))
-	for _, line := range strings.Split(string(resp), "\n") {
-		if line != "" {
-			echo.WriteBodyLine(&outBuffer, requestID, line)
+		_, resp, err := conn.ReadMessage()
+		if err != nil {
+			return "", err
+		}
+		for _, line := range strings.Split(string(resp), "\n") {
+			if line != "" {
+				fmt.Println("response:", line)
+			}
 		}
 	}
 
-	return outBuffer.String(), nil
+	// echo.LatencyField.WriteForRequest(&outBuffer, requestID, fmt.Sprintf("%v", time.Since(start)))
+	// echo.ActiveRequestsField.WriteForRequest(&outBuffer, requestID, fmt.Sprintf("%d", c.e.ActiveRequests()))
+
+	return "", nil
 }
