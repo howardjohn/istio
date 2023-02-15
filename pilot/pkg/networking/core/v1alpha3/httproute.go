@@ -117,7 +117,7 @@ func buildSidecarInboundHTTPRouteConfig(lb *ListenerBuilder, cc inboundChainConf
 		Name:                       inboundVirtualHostPrefix + strconv.Itoa(int(cc.port.Port)), // Format: "inbound|http|%d"
 		Domains:                    []string{"*"},
 		Routes:                     []*route.Route{defaultRoute},
-		IncludeRequestAttemptCount: strings.HasPrefix(cc.clusterName, string(model.TrafficDirectionInboundPod)),
+		//IncludeRequestAttemptCount: strings.HasPrefix(cc.clusterName, string(model.TrafficDirectionInboundPod)),
 	}
 
 	r := &route.RouteConfiguration{
