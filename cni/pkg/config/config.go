@@ -80,6 +80,9 @@ type InstallConfig struct {
 	// The UDS server address that CNI plugin will send log to.
 	LogUDSAddress string
 
+	// Whether ambient is enabled
+	AmbientEnabled bool
+
 	// Use the external nsenter command for network namespace switching
 	HostNSEnterExec bool
 }

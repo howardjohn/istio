@@ -43,10 +43,12 @@ type Builder struct {
 	builder     *builder.Builder
 }
 
-func NewBuilder(actionType ActionType, push *model.PushContext, proxy *model.Proxy) *Builder {
+// NewBuilderSkipIdentity allows a builder that will have rules mutated to always allow requests from some identity
+func NewBuilderSkipIdentity(actionType ActionType, push *model.PushContext, proxy *model.Proxy, skipped string) *Builder {
 	tdBundle := trustdomain.NewBundle(push.Mesh.TrustDomain, push.Mesh.TrustDomainAliases)
 	option := builder.Option{
 		IsCustomBuilder: actionType == Custom,
+		SkippedIdentity: skipped,
 	}
 	policies := push.AuthzPolicies.ListAuthorizationPolicies(proxy.ConfigNamespace, proxy.Labels)
 	if !util.IsIstioVersionGE117(proxy.IstioVersion) {
@@ -54,6 +56,21 @@ func NewBuilder(actionType ActionType, push *model.PushContext, proxy *model.Pro
 	}
 	b := builder.New(tdBundle, push, policies, option)
 	return &Builder{builder: b}
+}
+
+// NewBuilderWithOptions allows a builder with custom defined options
+func NewBuilderWithOptions(actionType ActionType, push *model.PushContext, proxy *model.Proxy, option builder.Option) *Builder {
+	tdBundle := trustdomain.NewBundle(push.Mesh.TrustDomain, push.Mesh.TrustDomainAliases)
+	policies := push.AuthzPolicies.ListAuthorizationPolicies(proxy.ConfigNamespace, proxy.Labels)
+	if !util.IsIstioVersionGE117(proxy.IstioVersion) {
+		option.UseAuthenticated = true
+	}
+	b := builder.New(tdBundle, push, policies, option)
+	return &Builder{builder: b}
+}
+
+func NewBuilder(actionType ActionType, push *model.PushContext, proxy *model.Proxy) *Builder {
+	return NewBuilderSkipIdentity(actionType, push, proxy, "")
 }
 
 func (b *Builder) BuildTCP() []*listener.Filter {

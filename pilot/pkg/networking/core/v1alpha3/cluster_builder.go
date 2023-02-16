@@ -64,10 +64,10 @@ var hboneTransportSocketMatch = &structpb.Struct{
 	},
 }
 
-// passthroughHttpProtocolOptions are http protocol options used for pass through clusters.
+// PassthroughHttpProtocolOptions are http protocol options used for pass through clusters.
 // nolint
 // revive:disable-next-line
-var passthroughHttpProtocolOptions = protoconv.MessageToAny(&http.HttpProtocolOptions{
+var PassthroughHttpProtocolOptions = protoconv.MessageToAny(&http.HttpProtocolOptions{
 	CommonHttpProtocolOptions: &core.HttpProtocolOptions{
 		IdleTimeout: durationpb.New(5 * time.Minute),
 	},
@@ -119,6 +119,9 @@ type ClusterBuilder struct {
 	req                   *model.PushRequest
 	cache                 model.XdsCache
 	credentialSocketExist bool
+
+	// TODO: this is not safe since its not in cache
+	proxy *model.Proxy
 }
 
 // NewClusterBuilder builds an instance of ClusterBuilder.
@@ -132,7 +135,7 @@ func NewClusterBuilder(proxy *model.Proxy, req *model.PushRequest, cache model.X
 		passThroughBindIPs: getPassthroughBindIPs(proxy.GetIPMode()),
 		supportsIPv4:       proxy.SupportsIPv4(),
 		supportsIPv6:       proxy.SupportsIPv6(),
-		hbone:              proxy.EnableHBONE(),
+		hbone:              proxy.EnableHBONE() || proxy.IsWaypointProxy(),
 		locality:           proxy.Locality,
 		proxyLabels:        proxy.Labels,
 		proxyView:          proxy.GetView(),
@@ -140,6 +143,7 @@ func NewClusterBuilder(proxy *model.Proxy, req *model.PushRequest, cache model.X
 		configNamespace:    proxy.ConfigNamespace,
 		req:                req,
 		cache:              cache,
+		proxy:              proxy,
 	}
 	if proxy.Metadata != nil {
 		if proxy.Metadata.TLSClientCertChain != "" {
@@ -432,6 +436,7 @@ func (cb *ClusterBuilder) buildInboundClusterForPortOrUDS(clusterPort int, bind 
 	}
 	localCluster := cb.buildDefaultCluster(clusterName, clusterType, localityLbEndpoints,
 		model.TrafficDirectionInbound, instance.ServicePort, instance.Service, allInstance)
+
 	// If stat name is configured, build the alt statname.
 	if len(cb.req.Push.Mesh.InboundClusterStatName) != 0 {
 		localCluster.cluster.AltStatName = telemetry.BuildStatPrefix(cb.req.Push.Mesh.InboundClusterStatName,
@@ -545,6 +550,7 @@ func (cb *ClusterBuilder) buildLocalityLbEndpoints(proxyView model.ProxyView, se
 			LoadBalancingWeight: &wrappers.UInt32Value{
 				Value: instance.Endpoint.GetLoadBalancingWeight(),
 			},
+			Metadata: &core.Metadata{},
 		}
 
 		labels := instance.Endpoint.Labels
@@ -563,8 +569,8 @@ func (cb *ClusterBuilder) buildLocalityLbEndpoints(proxyView model.ProxyView, se
 			}
 		}
 
-		ep.Metadata = util.BuildLbEndpointMetadata(instance.Endpoint.Network, instance.Endpoint.TLSMode, instance.Endpoint.WorkloadName,
-			ns, instance.Endpoint.Locality.ClusterID, labels)
+		util.BuildLbEndpointMetadata(instance.Endpoint.Network, instance.Endpoint.TLSMode, instance.Endpoint.WorkloadName,
+			ns, instance.Endpoint.Locality.ClusterID, labels, ep.Metadata)
 
 		locality := instance.Endpoint.Locality.Label
 		lbEndpoints[locality] = append(lbEndpoints[locality], ep)
@@ -666,7 +672,7 @@ func (cb *ClusterBuilder) buildDefaultPassthroughCluster() *cluster.Cluster {
 		ConnectTimeout:       cb.req.Push.Mesh.ConnectTimeout,
 		LbPolicy:             cluster.Cluster_CLUSTER_PROVIDED,
 		TypedExtensionProtocolOptions: map[string]*anypb.Any{
-			v3.HttpProtocolOptionsType: passthroughHttpProtocolOptions,
+			v3.HttpProtocolOptionsType: PassthroughHttpProtocolOptions,
 		},
 	}
 	cb.applyConnectionPool(cb.req.Push.Mesh, NewMutableCluster(cluster), &networking.ConnectionPoolSettings{})
@@ -994,7 +1000,24 @@ func (cb *ClusterBuilder) applyHBONETransportSocketMatches(c *cluster.Cluster, t
 				defaultTransportSocketMatch(),
 			}
 		} else {
-			c.TransportSocketMatches = HboneOrPlaintextSocket
+			if c.TransportSocket == nil {
+				c.TransportSocketMatches = HboneOrPlaintextSocket
+			} else {
+				ts := c.TransportSocket
+				c.TransportSocket = nil
+
+				c.TransportSocketMatches = []*cluster.Cluster_TransportSocketMatch{
+					{
+						Name:            "hbone",
+						Match:           hboneTransportSocketMatch,
+						TransportSocket: InternalUpstreamSocket,
+					},
+					{
+						Name:            "tlsMode-" + model.IstioMutualTLSModeLabel,
+						TransportSocket: ts,
+					},
+				}
+			}
 		}
 	}
 }
@@ -1199,7 +1222,12 @@ func (cb *ClusterBuilder) setUseDownstreamProtocol(mc *MutableCluster) {
 }
 
 func http2ProtocolOptions() *core.Http2ProtocolOptions {
-	return &core.Http2ProtocolOptions{}
+	return &core.Http2ProtocolOptions{
+		// Large values lead to internal listener crashes
+		// TODO: find a way to scope this to internal listeners or not crash
+		MaxConcurrentStreams:    wrappers.UInt32(1073741824),
+		InitialStreamWindowSize: wrappers.UInt32(16777216),
+	}
 }
 
 // nolint

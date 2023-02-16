@@ -1,117 +1,87 @@
-# Istio
+# Ambient Mesh
 
-[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/1395/badge)](https://bestpractices.coreinfrastructure.org/projects/1395)
-[![Go Report Card](https://goreportcard.com/badge/github.com/istio/istio)](https://goreportcard.com/report/github.com/istio/istio)
-[![GoDoc](https://godoc.org/istio.io/istio?status.svg)](https://godoc.org/istio.io/istio)
+This branch contains the experimental Ambient mesh functionality of Istio.
+See the [Introducing Ambient Mesh](https://istio.io/latest/blog/2022/introducing-ambient-mesh/) and [Getting Started with Ambient](https://istio.io/latest/blog/2022/get-started-ambient/) blogs for more information.
 
-<a href="https://istio.io/">
-    <img src="https://github.com/istio/istio/raw/master/logo/istio-bluelogo-whitebackground-unframed.svg"
-         alt="Istio logo" title="Istio" height="100" width="100" />
-</a>
+## Getting Started
 
----
+### Supported Environments
 
-Istio is an open source service mesh that layers transparently onto existing distributed applications. Istio’s powerful features provide a uniform and more efficient way to secure, connect, and monitor services. Istio is the path to load balancing, service-to-service authentication, and monitoring – with few or no service code changes.
+The following environments have been tested and are expected to work:
 
-- For in-depth information about how to use Istio, visit [istio.io](https://istio.io)
-- To ask questions and get assistance from our community, visit [discuss.istio.io](https://discuss.istio.io)
-- To learn how to participate in our overall community, visit [our community page](https://istio.io/about/community)
+* GKE (_without_ Calico or Dataplane V2)
+* EKS
+* `kind`
 
-In this README:
+The following environments are known to not work currently:
 
-- [Introduction](#introduction)
-- [Repositories](#repositories)
-- [Issue management](#issue-management)
+* GKE with Calico CNI
+* GKE with Dataplane V2 CNI
+* `kind` on Mac computers with Apple silicon
 
-In addition, here are some other documents you may wish to read:
+All other environments are unknown currently.
 
-- [Istio Community](https://github.com/istio/community#istio-community) - describes how to get involved and contribute to the Istio project
-- [Istio Developer's Guide](https://github.com/istio/istio/wiki/Preparing-for-Development) - explains how to set up and use an Istio development environment
-- [Project Conventions](https://github.com/istio/istio/wiki/Development-Conventions) - describes the conventions we use within the code base
-- [Creating Fast and Lean Code](https://github.com/istio/istio/wiki/Writing-Fast-and-Lean-Code) - performance-oriented advice and guidelines for the code base
+If you don't have a cluster, a simple cluster can be deployed in `kind` for testing:
 
-You'll find many other useful documents on our [Wiki](https://github.com/istio/istio/wiki).
+```shell
+kindConfig="
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ambient
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+"
+kind create cluster --config=- <<<"${kindConfig[@]}"
+```
 
-## Introduction
+### Installing
 
-[Istio](https://istio.io/latest/docs/concepts/what-is-istio/) is an open platform for providing a uniform way to [integrate
-microservices](https://istio.io/latest/docs/examples/microservices-istio/), manage [traffic flow](https://istio.io/latest/docs/concepts/traffic-management/) across microservices, enforce policies
-and aggregate telemetry data. Istio's control plane provides an abstraction
-layer over the underlying cluster management platform, such as Kubernetes.
+Installing Istio with Ambient enabled is simple -- just pass `--set profile=ambient`.
 
-Istio is composed of these components:
+First you will need to download the Ambient-enabled build of `istioctl`:
 
-- **Envoy** - Sidecar proxies per microservice to handle ingress/egress traffic
-   between services in the cluster and from a service to external
-   services. The proxies form a _secure microservice mesh_ providing a rich
-   set of functions like discovery, rich layer-7 routing, circuit breakers,
-   policy enforcement and telemetry recording/reporting
-   functions.
+```shell
+$ TODO
+```
 
-  > Note: The service mesh is not an overlay network. It
-  > simplifies and enhances how microservices in an application talk to each
-  > other over the network provided by the underlying platform.
+Then you can install like normal:
 
-- **Istiod** - The Istio control plane. It provides service discovery, configuration and certificate management. It consists of the following sub-components:
+```shell
+$ istioctl install -y --set profile=ambient
+```
 
-    - **Pilot** - Responsible for configuring the proxies at runtime.
+Follow [Getting Started with Ambient](https://istio.io/latest/blog/2022/get-started-ambient/) for more details on getting started.
 
-    - **Citadel** - Responsible for certificate issuance and rotation.
+### Installing from source
 
-    - **Galley** - Responsible for validating, ingesting, aggregating, transforming and distributing config within Istio.
+```shell
+HUB=my-hub # examples: localhost:5000, gcr.io/my-project
+TAG=ambient
+# Build the images
+tools/docker --targets=pilot,proxyv2,app,install-cni,ztunnel --hub=$HUB --tag=$TAG --push
+go run ./istioctl/cmd/istioctl install  --set hub=$HUB --set tag=$TAG --set profile=ambient -y
+```
 
-- **Operator** - The component provides user friendly options to operate the Istio service mesh.
+## Limitations
 
-## Repositories
+Ambient mesh is considered experimental.
+As such, it is not suitable for deployment in production environments, and doesn't have the same performance, stability, compatibility, or security guidelines that Istio releases typically have.
 
-The Istio project is divided across a few GitHub repositories:
+In addition to these general caveats, there are a number of known issues in the current implementation.
+These all represent short term limitations, and are expected to be fixed in future releases before promotion beyond "Experimental".
 
-- [istio/api](https://github.com/istio/api). This repository defines
-component-level APIs and common configuration formats for the Istio platform.
-
-- [istio/community](https://github.com/istio/community). This repository contains
-information on the Istio community, including the various documents that govern
-the Istio open source project.
-
-- [istio/istio](README.md). This is the main code repository. It hosts Istio's
-core components, install artifacts, and sample programs. It includes:
-
-    - [istioctl](istioctl/). This directory contains code for the
-[_istioctl_](https://istio.io/latest/docs/reference/commands/istioctl/) command line utility.
-
-    - [operator](operator/). This directory contains code for the
-[Istio Operator](https://istio.io/latest/docs/setup/install/operator/).
-
-    - [pilot](pilot/). This directory
-contains platform-specific code to populate the
-[abstract service model](https://istio.io/docs/concepts/traffic-management/#pilot), dynamically reconfigure the proxies
-when the application topology changes, as well as translate
-[routing rules](https://istio.io/latest/docs/reference/config/networking/) into proxy specific configuration.
-
-    - [security](security/). This directory contains [security](https://istio.io/latest/docs/concepts/security/) related code,
-including Citadel (acting as Certificate Authority), citadel agent, etc.
-
-- [istio/proxy](https://github.com/istio/proxy). The Istio proxy contains
-extensions to the [Envoy proxy](https://github.com/envoyproxy/envoy) (in the form of
-Envoy filters) that support authentication, authorization, and telemetry collection.
-
-## Issue management
-
-We use GitHub to track all of our bugs and feature requests. Each issue we track has a variety of metadata:
-
-- **Epic**. An epic represents a feature area for Istio as a whole. Epics are fairly broad in scope and are basically product-level things.
-Each issue is ultimately part of an epic.
-
-- **Milestone**. Each issue is assigned a milestone. This is 0.1, 0.2, ..., or 'Nebulous Future'. The milestone indicates when we
-think the issue should get addressed.
-
-- **Priority**. Each issue has a priority which is represented by the column in the [Prioritization](https://github.com/orgs/istio/projects/6) project. Priority can be one of
-P0, P1, P2, or >P2. The priority indicates how important it is to address the issue within the milestone. P0 says that the
-milestone cannot be considered achieved if the issue isn't resolved.
-
----
-
-<div align="center">
-    <img src="https://raw.githubusercontent.com/cncf/artwork/master/other/cncf/horizontal/color/cncf-color.svg" width="300" alt="Cloud Native Computing Foundation logo"/>
-    <p>Istio is a <a href="https://cncf.io">Cloud Native Computing Foundation</a> project.</p>
-</div>
+* While `AuthorizationPolicy` is generally supported, there are a number of cases where authorization checks are not as strict as expected or not applied at all.
+* There are known performance issues for most measurements, including data plane throughput/latency, data plane resource consumption, scalability of cluster sizes, control plane resource consumption, and configuration propogation latency.
+* There are known cases where pods may temporarily not be treated as part of the mesh throughput their lifecycle.
+* Use of `NetworkPolicy` is currently undefined behavior.
+* Reported telemetry data only shows `reporter=destination` metrics.
+* Access log configuration is not fully respected.
+* Services that are ambient-enabled are not accessible through `LoadBalancer` or `NodePort`s. However, you can deploy an ingressgateway (which is not ambient-enabled) to access services externally.
+* Excessive permissions are granted to various components.
+* Requests directly to pod IPs (rather than Services) do not work in some cases.
+* `EnvoyFilter`s are not supported.
+* Workloads not listening on `localhost` are not supported (see [here](https://istio.io/latest/blog/2021/upcoming-networking-changes/)).
+* Traffic from outside the mesh does not have inbound policy applied.
+* `STRICT` mTLS does not fully prevent plain text traffic.

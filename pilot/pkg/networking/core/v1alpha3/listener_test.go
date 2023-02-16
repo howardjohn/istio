@@ -600,7 +600,7 @@ func TestOutboundListenerForHeadlessServices(t *testing.T) {
 			proxy.Metadata.InboundListenerExactBalance = true
 			proxy.Metadata.OutboundListenerExactBalance = true
 
-			listeners := NewListenerBuilder(proxy, cg.env.PushContext).buildSidecarOutboundListeners(proxy, cg.env.PushContext)
+			listeners := NewListenerBuilder(cg.ConfigGen, proxy, cg.env.PushContext).buildSidecarOutboundListeners(proxy, cg.env.PushContext)
 			listenersToCheck := make([]string, 0)
 			for _, l := range listeners {
 				if l.Address.GetSocketAddress().GetPortValue() == 9999 {
@@ -2632,7 +2632,7 @@ func buildOutboundListeners(t *testing.T, proxy *model.Proxy, sidecarConfig *con
 		Services:       services,
 		ConfigPointers: []*config.Config{sidecarConfig, virtualService},
 	})
-	listeners := NewListenerBuilder(proxy, cg.env.PushContext).buildSidecarOutboundListeners(cg.SetupProxy(proxy), cg.env.PushContext)
+	listeners := NewListenerBuilder(cg.ConfigGen, proxy, cg.env.PushContext).buildSidecarOutboundListeners(cg.SetupProxy(proxy), cg.env.PushContext)
 	xdstest.ValidateListeners(t, listeners)
 	return listeners
 }

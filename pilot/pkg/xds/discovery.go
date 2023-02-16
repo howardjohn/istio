@@ -33,6 +33,7 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/apigen"
 	"istio.io/istio/pilot/pkg/networking/core"
+	"istio.io/istio/pilot/pkg/networking/core/v1alpha3"
 	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/envoyfilter"
 	"istio.io/istio/pilot/pkg/networking/grpcgen"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
@@ -188,7 +189,7 @@ func NewDiscoveryServer(env *model.Environment, instanceID string, clusterID clu
 		out.Env.EndpointIndex.SetCache(out.Cache)
 	}
 
-	out.ConfigGenerator = core.NewConfigGenerator(out.Cache)
+	out.ConfigGenerator = &v1alpha3.ConfigGeneratorImpl{Cache: out.Cache, Discovery: out.Env}
 
 	return out
 }
@@ -451,6 +452,8 @@ func reasonsUpdated(req *model.PushRequest) string {
 		return "unknown"
 	case 1:
 		return string(req.Reason[0])
+	case 2:
+		return fmt.Sprintf("%s and %s", req.Reason[0], req.Reason[1])
 	default:
 		return fmt.Sprintf("%s and %d more reasons", req.Reason[0], len(req.Reason)-1)
 	}
@@ -548,11 +551,16 @@ func (s *DiscoveryServer) InitGenerators(env *model.Environment, systemNameSpace
 	s.Generators[v3.NameTableType] = &NdsGenerator{Server: s}
 	s.Generators[v3.ProxyConfigType] = &PcdsGenerator{Server: s, TrustBundle: env.TrustBundle}
 
+	s.Generators[v3.WorkloadType] = &WorkloadGenerator{s: s}
+	s.Generators[v3.WorkloadAuthorizationType] = &WorkloadRBACGenerator{s: s}
+
 	s.Generators["grpc"] = &grpcgen.GrpcConfigGenerator{}
 	s.Generators["grpc/"+v3.EndpointType] = edsGen
 	s.Generators["grpc/"+v3.ListenerType] = s.Generators["grpc"]
 	s.Generators["grpc/"+v3.RouteType] = s.Generators["grpc"]
 	s.Generators["grpc/"+v3.ClusterType] = s.Generators["grpc"]
+
+	s.Generators["grpc/"+v3.ExtensionConfigurationType] = ecdsGen
 
 	s.Generators["api"] = apigen.NewGenerator(env.ConfigStore)
 	s.Generators["api/"+v3.EndpointType] = edsGen

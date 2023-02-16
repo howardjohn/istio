@@ -83,14 +83,14 @@ func createRouteStatus(gateways []routeParentReference, obj config.Config, curre
 		if successCount[k] > 1 {
 			msg = fmt.Sprintf("Route was valid, bound to %d parents", successCount[k])
 		}
-		conds := map[string]*condition{
+		conds := map[string]*Condition{
 			string(k8s.RouteConditionAccepted): {
-				reason:  string(k8s.RouteReasonAccepted),
-				message: msg,
+				Reason:  string(k8s.RouteReasonAccepted),
+				Message: msg,
 			},
 			string(k8s.RouteConditionResolvedRefs): {
-				reason:  string(k8s.RouteReasonResolvedRefs),
-				message: "All references resolved",
+				Reason:  string(k8s.RouteReasonResolvedRefs),
+				Message: "All references resolved",
 			},
 		}
 		if routeErr != nil {
@@ -99,10 +99,10 @@ func createRouteStatus(gateways []routeParentReference, obj config.Config, curre
 			// * ResolvedRefs - used to describe errors about binding to objects
 			// But no general errors
 			// For now, we will treat all general route errors as "Ref" errors.
-			conds[string(k8s.RouteConditionResolvedRefs)].error = routeErr
+			conds[string(k8s.RouteConditionResolvedRefs)].Error = routeErr
 		}
 		if gw.DeniedReason != nil {
-			conds[string(k8s.RouteConditionAccepted)].error = &ConfigError{
+			conds[string(k8s.RouteConditionAccepted)].Error = &ConfigError{
 				Reason:  ConfigErrorReason(gw.DeniedReason.Reason),
 				Message: gw.DeniedReason.Message,
 			}
@@ -110,7 +110,7 @@ func createRouteStatus(gateways []routeParentReference, obj config.Config, curre
 		gws = append(gws, k8s.RouteParentStatus{
 			ParentRef:      gw.OriginalReference,
 			ControllerName: ControllerName,
-			Conditions:     setConditions(obj.Generation, nil, conds),
+			Conditions:     SetConditions(obj.Generation, nil, conds),
 		})
 	}
 	// Ensure output is deterministic.
@@ -166,23 +166,23 @@ type ConfigError struct {
 	Message string
 }
 
-type condition struct {
-	// reason defines the reason to report on success. Ignored if error is set
-	reason string
-	// message defines the message to report on success. Ignored if error is set
-	message string
-	// status defines the status to report on success. The inverse will be set if error is set
+type Condition struct {
+	// Reason defines the Reason to report on success. Ignored if error is set
+	Reason string
+	// Message defines the Message to report on success. Ignored if error is set
+	Message string
+	// Status defines the Status to report on success. The inverse will be set if error is set
 	// If not set, will default to StatusTrue
-	status metav1.ConditionStatus
-	// error defines an error state; the reason and message will be replaced with that of the error and
-	// the status inverted
-	error *ConfigError
-	// setOnce, if enabled, will only set the condition if it is not yet present or set to this reason
-	setOnce string
+	Status metav1.ConditionStatus
+	// Error defines an Error state; the Reason and Message will be replaced with that of the Error and
+	// the Status inverted
+	Error *ConfigError
+	// SetOnce, if enabled, will only set the Condition if it is not yet present or set to this Reason
+	SetOnce string
 }
 
-// setConditions sets the existingConditions with the new conditions
-func setConditions(generation int64, existingConditions []metav1.Condition, conditions map[string]*condition) []metav1.Condition {
+// SetConditions sets the existingConditions with the new conditions
+func SetConditions(generation int64, existingConditions []metav1.Condition, conditions map[string]*Condition) []metav1.Condition {
 	// Sort keys for deterministic ordering
 	condKeys := make([]string, 0, len(conditions))
 	for k := range conditions {
@@ -192,29 +192,29 @@ func setConditions(generation int64, existingConditions []metav1.Condition, cond
 	for _, k := range condKeys {
 		cond := conditions[k]
 		setter := kstatus.UpdateConditionIfChanged
-		if cond.setOnce != "" {
+		if cond.SetOnce != "" {
 			setter = func(conditions []metav1.Condition, condition metav1.Condition) []metav1.Condition {
-				return kstatus.CreateCondition(conditions, condition, cond.setOnce)
+				return kstatus.CreateCondition(conditions, condition, cond.SetOnce)
 			}
 		}
-		// A condition can be "negative polarity" (ex: ListenerInvalid) or "positive polarity" (ex:
-		// ListenerValid), so in order to determine the status we should set each `condition` defines its
+		// A Condition can be "negative polarity" (ex: ListenerInvalid) or "positive polarity" (ex:
+		// ListenerValid), so in order to determine the status we should set each `Condition` defines its
 		// default positive status. When there is an error, we will invert that. Example: If we have
-		// condition ListenerInvalid, the status will be set to StatusFalse. If an error is reported, it
+		// Condition ListenerInvalid, the status will be set to StatusFalse. If an error is reported, it
 		// will be inverted to StatusTrue to indicate listeners are invalid. See
 		// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 		// for more information
-		if cond.error != nil {
+		if cond.Error != nil {
 			existingConditions = setter(existingConditions, metav1.Condition{
 				Type:               k,
-				Status:             kstatus.InvertStatus(cond.status),
+				Status:             kstatus.InvertStatus(cond.Status),
 				ObservedGeneration: generation,
 				LastTransitionTime: metav1.Now(),
-				Reason:             cond.error.Reason,
-				Message:            cond.error.Message,
+				Reason:             cond.Error.Reason,
+				Message:            cond.Error.Message,
 			})
 		} else {
-			status := cond.status
+			status := cond.Status
 			if status == "" {
 				status = kstatus.StatusTrue
 			}
@@ -223,18 +223,18 @@ func setConditions(generation int64, existingConditions []metav1.Condition, cond
 				Status:             status,
 				ObservedGeneration: generation,
 				LastTransitionTime: metav1.Now(),
-				Reason:             cond.reason,
-				Message:            cond.message,
+				Reason:             cond.Reason,
+				Message:            cond.Message,
 			})
 		}
 	}
 	return existingConditions
 }
 
-func reportGatewayCondition(obj config.Config, conditions map[string]*condition) {
+func reportGatewayCondition(obj config.Config, conditions map[string]*Condition) {
 	obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
 		gs := s.(*k8s.GatewayStatus)
-		gs.Conditions = setConditions(obj.Generation, gs.Conditions, conditions)
+		gs.Conditions = SetConditions(obj.Generation, gs.Conditions, conditions)
 		return gs
 	})
 }
@@ -252,7 +252,7 @@ func reportListenerAttachedRoutes(index int, obj config.Config, i int32) {
 	})
 }
 
-func reportListenerCondition(index int, l k8s.Listener, obj config.Config, conditions map[string]*condition) {
+func reportListenerCondition(index int, l k8s.Listener, obj config.Config, conditions map[string]*Condition) {
 	obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
 		gs := s.(*k8s.GatewayStatus)
 		for index >= len(gs.Listeners) {
@@ -261,17 +261,17 @@ func reportListenerCondition(index int, l k8s.Listener, obj config.Config, condi
 		cond := gs.Listeners[index].Conditions
 		supported, valid := generateSupportedKinds(l)
 		if !valid {
-			conditions[string(k8sbeta.ListenerConditionResolvedRefs)] = &condition{
-				reason:  string(k8sbeta.ListenerReasonInvalidRouteKinds),
-				status:  metav1.ConditionFalse,
-				message: "Invalid route kinds",
+			conditions[string(k8sbeta.ListenerConditionResolvedRefs)] = &Condition{
+				Reason:  string(k8sbeta.ListenerReasonInvalidRouteKinds),
+				Status:  metav1.ConditionFalse,
+				Message: "Invalid route kinds",
 			}
 		}
 		gs.Listeners[index] = k8s.ListenerStatus{
 			Name:           l.Name,
 			AttachedRoutes: 0, // this will be reported later
 			SupportedKinds: supported,
-			Conditions:     setConditions(obj.Generation, cond, conditions),
+			Conditions:     SetConditions(obj.Generation, cond, conditions),
 		}
 		return gs
 	})

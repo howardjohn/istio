@@ -17,6 +17,8 @@ package aggregate
 import (
 	"sync"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pilot/pkg/serviceregistry/provider"
@@ -24,6 +26,8 @@ import (
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/mesh"
+	"istio.io/istio/pkg/util/sets"
+	"istio.io/istio/pkg/workloadapi"
 	"istio.io/pkg/log"
 )
 
@@ -48,6 +52,47 @@ type Controller struct {
 	handlers          model.ControllerHandlers
 	handlersByCluster map[cluster.ID]*model.ControllerHandlers
 	model.NetworkGatewaysHandler
+}
+
+func (c *Controller) AdditionalPodSubscriptions(proxy *model.Proxy, addr, cur sets.Set[types.NamespacedName]) sets.Set[types.NamespacedName] {
+	res := sets.New[types.NamespacedName]()
+	for _, p := range c.GetRegistries() {
+		res = res.Merge(p.AdditionalPodSubscriptions(proxy, addr, cur))
+	}
+	return res
+}
+
+func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []*workloadapi.Authorization {
+	res := []*workloadapi.Authorization{}
+	for _, p := range c.GetRegistries() {
+		res = append(res, p.Policies(requested)...)
+	}
+	return res
+}
+
+func (c *Controller) AmbientSnapshot() *model.AmbientSnapshot {
+	m := &model.AmbientSnapshot{}
+	for _, p := range c.GetRegistries() {
+		m = m.Merge(p.AmbientSnapshot())
+	}
+	return m
+}
+
+func (c *Controller) PodInformation(addresses sets.Set[types.NamespacedName]) ([]*model.WorkloadInfo, []string) {
+	i := []*model.WorkloadInfo{}
+	removed := sets.New[string]()
+	for _, p := range c.GetRegistries() {
+		wis, r := p.PodInformation(addresses)
+		i = append(i, wis...)
+		removed.InsertAll(r...)
+	}
+	// We may have 'removed' it in one registry but found it in another
+	for _, wl := range i {
+		if removed.Contains(wl.ResourceName()) {
+			removed.Delete(wl.ResourceName())
+		}
+	}
+	return i, removed.UnsortedList()
 }
 
 type registryEntry struct {

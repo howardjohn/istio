@@ -2520,7 +2520,7 @@ func TestBuildGatewayListeners(t *testing.T) {
 				proxy.Metadata = &proxyGatewayMetadata
 			}
 
-			builder := cg.ConfigGen.buildGatewayListeners(NewListenerBuilder(proxy, cg.PushContext()))
+			builder := cg.ConfigGen.buildGatewayListeners(NewListenerBuilder(nil, proxy, cg.PushContext()))
 			listeners := xdstest.ExtractListenerNames(builder.gatewayListeners)
 			sort.Strings(listeners)
 			sort.Strings(tt.expectedListeners)
@@ -3014,7 +3014,7 @@ func TestGatewayFilterChainSNIOverlap(t *testing.T) {
 			proxy := cg.SetupProxy(&proxyGateway)
 			proxy.Metadata = &proxyGatewayMetadata
 
-			builder := cg.ConfigGen.buildGatewayListeners(NewListenerBuilder(proxy, cg.PushContext()))
+			builder := cg.ConfigGen.buildGatewayListeners(NewListenerBuilder(cg.ConfigGen, proxy, cg.PushContext()))
 			xdstest.ValidateListeners(t, builder.gatewayListeners)
 		})
 	}

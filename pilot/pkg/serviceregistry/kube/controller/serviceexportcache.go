@@ -47,12 +47,10 @@ type serviceExportCache interface {
 
 	// ExportedServices returns the list of services that are exported in this cluster. Used for debugging.
 	ExportedServices() []exportedService
-
 	Run(stop <-chan struct{})
 
 	// HasSynced indicates whether the kube createClient has synced for the watched resources.
 	HasSynced() bool
-
 	OnCRDEvent(name string)
 }
 

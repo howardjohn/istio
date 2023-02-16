@@ -47,8 +47,8 @@ const (
 	ControllerName               = "istio.io/gateway-controller"
 	gatewayAliasForAnnotationKey = "gateway.istio.io/alias-for"
 	gatewayTLSTerminateModeKey   = "gateway.istio.io/tls-terminate-mode"
-	gatewayNameOverride          = "gateway.istio.io/name-override"
-	gatewaySAOverride            = "gateway.istio.io/service-account"
+	GatewayNameOverride          = "gateway.istio.io/name-override"
+	GatewaySAOverride            = "gateway.istio.io/service-account"
 )
 
 // KubernetesResources stores all inputs to our conversion
@@ -1324,7 +1324,8 @@ func referencesToInternalNames(parents []routeParentReference) []string {
 	return ret
 }
 
-func getDefaultName(name string, kgw *k8s.GatewaySpec) string {
+// GetDefaultGatewayName generates the default name for Gateway managed resources of form {Gateway.Name}-{Gateway.Spec.GatewayClassName}
+func GetDefaultGatewayName(name string, kgw *k8s.GatewaySpec) string {
 	return fmt.Sprintf("%v-%v", name, kgw.GatewayClassName)
 }
 
@@ -1346,37 +1347,37 @@ func convertGateways(r ConfigContext) ([]config.Config, map[parentKey]map[k8s.Se
 		}
 
 		// Setup initial conditions to the success state. If we encounter errors, we will update this.
-		gatewayConditions := map[string]*condition{
+		gatewayConditions := map[string]*Condition{
 			string(k8sbeta.GatewayConditionReady): {
-				reason:  "ListenersValid",
-				message: "Listeners valid",
+				Reason:  "ListenersValid",
+				Message: "Listeners valid",
 			},
 		}
 		if IsManaged(kgw) {
-			gatewayConditions[string(k8sbeta.GatewayConditionAccepted)] = &condition{
-				error: &ConfigError{
+			gatewayConditions[string(k8sbeta.GatewayConditionAccepted)] = &Condition{
+				Error: &ConfigError{
 					Reason:  string(k8sbeta.GatewayReasonAccepted),
 					Message: "Resources not yet deployed to the cluster",
 				},
-				setOnce: string(k8sbeta.GatewayReasonPending), // Default reason
+				SetOnce: string(k8sbeta.GatewayReasonPending), // Default reason
 			}
 			// nolint: staticcheck // Deprecated condition, set both until 1.17
-			gatewayConditions[string(k8sbeta.GatewayConditionScheduled)] = &condition{
-				error: &ConfigError{
+			gatewayConditions[string(k8sbeta.GatewayConditionScheduled)] = &Condition{
+				Error: &ConfigError{
 					Reason:  "ResourcesPending",
 					Message: "Resources not yet deployed to the cluster",
 				},
-				setOnce: string(k8sbeta.GatewayReasonNotReconciled), // Default reason
+				SetOnce: string(k8sbeta.GatewayReasonNotReconciled), // Default reason
 			}
 		} else {
-			gatewayConditions[string(k8sbeta.GatewayConditionAccepted)] = &condition{
-				reason:  string(k8sbeta.GatewayReasonAccepted),
-				message: "Resources available",
+			gatewayConditions[string(k8sbeta.GatewayConditionAccepted)] = &Condition{
+				Reason:  string(k8sbeta.GatewayReasonAccepted),
+				Message: "Resources available",
 			}
 			// nolint: staticcheck // Deprecated condition, set both until 1.17
-			gatewayConditions[string(k8sbeta.GatewayConditionScheduled)] = &condition{
-				reason:  "ResourcesAvailable",
-				message: "Resources available",
+			gatewayConditions[string(k8sbeta.GatewayConditionScheduled)] = &Condition{
+				Reason:  "ResourcesAvailable",
+				Message: "Resources available",
 			}
 		}
 		servers := []*istio.Server{}
@@ -1464,17 +1465,17 @@ func convertGateways(r ConfigContext) ([]config.Config, map[parentKey]map[k8s.Se
 			} else {
 				msg = fmt.Sprintf("Failed to assign to any requested addresses: %s", strings.Join(warnings, "; "))
 			}
-			gatewayConditions[string(k8sbeta.GatewayConditionReady)].error = &ConfigError{
+			gatewayConditions[string(k8sbeta.GatewayConditionReady)].Error = &ConfigError{
 				Reason:  string(k8sbeta.GatewayReasonAddressNotAssigned),
 				Message: msg,
 			}
 		} else if len(invalidListeners) > 0 {
-			gatewayConditions[string(k8sbeta.GatewayConditionReady)].error = &ConfigError{
+			gatewayConditions[string(k8sbeta.GatewayConditionReady)].Error = &ConfigError{
 				Reason:  string(k8sbeta.GatewayReasonListenersNotValid),
 				Message: fmt.Sprintf("Invalid listeners: %v", invalidListeners),
 			}
 		} else {
-			gatewayConditions[string(k8sbeta.GatewayConditionReady)].message = fmt.Sprintf("Gateway valid, assigned to service(s) %s", humanReadableJoin(internal))
+			gatewayConditions[string(k8sbeta.GatewayConditionReady)].Message = fmt.Sprintf("Gateway valid, assigned to service(s) %s", humanReadableJoin(internal))
 		}
 		obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
 			gs := s.(*k8s.GatewayStatus)
@@ -1566,7 +1567,7 @@ func IsManagedBeta(gw *k8sbeta.GatewaySpec) bool {
 
 func extractGatewayServices(r KubernetesResources, kgw *k8s.GatewaySpec, obj config.Config) ([]string, []string) {
 	if IsManaged(kgw) {
-		return []string{fmt.Sprintf("%s.%s.svc.%v", getDefaultName(obj.Name, kgw), obj.Namespace, r.Domain)}, nil
+		return []string{fmt.Sprintf("%s.%s.svc.%v", GetDefaultGatewayName(obj.Name, kgw), obj.Namespace, r.Domain)}, nil
 	}
 	gatewayServices := []string{}
 	skippedAddresses := []string{}
@@ -1605,41 +1606,41 @@ func getNamespaceLabelReferences(routes *k8s.AllowedRoutes) []string {
 }
 
 func buildListener(r ConfigContext, obj config.Config, l k8s.Listener, listenerIndex int) (*istio.Server, bool) {
-	listenerConditions := map[string]*condition{
+	listenerConditions := map[string]*Condition{
 		string(k8sbeta.ListenerConditionReady): {
-			reason:  string(k8sbeta.ListenerReasonReady),
-			message: "No errors found",
+			Reason:  string(k8sbeta.ListenerReasonReady),
+			Message: "No errors found",
 		},
 		string(k8sbeta.ListenerConditionAccepted): {
-			reason:  string(k8sbeta.ListenerReasonAccepted),
-			message: "No errors found",
+			Reason:  string(k8sbeta.ListenerReasonAccepted),
+			Message: "No errors found",
 		},
 		string(k8sbeta.ListenerConditionProgrammed): {
-			reason:  string(k8sbeta.ListenerReasonProgrammed),
-			message: "No errors found",
+			Reason:  string(k8sbeta.ListenerReasonProgrammed),
+			Message: "No errors found",
 		},
 		// nolint: staticcheck // Deprecated condition, set both until 1.17
 		string(k8sbeta.ListenerConditionDetached): {
-			reason:  string(k8sbeta.ListenerReasonAttached),
-			message: "No errors found",
-			status:  kstatus.StatusFalse,
+			Reason:  string(k8sbeta.ListenerReasonAttached),
+			Message: "No errors found",
+			Status:  kstatus.StatusFalse,
 		},
 		string(k8sbeta.ListenerConditionConflicted): {
-			reason:  string(k8sbeta.ListenerReasonNoConflicts),
-			message: "No errors found",
-			status:  kstatus.StatusFalse,
+			Reason:  string(k8sbeta.ListenerReasonNoConflicts),
+			Message: "No errors found",
+			Status:  kstatus.StatusFalse,
 		},
 		string(k8sbeta.ListenerConditionResolvedRefs): {
-			reason:  string(k8sbeta.ListenerReasonResolvedRefs),
-			message: "No errors found",
+			Reason:  string(k8sbeta.ListenerReasonResolvedRefs),
+			Message: "No errors found",
 		},
 	}
 
 	defer reportListenerCondition(listenerIndex, l, obj, listenerConditions)
 	tls, err := buildTLS(r, l.TLS, obj, isAutoPassthrough(obj, l))
 	if err != nil {
-		listenerConditions[string(k8sbeta.ListenerConditionReady)].error = err
-		listenerConditions[string(k8sbeta.ListenerConditionResolvedRefs)].error = err
+		listenerConditions[string(k8sbeta.ListenerConditionReady)].Error = err
+		listenerConditions[string(k8sbeta.ListenerConditionResolvedRefs)].Error = err
 		return nil, false
 	}
 	hostnames := buildHostnameMatch(obj.Namespace, r.KubernetesResources, l)

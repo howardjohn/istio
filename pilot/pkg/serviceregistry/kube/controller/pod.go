@@ -46,6 +46,8 @@ type PodCache struct {
 	needResync         map[string]sets.String
 	queueEndpointEvent func(string)
 
+	handlers []func(*v1.Pod, model.Event)
+
 	c *Controller
 }
 
@@ -88,6 +90,10 @@ func shouldPodBeInEndpoints(pod *v1.Pod) bool {
 // isPodPhaseTerminal returns true if the pod's phase is terminal.
 func isPodPhaseTerminal(phase v1.PodPhase) bool {
 	return phase == v1.PodFailed || phase == v1.PodSucceeded
+}
+
+func IsPodRunning(pod *v1.Pod) bool {
+	return pod.Status.Phase == v1.PodRunning
 }
 
 // IsPodReady is copied from kubernetes/pkg/api/v1/pod/utils.go
@@ -152,6 +158,10 @@ func (pc *PodCache) onEvent(_, curr any, ev model.Event) error {
 	// via UpdateStatus.
 	if len(ip) == 0 {
 		return nil
+	}
+
+	for _, handler := range pc.handlers {
+		handler(pod, ev)
 	}
 
 	key := kube.KeyFunc(pod.Name, pod.Namespace)

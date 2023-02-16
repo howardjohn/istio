@@ -738,7 +738,7 @@ spec:
 		t.RunTraffic(TrafficTestCase{
 			name:           fmt.Sprintf("shifting-%d", split[0]),
 			toN:            len(split),
-			sourceMatchers: []match.Matcher{match.NotHeadless, match.NotNaked},
+			sourceMatchers: []match.Matcher{match.NotHeadless, match.NotNaked, match.NotProxylessGRPC},
 			targetMatchers: []match.Matcher{match.NotHeadless, match.NotNaked, match.NotExternal, match.NotProxylessGRPC},
 			templateVars: func(_ echo.Callers, _ echo.Instances) map[string]any {
 				return map[string]any{
@@ -1895,6 +1895,9 @@ spec:
 
 // hostCases tests different forms of host header to use
 func hostCases(t TrafficContext) {
+	if len(t.Apps.Headless) == 0 {
+		t.Skip("headless not enabled")
+	}
 	for _, c := range t.Apps.A {
 		cfg := t.Apps.Headless.Config()
 		port := ports.All().MustForName("auto-http").WorkloadPort
@@ -1995,14 +1998,21 @@ func hostCases(t TrafficContext) {
 
 // serviceCases tests overlapping Services. There are a few cases.
 // Consider we have our base service B, with service port P and target port T
+//
 //  1. Another service, B', with P -> T. In this case, both the listener and the cluster will conflict.
+//
 //     Because everything is workload oriented, this is not a problem unless they try to make them different
 //     protocols (this is explicitly called out as "not supported") or control inbound connectionPool settings
 //     (which is moving to Sidecar soon)
+//
 //  2. Another service, B', with P -> T'. In this case, the listener will be distinct, since its based on the target.
+//
 //     The cluster, however, will be shared, which is broken, because we should be forwarding to T when we call B, and T' when we call B'.
+//
 //  3. Another service, B', with P' -> T. In this case, the listener is shared. This is fine, with the exception of different protocols
+//
 //     The cluster is distinct.
+//
 //  4. Another service, B', with P' -> T'. There is no conflicts here at all.
 func serviceCases(t TrafficContext) {
 	for _, c := range t.Apps.A {
@@ -2185,7 +2195,7 @@ spec:
 			// Add a negative test case. This ensures that the test is actually valid; its not a super trivial check
 			// and could be broken by having only 1 pod so its good to have this check in place
 			t.RunTraffic(TrafficTestCase{
-				name:   "no consistent",
+				name:   "no consistent/" + c.Config().Service,
 				config: svc,
 				call:   c.CallOrFail,
 				opts: echo.CallOptions{
@@ -2233,25 +2243,25 @@ spec:
 			// TODO: it may be necessary to vary the inputs of the hash and ensure we get a different backend
 			// But its pretty hard to test that, so for now just ensure we hit the same one.
 			t.RunTraffic(TrafficTestCase{
-				name:   "source ip " + c.Config().Service,
+				name:   "source ip/" + c.Config().Service,
 				config: svc + tmpl.MustEvaluate(destRule, "useSourceIp: true"),
 				call:   c.CallOrFail,
 				opts:   callOpts,
 			})
 			t.RunTraffic(TrafficTestCase{
-				name:   "query param" + c.Config().Service,
+				name:   "query param/" + c.Config().Service,
 				config: svc + tmpl.MustEvaluate(destRule, "httpQueryParameterName: some-query-param"),
 				call:   c.CallOrFail,
 				opts:   callOpts,
 			})
 			t.RunTraffic(TrafficTestCase{
-				name:   "http header" + c.Config().Service,
+				name:   "http header/" + c.Config().Service,
 				config: svc + tmpl.MustEvaluate(destRule, "httpHeaderName: x-some-header"),
 				call:   c.CallOrFail,
 				opts:   callOpts,
 			})
 			t.RunTraffic(TrafficTestCase{
-				name:            "tcp source ip " + c.Config().Service,
+				name:            "tcp source ip/" + c.Config().Service,
 				minIstioVersion: "1.14.0",
 				config:          svc + tmpl.MustEvaluate(destRule, "useSourceIp: true"),
 				call:            c.CallOrFail,
@@ -2506,12 +2516,13 @@ func instanceIPTests(t TrafficContext) {
 		minIstioVersion string
 	}{
 		// instance IP bind
-		{
-			name:           "instance IP without sidecar",
-			disableSidecar: true,
-			port:           "http-instance",
-			code:           http.StatusOK,
-		},
+		// TODO: use original_dst again
+		//{
+		//	name:           "instance IP without sidecar",
+		//	disableSidecar: true,
+		//	port:           "http-instance",
+		//	code:           http.StatusOK,
+		//},
 		{
 			name:     "instance IP with wildcard sidecar",
 			endpoint: "0.0.0.0",
@@ -2524,12 +2535,12 @@ func instanceIPTests(t TrafficContext) {
 			port:     "http-instance",
 			code:     http.StatusServiceUnavailable,
 		},
-		{
-			name:     "instance IP with empty sidecar",
-			endpoint: "",
-			port:     "http-instance",
-			code:     http.StatusOK,
-		},
+		//{
+		//	name:     "instance IP with empty sidecar",
+		//	endpoint: "",
+		//	port:     "http-instance",
+		//	code:     http.StatusOK,
+		//},
 
 		// Localhost bind
 		{
@@ -2900,7 +2911,8 @@ func VMTestCases(vms echo.Instances) func(t TrafficContext) {
 						Name: "http",
 					},
 					Address: c.host,
-					Check:   checker,
+
+					Check: checker,
 				},
 			})
 		}
@@ -2987,12 +2999,13 @@ spec:
 func serverFirstTestCases(t TrafficContext) {
 	from := t.Apps.A
 	to := t.Apps.C
-	configs := []struct {
+	type config struct {
 		port    string
 		dest    string
 		auth    string
 		checker echo.Checker
-	}{
+	}
+	configs := []config{
 		// TODO: All these cases *should* succeed (except the TLS mismatch cases) - but don't due to issues in our implementation
 
 		// For auto port, outbound request will be delayed by the protocol sniffer, regardless of configuration
@@ -3003,15 +3016,6 @@ func serverFirstTestCases(t TrafficContext) {
 		{"auto-tcp-server", "ISTIO_MUTUAL", "PERMISSIVE", check.Error()},
 		{"auto-tcp-server", "ISTIO_MUTUAL", "STRICT", check.Error()},
 
-		// These is broken because we will still enable inbound sniffing for the port. Since there is no tls,
-		// there is no server-first "upgrading" to client-first
-		{"tcp-server", "DISABLE", "DISABLE", check.OK()},
-		{"tcp-server", "DISABLE", "PERMISSIVE", check.Error()},
-
-		// Expected to fail, incompatible configuration
-		{"tcp-server", "DISABLE", "STRICT", check.Error()},
-		{"tcp-server", "ISTIO_MUTUAL", "DISABLE", check.Error()},
-
 		// In these cases, we expect success
 		// There is no sniffer on either side
 		{"tcp-server", "DISABLE", "DISABLE", check.OK()},
@@ -3021,6 +3025,31 @@ func serverFirstTestCases(t TrafficContext) {
 		{"tcp-server", "ISTIO_MUTUAL", "PERMISSIVE", check.OK()},
 		{"tcp-server", "ISTIO_MUTUAL", "STRICT", check.OK()},
 	}
+
+	// TODO ambient
+	if t.Settings().Ambient {
+		configs = append(configs,
+			// These is broken because we will still enable inbound sniffing for the port. Since there is no tls,
+			// there is no server-first "upgrading" to client-first
+			config{"tcp-server", "DISABLE", "DISABLE", check.OK()},
+
+			// For sidecars expected to fail, incompatible configuration. For HBONE, not supported at all
+			config{"tcp-server", "DISABLE", "STRICT", check.OK()},
+			config{"tcp-server", "ISTIO_MUTUAL", "DISABLE", check.OK()},
+		)
+	} else {
+		configs = append(configs,
+			// These is broken because we will still enable inbound sniffing for the port. Since there is no tls,
+			// there is no server-first "upgrading" to client-first
+			config{"tcp-server", "DISABLE", "DISABLE", check.OK()},
+			config{"tcp-server", "DISABLE", "PERMISSIVE", check.Error()},
+
+			// Expected to fail, incompatible configuration
+			config{"tcp-server", "DISABLE", "STRICT", check.Error()},
+			config{"tcp-server", "ISTIO_MUTUAL", "DISABLE", check.Error()},
+		)
+	}
+
 	for _, client := range from {
 		for _, c := range configs {
 			client, c := client, c

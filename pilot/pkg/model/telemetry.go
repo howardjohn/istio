@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	udpa "github.com/cncf/xds/go/udpa/type/v1"
 	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	httpwasm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/wasm/v3"
@@ -28,6 +29,7 @@ import (
 	wasm "github.com/envoyproxy/go-control-plane/envoy/extensions/wasm/v3"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/structpb"
 	wrappers "google.golang.org/protobuf/types/known/wrapperspb"
 
 	sd "istio.io/api/envoy/extensions/stackdriver/config/v1alpha1"
@@ -99,8 +101,9 @@ type loggingKey struct {
 // metricsKey defines a key into the computedMetricsFilters cache.
 type metricsKey struct {
 	telemetryKey
-	Class    networking.ListenerClass
-	Protocol networking.ListenerProtocol
+	Class     networking.ListenerClass
+	Protocol  networking.ListenerProtocol
+	ProxyType NodeType
 }
 
 // getTelemetries returns the Telemetry configurations for the given environment.
@@ -142,6 +145,7 @@ type telemetryFilterConfig struct {
 	Metrics       bool
 	AccessLogging bool
 	LogsFilter    *tpb.AccessLogging_Filter
+	NodeType      NodeType
 }
 
 func (t telemetryFilterConfig) MetricsForClass(c networking.ListenerClass) []metricsOverride {
@@ -463,6 +467,7 @@ func (t *Telemetries) telemetryFilters(proxy *Proxy, class networking.ListenerCl
 		telemetryKey: c.telemetryKey,
 		Class:        class,
 		Protocol:     protocol,
+		ProxyType:    proxy.Type,
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -502,6 +507,7 @@ func (t *Telemetries) telemetryFilters(proxy *Proxy, class networking.ListenerCl
 			AccessLogging: logging,
 			Metrics:       metrics,
 			LogsFilter:    tml[p.Name],
+			NodeType:      proxy.Type,
 		}
 		m = append(m, cfg)
 	}
@@ -826,6 +832,19 @@ func getMatches(match *tpb.MetricSelector) []string {
 	}
 }
 
+var waypointStatsConfig = protoconv.MessageToAny(&udpa.TypedStruct{
+	TypeUrl: "type.googleapis.com/stats.PluginConfig",
+	Value: &structpb.Struct{
+		Fields: map[string]*structpb.Value{
+			"reporter": {
+				Kind: &structpb.Value_StringValue{
+					StringValue: "SERVER_GATEWAY",
+				},
+			},
+		},
+	},
+})
+
 func buildHTTPTelemetryFilter(class networking.ListenerClass, metricsCfg []telemetryFilterConfig) []*hcm.HttpFilter {
 	res := make([]*hcm.HttpFilter, 0, len(metricsCfg))
 	for _, cfg := range metricsCfg {
@@ -835,12 +854,20 @@ func buildHTTPTelemetryFilter(class networking.ListenerClass, metricsCfg []telem
 				// No logging for prometheus
 				continue
 			}
-			statsCfg := generateStatsConfig(class, cfg)
-			f := &hcm.HttpFilter{
-				Name:       xds.StatsFilterName,
-				ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: statsCfg},
+			if cfg.NodeType == Waypoint {
+				f := &hcm.HttpFilter{
+					Name:       xds.StatsFilterName,
+					ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: waypointStatsConfig},
+				}
+				res = append(res, f)
+			} else {
+				statsCfg := generateStatsConfig(class, cfg)
+				f := &hcm.HttpFilter{
+					Name:       xds.StatsFilterName,
+					ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: statsCfg},
+				}
+				res = append(res, f)
 			}
-			res = append(res, f)
 
 		case *meshconfig.MeshConfig_ExtensionProvider_Stackdriver:
 			sdCfg := generateSDConfig(class, cfg)
@@ -873,12 +900,20 @@ func buildTCPTelemetryFilter(class networking.ListenerClass, telemetryConfigs []
 	for _, telemetryCfg := range telemetryConfigs {
 		switch telemetryCfg.Provider.GetProvider().(type) {
 		case *meshconfig.MeshConfig_ExtensionProvider_Prometheus:
-			cfg := generateStatsConfig(class, telemetryCfg)
-			f := &listener.Filter{
-				Name:       xds.StatsFilterName,
-				ConfigType: &listener.Filter_TypedConfig{TypedConfig: cfg},
+			if telemetryCfg.NodeType == Waypoint {
+				f := &listener.Filter{
+					Name:       xds.StatsFilterName,
+					ConfigType: &listener.Filter_TypedConfig{TypedConfig: waypointStatsConfig},
+				}
+				res = append(res, f)
+			} else {
+				cfg := generateStatsConfig(class, telemetryCfg)
+				f := &listener.Filter{
+					Name:       xds.StatsFilterName,
+					ConfigType: &listener.Filter_TypedConfig{TypedConfig: cfg},
+				}
+				res = append(res, f)
 			}
-			res = append(res, f)
 		case *meshconfig.MeshConfig_ExtensionProvider_Stackdriver:
 			cfg := generateSDConfig(class, telemetryCfg)
 			vmConfig := ConstructVMConfig("", "envoy.wasm.null.stackdriver")
