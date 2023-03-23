@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"go.uber.org/atomic"
@@ -38,6 +39,8 @@ type Queue struct {
 	workFn      func(key any) error
 	closed      chan struct{}
 	log         *istiolog.Scope
+
+	watcher *sync.Cond
 }
 
 // WithName sets a name for the queue. This is used for logging
@@ -85,6 +88,7 @@ func NewQueue(name string, options ...func(*Queue)) Queue {
 		name:        name,
 		closed:      make(chan struct{}),
 		initialSync: atomic.NewBool(false),
+		watcher:     sync.NewCond(&sync.Mutex{}),
 	}
 	for _, o := range options {
 		o(&q)
@@ -98,11 +102,13 @@ func NewQueue(name string, options ...func(*Queue)) Queue {
 
 // Add an item to the queue.
 func (q Queue) Add(item any) {
+	log.Errorf("howardjohn: add %+v", item)
 	q.queue.Add(item)
 }
 
 // AddObject takes an Object and adds the types.NamespacedName associated.
 func (q Queue) AddObject(obj Object) {
+	log.Errorf("howardjohn: add %+v", config.NamespacedName(obj))
 	q.queue.Add(config.NamespacedName(obj))
 }
 
@@ -127,9 +133,11 @@ func (q Queue) Run(stop <-chan struct{}) {
 // syncSignal defines a dummy signal that is enqueued when .Run() is called. This allows us to detect
 // when we have processed all items added to the queue prior to Run().
 type syncSignal struct{}
+type broadcastSignal struct{}
 
 // defaultSyncSignal is a singleton instanceof syncSignal.
 var defaultSyncSignal = syncSignal{}
+var defaultBroadcastSignal = broadcastSignal{}
 
 // HasSynced returns true if the queue has 'synced'. A synced queue has started running and has
 // processed all events that were added prior to Run() being called Warning: these items will be
@@ -141,6 +149,23 @@ func (q Queue) HasSynced() bool {
 // Closed returns a chan that will be signaled when the Instance has stopped processing tasks.
 func (q Queue) Closed() <-chan struct{} {
 	return q.closed
+}
+
+func (q Queue) Fence(f func()) {
+	s := make(chan struct{})
+	q.watcher.L.Lock()
+	go func() {
+		q.watcher.Wait()
+		close(s)
+		q.watcher.L.Unlock()
+	}()
+	f()
+	select {
+	case <-s:
+		return
+	case <-time.After(time.Second):
+		panic("timeout waiting")
+	}
 }
 
 // processNextItem is the main workFn loop for the queue
@@ -159,10 +184,11 @@ func (q Queue) processNextItem() bool {
 		return true
 	}
 
-	q.log.Debugf("handling update: %v", formatKey(key))
+	q.log.Infof("handling update: %v", formatKey(key))
 
 	// 'Done marks item as done processing' - should be called at the end of all processing
 	defer q.queue.Done(key)
+	defer q.watcher.Broadcast()
 
 	err := q.workFn(key)
 	if err != nil {

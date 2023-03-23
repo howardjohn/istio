@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	admission "k8s.io/api/admissionregistration/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -179,13 +178,15 @@ func TestGreenfield(t *testing.T) {
 		}
 	}
 	// install adds the webhook config with fail open policy
-	webhooks.Create(unpatchedWebhookConfig)
+	c.queue.Fence(func() {
+		webhooks.Create(unpatchedWebhookConfig)
+	})
 	// verify the webhook isn't updated if invalid config is accepted.
-	assert.EventuallyEqual(
+	assert.Equal(
 		t,
-		fetch(unpatchedWebhookConfig.Name),
+		fetch(unpatchedWebhookConfig.Name)(),
 		webhookConfigWithCABundleIgnore,
-		retry.Message("no config update when endpoint not present"),
+		"no config update when endpoint not present",
 	)
 
 	fake := c.client.Istio().(*istiofake.Clientset)
@@ -193,25 +194,24 @@ func TestGreenfield(t *testing.T) {
 	fake.PrependReactor("*", "gateways", func(action ktesting.Action) (bool, runtime.Object, error) {
 		return true, &v1alpha3.Gateway{}, kerrors.NewInternalError(errors.New("unknown error"))
 	})
-	c.syncAll()
-	assert.EventuallyEqual(
+	c.queue.Fence(c.syncAll)
+	assert.Equal(
 		t,
-		fetch(unpatchedWebhookConfig.Name),
+		fetch(unpatchedWebhookConfig.Name)(),
 		webhookConfigWithCABundleIgnore,
-		retry.Message("no config update when endpoint invalid config is rejected for an unknown reason"),
+		"no config update when endpoint invalid config is rejected for an unknown reason",
 	)
 
 	// verify the webhook is updated after the controller can confirm invalid config is rejected.
 	fake.PrependReactor("*", "gateways", func(action ktesting.Action) (bool, runtime.Object, error) {
 		return true, &v1alpha3.Gateway{}, kerrors.NewInternalError(errors.New(deniedRequestMessageFragment))
 	})
-	c.syncAll()
-	assert.EventuallyEqual(
+	c.queue.Fence(c.syncAll)
+	assert.Equal(
 		t,
-		fetch(unpatchedWebhookConfig.Name),
+		fetch(unpatchedWebhookConfig.Name)(),
 		webhookConfigWithCABundleFail,
-		retry.Message("istiod config created when endpoint is ready and invalid config is denied"),
-		retry.Timeout(time.Second*5),
+		"istiod config created when endpoint is ready and invalid config is denied",
 	)
 }
 

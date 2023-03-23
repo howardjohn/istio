@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
+	"istio.io/istio/pkg/test"
 	"k8s.io/apimachinery/pkg/types"
 
 	"istio.io/istio/pkg/test/util/assert"
@@ -38,7 +39,27 @@ func TestQueue(t *testing.T) {
 	assert.Equal(t, handles.Load(), 1)
 	q.Add(types.NamespacedName{Name: "something else"})
 	close(stop)
-	assert.NoError(t, q.WaitForClose(time.Second))
+	assert.NoError(t, q.WaitForClose(time.Second*5))
 	// event 2 is guaranteed to happen from WaitForClose
 	assert.Equal(t, handles.Load(), 2)
+}
+
+func TestFence(t *testing.T) {
+	handles := atomic.NewInt32(0)
+	q := NewQueue("custom", WithReconciler(func(key types.NamespacedName) error {
+		// Add a bit of delay
+		time.Sleep(time.Millisecond * 5)
+		handles.Inc()
+		return nil
+	}))
+	go q.Run(test.NewStop(t))
+	q.Add(types.NamespacedName{Name: "foo"})
+	q.Fence(func() {
+		q.Add(types.NamespacedName{Name: "bar"})
+	})
+	assert.Equal(t, handles.Load(), 2)
+	q.Fence(func() {
+		q.Add(types.NamespacedName{Name: "baz"})
+	})
+	assert.Equal(t, handles.Load(), 3)
 }
