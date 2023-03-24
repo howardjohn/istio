@@ -113,3 +113,62 @@ func TestGatewayConformance(t *testing.T) {
 			}
 		})
 }
+
+func TestMeshConformance(t *testing.T) {
+	// nolint: staticcheck
+	framework.
+		NewTest(t).
+		RequiresSingleCluster().
+		Features("traffic.gateway").
+		Run(func(ctx framework.TestContext) {
+			crd.DeployGatewayAPIOrSkip(ctx)
+
+			mapper, _ := gatewayConformanceInputs.Client.UtilFactory().ToRESTMapper()
+			c, err := client.New(gatewayConformanceInputs.Client.RESTConfig(), client.Options{
+				Scheme: kube.IstioScheme,
+				Mapper: mapper,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rc, _ := gatewayConformanceInputs.Client.UtilFactory().RESTClient()
+
+			opts := suite.Options{
+				Client:               c,
+				RESTClient:           rc,
+				RestConfig:           gatewayConformanceInputs.Client.RESTConfig(),
+				GatewayClassName:     "istio",
+				Debug:                scopes.Framework.DebugEnabled(),
+				NamespaceLabels:      map[string]string{"istio-injection": "enabled"},
+				CleanupBaseResources: gatewayConformanceInputs.Cleanup,
+				SupportedFeatures:    suite.AllFeatures,
+				ConformanceProfile:   suite.ConformanceProfileMesh,
+			}
+			if rev := ctx.Settings().Revisions.Default(); rev != "" {
+				opts.NamespaceLabels = map[string]string{
+					"istio.io/rev": rev,
+				}
+			}
+			ctx.Cleanup(func() {
+				if !ctx.Failed() {
+					return
+				}
+				if ctx.Settings().CIMode {
+					for _, ns := range conformanceNamespaces {
+						namespace.Dump(ctx, ns)
+					}
+				}
+			})
+			csuite := suite.New(opts)
+			csuite.Setup(t)
+
+			for _, ct := range tests.MeshConformanceTests {
+				t.Run(ct.ShortName, func(t *testing.T) {
+					if reason, f := skippedTests[ct.ShortName]; f {
+						t.Skip(reason)
+					}
+					ct.Run(t, csuite)
+				})
+			}
+		})
+}
