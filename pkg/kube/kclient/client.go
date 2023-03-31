@@ -44,6 +44,7 @@ type Reader[T controllers.Object] interface {
 	// AddEventHandler inserts a handler. The handler will be called for all Create/Update/Removals.
 	// When ShutdownHandlers is called, the handler is removed.
 	AddEventHandler(h cache.ResourceEventHandler)
+	Inf() cache.SharedIndexInformer
 	// HasSynced returns true when the informer is initially populated and that all handlers added
 	// via AddEventHandler have been called with the initial state.
 	// note: this differs from a standard informer HasSynced, which does not check handlers have been called.
@@ -128,6 +129,10 @@ func (n *readClient[T]) ShutdownHandlers() {
 	for _, c := range n.registeredHandlers {
 		_ = n.informer.RemoveEventHandler(c)
 	}
+}
+
+func (n *readClient[T]) Inf() cache.SharedIndexInformer {
+	return n.informer
 }
 
 func (n *readClient[T]) AddEventHandler(h cache.ResourceEventHandler) {

@@ -15,8 +15,11 @@
 package kclient
 
 import (
+	"fmt"
 	"sync"
 
+	"go.uber.org/atomic"
+	"istio.io/istio/pkg/ptr"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 
@@ -46,6 +49,43 @@ func (i *Index[O, K]) Lookup(k K) []O {
 		res = append(res, item)
 	}
 	return res
+}
+
+// Index maintains a simple index over an informer
+type Index2[O controllers.ComparableObject, K fmt.Stringer] struct {
+	k string
+	client  Reader[O]
+}
+
+var indexes = atomic.NewInt32(0)
+
+
+// Lookup finds all objects matching a given key
+func (i *Index2[O, K]) Lookup(k K) []O {
+	ut, _ := i.client.Inf().GetIndexer().ByIndex(i.k, k.String())
+	res := make([]O, 0, len(ut))
+	for _, x := range ut {
+		res = append(res, x.(O))
+	}
+	return res
+}
+
+func CreateIndex2[O controllers.ComparableObject, K fmt.Stringer](
+	client Reader[O],
+	extract func(o O) []K,
+) *Index2[O, K] {
+	k := fmt.Sprintf("%T/%d", ptr.Empty[O](), indexes.Inc())
+	client.Inf().AddIndexers(map[string]cache.IndexFunc{
+		k: func(obj interface{}) ([]string, error) {
+			res := extract(controllers.Extract[O](obj))
+			rs := make([]string, 0, len(res))
+			for _, x := range res {
+				rs = append(rs, x.String())
+			}
+			return rs, nil
+		},
+	})
+	return &Index2[O, K]{k, client}
 }
 
 // CreateIndex creates a simple index, keyed by key K, over an informer for O. This is similar to

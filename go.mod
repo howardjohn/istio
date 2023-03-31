@@ -91,9 +91,9 @@ require (
 	istio.io/api v0.0.0-20230327210753-eb5bfad7b73b
 	istio.io/client-go v1.18.0-alpha.0.0.20230327211553-3db2db3cf71c
 	istio.io/pkg v0.0.0-20230327211253-afbd3d24c68e
-	k8s.io/api v0.27.0-alpha.3
+	k8s.io/api v0.27.0-rc.0
 	k8s.io/apiextensions-apiserver v0.26.2
-	k8s.io/apimachinery v0.27.0-alpha.3
+	k8s.io/apimachinery v0.27.0-rc.0
 	k8s.io/apiserver v0.26.2
 	k8s.io/cli-runtime v0.26.2
 	k8s.io/client-go v0.27.0-alpha.3
@@ -249,3 +249,5 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.13.9 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
+
+replace k8s.io/client-go => ../../k8s.io/client-go
