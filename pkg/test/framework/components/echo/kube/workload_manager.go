@@ -22,8 +22,11 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
+	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/protocol"
+	"istio.io/istio/pkg/kube/kclient"
 	echoCommon "istio.io/istio/pkg/test/echo/common"
 	"istio.io/istio/pkg/test/framework/components/echo"
 	"istio.io/istio/pkg/test/framework/resource"
@@ -80,11 +83,7 @@ func newWorkloadManager(ctx resource.Context, cfg echo.Config, handler workloadH
 		tls:      tls,
 		stopCh:   make(chan struct{}, 1),
 	}
-	m.podController = newPodController(cfg, podHandlers{
-		added:   m.onPodAddOrUpdate,
-		updated: m.onPodAddOrUpdate,
-		deleted: m.onPodDeleted,
-	})
+	m.podController = newPodController(cfg, m.onPod)
 
 	return m, nil
 }
@@ -150,6 +149,14 @@ func (m *workloadManager) Start() error {
 	return err
 }
 
+func (m *workloadManager) onPod(pods kclient.Informer[*corev1.Pod], name types.NamespacedName) error {
+	pod := pods.Get(name.Name, name.Namespace)
+	if pod == nil {
+		return m.onPodDeleted(name)
+	}
+	return m.onPodAddOrUpdate(pod)
+}
+
 func (m *workloadManager) onPodAddOrUpdate(pod *corev1.Pod) error {
 	m.mutex.Lock()
 
@@ -205,7 +212,7 @@ func (m *workloadManager) onPodAddOrUpdate(pod *corev1.Pod) error {
 	return nil
 }
 
-func (m *workloadManager) onPodDeleted(pod *corev1.Pod) (err error) {
+func (m *workloadManager) onPodDeleted(name types.NamespacedName) (err error) {
 	m.mutex.Lock()
 
 	// After the method returns, notify the handler the ready state of the workload changed.
@@ -220,7 +227,7 @@ func (m *workloadManager) onPodDeleted(pod *corev1.Pod) (err error) {
 
 	newWorkloads := make([]*workload, 0, len(m.workloads))
 	for _, w := range m.workloads {
-		if w.pod.Name == pod.Name {
+		if config.NamespacedName(&w.pod) == name {
 			// Close the workload and remove it from the list. If an
 			// error occurs, just continue.
 			if w.IsReady() {
