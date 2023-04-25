@@ -30,6 +30,7 @@ import (
 	"istio.io/istio/pkg/test/echo"
 	"istio.io/istio/pkg/test/echo/common"
 	"istio.io/istio/pkg/test/util/retry"
+	istiometadata "istio.io/ztunnel/go-metadata"
 )
 
 var _ Instance = &tcpInstance{}
@@ -190,6 +191,13 @@ func (s *tcpInstance) getResponseFields(conn net.Conn) string {
 	echo.ServicePortField.Write(out, strconv.Itoa(s.Port.Port))
 	echo.IPField.Write(out, ip)
 	echo.ProtocolField.Write(out, "TCP")
+
+	if AmbientRedirectionEnabled {
+		cm, _ := istiometadata.FetchFromServerConnection(conn)
+		if cm != nil {
+			respFields[echo.IdentityField] = cm.Identity
+		}
+	}
 
 	if hostname, err := os.Hostname(); err == nil {
 		echo.HostnameField.Write(out, hostname)

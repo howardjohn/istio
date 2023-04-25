@@ -108,6 +108,7 @@ require (
 	helm.sh/helm/v3 v3.14.2
 	istio.io/api v1.19.0-alpha.1.0.20240226195738-a41168bb493b
 	istio.io/client-go v1.19.0-alpha.1.0.20240226200338-4ca3894873bc
+	istio.io/ztunnel/go-metadata v0.0.0-00010101000000-000000000000
 	k8s.io/api v0.29.2
 	k8s.io/apiextensions-apiserver v0.29.2
 	k8s.io/apimachinery v0.29.2
@@ -253,3 +254,5 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.16.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
+
+replace istio.io/ztunnel/go-metadata => ../ztunnel/go-metadata

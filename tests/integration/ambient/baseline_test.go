@@ -2307,7 +2307,7 @@ func deployName(inst echo.Instance) string {
 	return inst.ServiceName() + "-" + inst.Config().Version
 }
 
-func TestMetadataServer(t *testing.T) {
+func TestGKEMetadataServer(t *testing.T) {
 	framework.NewTest(t).Features("traffic.ambient").Run(func(t framework.TestContext) {
 		ver, _ := t.Clusters().Default().GetKubernetesVersion()
 		if !strings.Contains(ver.GitVersion, "-gke") {
@@ -2424,5 +2424,27 @@ func TestDirect(t *testing.T) {
 				Check:   check.Error(),
 			})
 		})
+	})
+}
+
+func TestMetadataServer(t *testing.T) {
+	runTest(t, func(t framework.TestContext, src echo.Instance, dst echo.Instance, opt echo.CallOptions) {
+		if !dst.Config().IsCaptured() {
+			return
+		}
+		id := src.Config().ServiceAccountName()
+		if !src.Config().HasProxyCapabilities() {
+			// We don't expect an identity, client calls over plaintext
+			id = ""
+		}
+		// TODO: we probably need to passthrough the identity here
+		if dst.Config().HasWaypointProxy() {
+			id = dst.Config().ServiceAccountName() + "-" + constants.WaypointGatewayClassName
+		}
+		if id != "" {
+			id = "spiffe://" + id
+		}
+		opt.Check = check.And(check.OK(), check.Identity(id))
+		src.CallOrFail(t, opt)
 	})
 }
