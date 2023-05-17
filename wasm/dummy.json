@@ -1,0 +1,3 @@
+{
+  "identity": "spiffe://cluster.local/ns/foo/sa/bar"
+}
