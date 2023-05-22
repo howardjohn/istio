@@ -25,8 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"istio.io/pkg/log"
 )
 
@@ -132,9 +130,9 @@ func StartNewTLSServer(tlsCert, tlsKey string) (*MockOpenIDDiscoveryServer, erro
 
 // Start starts the mock server.
 func (ms *MockOpenIDDiscoveryServer) Start() error {
-	router := mux.NewRouter()
-	router.HandleFunc("/.well-known/openid-configuration", ms.openIDCfg).Methods("GET")
-	router.HandleFunc("/oauth2/v3/certs", ms.jwtPubKey).Methods("GET")
+	router := http.NewServeMux()
+	router.HandleFunc("/.well-known/openid-configuration", ms.openIDCfg)
+	router.HandleFunc("/oauth2/v3/certs", ms.jwtPubKey)
 
 	server := &http.Server{
 		Addr:    ":" + strconv.Itoa(ms.Port),

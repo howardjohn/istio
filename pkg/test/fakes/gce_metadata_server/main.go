@@ -21,9 +21,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"syscall"
-
-	"github.com/gorilla/mux"
 )
 
 const (
@@ -41,8 +40,7 @@ const (
 	instIDPath     = metaPrefix + "/instance/id"
 	instancePath   = metaPrefix + "/instance/name"
 	zonePath       = metaPrefix + "/instance/zone"
-	attrKey        = "attribute"
-	attrPath       = metaPrefix + "/instance/attributes/{" + attrKey + "}"
+	attrPath       = metaPrefix + "/instance/attributes/"
 )
 
 var instAttrs = map[string]string{
@@ -69,9 +67,8 @@ func checkMetadataHeaders(next http.Handler) http.Handler {
 }
 
 func handleAttrs(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-
-	if val, ok := instAttrs[vars[attrKey]]; ok {
+	v := path.Base(r.URL.Path)
+	if val, ok := instAttrs[v]; ok {
 		fmt.Fprint(w, val)
 		return
 	}
@@ -79,15 +76,18 @@ func handleAttrs(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 }
 
+func handlerFor(id string) func(http.ResponseWriter, *http.Request) {
+	return checkMetadataHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, id) })).ServeHTTP
+}
+
 func main() {
-	r := mux.NewRouter()
-	r.Use(checkMetadataHeaders)
-	r.HandleFunc(projIDPath, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, projID) }).Methods("GET")
-	r.HandleFunc(projNumberPath, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, projNumber) }).Methods("GET")
-	r.HandleFunc(instIDPath, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, instID) }).Methods("GET")
-	r.HandleFunc(instancePath, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, instance) }).Methods("GET")
-	r.HandleFunc(zonePath, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, zone) }).Methods("GET")
-	r.HandleFunc(attrPath, handleAttrs).Methods("GET")
+	r := http.NewServeMux()
+	r.HandleFunc(projIDPath, handlerFor(projID))
+	r.HandleFunc(projNumberPath, handlerFor(projNumber))
+	r.HandleFunc(instIDPath, handlerFor(instID))
+	r.HandleFunc(instancePath, handlerFor(instance))
+	r.HandleFunc(zonePath, handlerFor(zone))
+	r.HandleFunc(attrPath, checkMetadataHeaders(http.HandlerFunc(handleAttrs)).ServeHTTP)
 	http.Handle("/", r)
 
 	srv := &http.Server{Addr: addr}
