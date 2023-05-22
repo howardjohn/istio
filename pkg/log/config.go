@@ -52,6 +52,8 @@
 package log
 
 import (
+	"github.com/galecore/xslog/xzap"
+	"golang.org/x/exp/slog"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -408,6 +410,9 @@ func Configure(options *Options) error {
 	if options.LogGrpc {
 		grpclog.SetLogger(zapgrpc.NewLogger(captureLogger.WithOptions(zap.AddCallerSkip(3))))
 	}
+
+	//slog.SetDefault(slog.New(slogzap.NewFromCore(captureLogger.Core())))
+	slog.SetDefault(slog.New(xzap.NewHandlerFromCore(captureLogger.Core(), ".", true)))
 
 	// capture klog (Kubernetes logging) through our logging
 	configureKlog.Do(func() {
