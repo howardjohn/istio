@@ -159,7 +159,11 @@ func (cl *Client) informerSynced() bool {
 }
 
 func (cl *Client) HasSynced() bool {
-	return cl.queue.HasSynced()
+	res := cl.queue.HasSynced()
+	if res {
+		log.Errorf("howardjohn: CRD synced")
+	}
+	return res
 }
 
 // Schemas for the store

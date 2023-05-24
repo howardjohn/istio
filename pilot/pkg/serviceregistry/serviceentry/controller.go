@@ -49,6 +49,10 @@ var (
 	log                          = istiolog.RegisterScope("serviceentry", "ServiceEntry registry")
 )
 
+func init() {
+	log.SetOutputLevel(istiolog.DebugLevel)
+}
+
 var (
 	prime  = 65011     // Used for secondary hash function.
 	maxIPs = 255 * 255 // Maximum possible IPs for address allocation.
@@ -209,6 +213,10 @@ func convertWorkloadEntry(cfg config.Config) *networking.WorkloadEntry {
 // workloadEntryHandler defines the handler for workload entries
 func (s *Controller) workloadEntryHandler(old, curr config.Config, event model.Event) {
 	log.Debugf("Handle event %s for workload entry %s/%s", event, curr.Namespace, curr.Name)
+	defer func() {
+		log.Errorf("howardjohn: WE event done")
+	}()
+
 	var oldWle *networking.WorkloadEntry
 	if old.Spec != nil {
 		oldWle = convertWorkloadEntry(old)

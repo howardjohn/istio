@@ -271,10 +271,10 @@ func newDelayedInformer[T controllers.ComparableObject](
 		delayedClient.set(fc)
 	})
 	if !readyNow {
-		log.Debugf("%v is not ready now, building delayed client", gvr.GroupResource())
+		log.Infof("%v is not ready now, building delayed client", gvr.GroupResource())
 		return delayedClient
 	}
-	log.Debugf("%v ready now, building client", gvr.GroupResource())
+	log.Infof("%v ready now, building client", gvr.GroupResource())
 	return newInformerClient[T](getInf(), filter)
 }
 

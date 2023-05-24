@@ -16,6 +16,7 @@ package xds
 
 import (
 	"fmt"
+	"runtime/debug"
 
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
@@ -99,6 +100,7 @@ func (s *DiscoveryServer) EDSCacheUpdate(shard model.ShardKey, serviceName strin
 func (s *DiscoveryServer) edsCacheUpdate(shard model.ShardKey, hostname string, namespace string,
 	istioEndpoints []*model.IstioEndpoint,
 ) PushType {
+	log.Errorf("howardjohn: EDS update sizer %v, %v", istioEndpoints, string(debug.Stack()))
 	if len(istioEndpoints) == 0 {
 		// Should delete the service EndpointShards when endpoints become zero to prevent memory leak,
 		// but we should not delete the keys from EndpointIndex map - that will trigger

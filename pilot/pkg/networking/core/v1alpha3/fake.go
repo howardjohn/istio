@@ -27,7 +27,6 @@ import (
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
-
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	configaggregate "istio.io/istio/pilot/pkg/config/aggregate"
 	"istio.io/istio/pilot/pkg/config/kube/crd"
@@ -43,6 +42,7 @@ import (
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/schema/collections"
+	"istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/retry"
 	"istio.io/istio/pkg/util/sets"
@@ -196,17 +196,17 @@ func NewConfigGenTest(t test.Failer, opts TestOptions) *ConfigGenTest {
 
 func (f *ConfigGenTest) Run() {
 	go f.Registry.Run(f.stop)
-	go f.store.Run(f.stop)
 	// Setup configuration. This should be done after registries are added so they can process events.
 	for _, cfg := range f.initialConfigs {
 		if _, err := f.store.Create(cfg); err != nil {
 			f.t.Fatalf("failed to create config %v: %v", cfg.Name, err)
 		}
 	}
+	go f.store.Run(f.stop)
 
 	// TODO allow passing event handlers for controller
-
 	retry.UntilOrFail(f.t, f.store.HasSynced, retry.Delay(time.Millisecond))
+	log.Errorf("howardjohn: store synced..")
 	retry.UntilOrFail(f.t, f.Registry.HasSynced, retry.Delay(time.Millisecond))
 
 	f.ServiceEntryRegistry.ResyncEDS()

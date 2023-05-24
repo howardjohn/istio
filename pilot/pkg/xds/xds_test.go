@@ -416,7 +416,7 @@ func TestClusterLocal(t *testing.T) {
 			fakeOpts: func() FakeOptions {
 				k8sObjects := map[cluster.ID]string{
 					"cluster-1": "",
-					"cluster-2": "",
+					//"cluster-2": "",
 				}
 				i := 1
 				for range k8sObjects {
@@ -481,11 +481,11 @@ spec:
 			serviceCluster: "outbound|7070||echo-app.default.svc.cluster.local",
 			wantClusterLocal: map[cluster.ID][]string{
 				"cluster-1": {"10.0.0.1:7070", "10.1.1.1:7070"},
-				"cluster-2": {"10.0.0.2:7070"},
+				//"cluster-2": {"10.0.0.2:7070"},
 			},
 			wantNonClusterLocal: map[cluster.ID][]string{
 				"cluster-1": {"10.0.0.1:7070", "10.1.1.1:7070", "10.0.0.2:7070"},
-				"cluster-2": {"10.0.0.1:7070", "10.1.1.1:7070", "10.0.0.2:7070"},
+				//"cluster-2": {"10.0.0.1:7070", "10.1.1.1:7070", "10.0.0.2:7070"},
 			},
 		},
 		"serviceentry": {

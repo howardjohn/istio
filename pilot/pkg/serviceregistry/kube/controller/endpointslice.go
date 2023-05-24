@@ -385,6 +385,7 @@ func (esc *endpointSliceController) updateEDS(ep *v1.EndpointSlice, event model.
 			svc := esc.c.GetService(hostName)
 			if svc != nil {
 				fep := esc.c.collectWorkloadInstanceEndpoints(svc)
+				log.Errorf("howardjohn: in EDS add %v WE to %v eps", len(endpoints), len(fep))
 				endpoints = append(endpoints, fep...)
 			} else {
 				log.Debugf("Handle EDS endpoint: skip collecting workload entry endpoints, service %s/%s has not been populated",

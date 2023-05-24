@@ -345,9 +345,11 @@ type client struct {
 }
 
 // newClientInternal creates a Kubernetes client from the given factory.
-func newClientInternal(clientFactory *clientFactory, revision string) (*client, error) {
+func newClientInternal(clientFactory *clientFactory, revision string, ci cluster.ID) (*client, error) {
 	var c client
 	var err error
+
+	c.clusterID = ci
 
 	c.clientFactory = clientFactory
 
@@ -445,12 +447,12 @@ func NewDefaultClient() (Client, error) {
 // This is appropriate for use in CLI libraries because it exposes functionality unsafe for in-cluster controllers,
 // and uses standard CLI (kubectl) caching.
 func NewCLIClient(clientConfig clientcmd.ClientConfig, revision string) (CLIClient, error) {
-	return newClientInternal(newClientFactory(clientConfig, true), revision)
+	return newClientInternal(newClientFactory(clientConfig, true), revision, "")
 }
 
 // NewClient creates a Kubernetes client from the given rest config.
 func NewClient(clientConfig clientcmd.ClientConfig, cluster cluster.ID) (Client, error) {
-	return newClientInternal(newClientFactory(clientConfig, false), "")
+	return newClientInternal(newClientFactory(clientConfig, false), "", cluster)
 }
 
 func (c *client) RESTConfig() *rest.Config {
