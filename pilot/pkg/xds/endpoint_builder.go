@@ -250,7 +250,8 @@ func (b *EndpointBuilder) buildLocalityLbEndpointsFromShards(
 	// and should, therefore, not be accessed from outside the cluster.
 	isClusterLocal := b.clusterLocal
 
-	shards.Lock()
+	eps := []*model.IstioEndpoint{}
+	shards.RLock()
 	// Extract shard keys so we can iterate in order. This ensures a stable EDS output.
 	keys := shards.Keys()
 	// The shards are updated independently, now need to filter and merge for this cluster
@@ -288,41 +289,43 @@ func (b *EndpointBuilder) buildLocalityLbEndpointsFromShards(
 					continue
 				}
 			}
-
-			locLbEps, found := localityEpMap[ep.Locality.Label]
-			if !found {
-				locLbEps = &LocalityEndpoints{
-					llbEndpoints: endpoint.LocalityLbEndpoints{
-						Locality:    util.ConvertLocality(ep.Locality.Label),
-						LbEndpoints: make([]*endpoint.LbEndpoint, 0, len(endpoints)),
-					},
-				}
-				localityEpMap[ep.Locality.Label] = locLbEps
-			}
-			// Currently the HBONE implementation leads to different endpoint generation depending on if the
-			// client proxy supports HBONE or not. This breaks the cache.
-			// For now, just disable caching if the global HBONE flag is enabled.
-			if ep.EnvoyEndpoint == nil || features.EnableHBONE {
-				ep.EnvoyEndpoint = buildEnvoyLbEndpoint(b.proxy.IsProxylessGrpc(), ep)
-			}
-			// detect if mTLS is possible for this endpoint, used later during ep filtering
-			// this must be done while converting IstioEndpoints because we still have workload labels
-			if b.mtlsChecker != nil {
-				b.mtlsChecker.computeForEndpoint(ep)
-				if features.EnableAutomTLSCheckPolicies {
-					tlsMode := ep.TLSMode
-					if b.mtlsChecker.isMtlsDisabled(ep.EnvoyEndpoint) {
-						tlsMode = ""
-					}
-					if nep, modified := util.MaybeApplyTLSModeLabel(ep.EnvoyEndpoint, tlsMode); modified {
-						ep.EnvoyEndpoint = nep
-					}
-				}
-			}
-			locLbEps.append(ep, ep.EnvoyEndpoint)
+			eps = append(eps, ep.DeepCopy())
 		}
 	}
-	shards.Unlock()
+	shards.RUnlock()
+	for _, ep := range eps {
+		locLbEps, found := localityEpMap[ep.Locality.Label]
+		if !found {
+			locLbEps = &LocalityEndpoints{
+				llbEndpoints: endpoint.LocalityLbEndpoints{
+					Locality:    util.ConvertLocality(ep.Locality.Label),
+					LbEndpoints: make([]*endpoint.LbEndpoint, 0, len(eps)),
+				},
+			}
+			localityEpMap[ep.Locality.Label] = locLbEps
+		}
+		// Currently the HBONE implementation leads to different endpoint generation depending on if the
+		// client proxy supports HBONE or not. This breaks the cache.
+		// For now, just disable caching if the global HBONE flag is enabled.
+		if ep.EnvoyEndpoint == nil || features.EnableHBONE {
+			ep.EnvoyEndpoint = buildEnvoyLbEndpoint(b.proxy.IsProxylessGrpc(), ep)
+		}
+		// detect if mTLS is possible for this endpoint, used later during ep filtering
+		// this must be done while converting IstioEndpoints because we still have workload labels
+		if b.mtlsChecker != nil {
+			b.mtlsChecker.computeForEndpoint(ep)
+			if features.EnableAutomTLSCheckPolicies {
+				tlsMode := ep.TLSMode
+				if b.mtlsChecker.isMtlsDisabled(ep.EnvoyEndpoint) {
+					tlsMode = ""
+				}
+				if nep, modified := util.MaybeApplyTLSModeLabel(ep.EnvoyEndpoint, tlsMode); modified {
+					ep.EnvoyEndpoint = nep
+				}
+			}
+		}
+		locLbEps.append(ep, ep.EnvoyEndpoint)
+	}
 
 	locEps := make([]*LocalityEndpoints, 0, len(localityEpMap))
 	locs := make([]string, 0, len(localityEpMap))
