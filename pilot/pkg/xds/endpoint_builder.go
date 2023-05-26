@@ -289,7 +289,7 @@ func (b *EndpointBuilder) buildLocalityLbEndpointsFromShards(
 					continue
 				}
 			}
-			eps = append(eps, ep.DeepCopy())
+			eps = append(eps, ep)
 		}
 	}
 	shards.RUnlock()
@@ -304,27 +304,23 @@ func (b *EndpointBuilder) buildLocalityLbEndpointsFromShards(
 			}
 			localityEpMap[ep.Locality.Label] = locLbEps
 		}
-		// Currently the HBONE implementation leads to different endpoint generation depending on if the
-		// client proxy supports HBONE or not. This breaks the cache.
-		// For now, just disable caching if the global HBONE flag is enabled.
-		if ep.EnvoyEndpoint == nil || features.EnableHBONE {
-			ep.EnvoyEndpoint = buildEnvoyLbEndpoint(b.proxy.IsProxylessGrpc(), ep)
-		}
+		eep := buildEnvoyLbEndpoint(b.proxy.IsProxylessGrpc(), ep)
+
 		// detect if mTLS is possible for this endpoint, used later during ep filtering
 		// this must be done while converting IstioEndpoints because we still have workload labels
 		if b.mtlsChecker != nil {
-			b.mtlsChecker.computeForEndpoint(ep)
+			b.mtlsChecker.computeForEndpoint(ep, eep)
 			if features.EnableAutomTLSCheckPolicies {
 				tlsMode := ep.TLSMode
-				if b.mtlsChecker.isMtlsDisabled(ep.EnvoyEndpoint) {
+				if b.mtlsChecker.isMtlsDisabled(eep) {
 					tlsMode = ""
 				}
-				if nep, modified := util.MaybeApplyTLSModeLabel(ep.EnvoyEndpoint, tlsMode); modified {
-					ep.EnvoyEndpoint = nep
+				if nep, modified := util.MaybeApplyTLSModeLabel(eep, tlsMode); modified {
+					eep = nep
 				}
 			}
 		}
-		locLbEps.append(ep, ep.EnvoyEndpoint)
+		locLbEps.append(ep, eep)
 	}
 
 	locEps := make([]*LocalityEndpoints, 0, len(localityEpMap))
@@ -478,11 +474,11 @@ func (c *mtlsChecker) isMtlsDisabled(lbEp *endpoint.LbEndpoint) bool {
 }
 
 // computeForEndpoint checks destination rule, peer authentication and tls mode labels to determine if mTLS was turned off.
-func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint) {
+func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint, eep *endpoint.LbEndpoint) {
 	if drMode := c.mtlsModeForDestinationRule(ep); drMode != nil {
 		switch *drMode {
 		case networkingapi.ClientTLSSettings_DISABLE:
-			c.mtlsDisabledHosts[lbEpKey(ep.EnvoyEndpoint)] = struct{}{}
+			c.mtlsDisabledHosts[lbEpKey(eep)] = struct{}{}
 			return
 		case networkingapi.ClientTLSSettings_ISTIO_MUTUAL:
 			// don't mark this EP disabled, even if PA or tlsMode meta mark disabled
@@ -492,7 +488,7 @@ func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint) {
 
 	// if endpoint has no sidecar or explicitly tls disabled by "security.istio.io/tlsMode" label.
 	if ep.TLSMode != model.IstioMutualTLSModeLabel {
-		c.mtlsDisabledHosts[lbEpKey(ep.EnvoyEndpoint)] = struct{}{}
+		c.mtlsDisabledHosts[lbEpKey(eep)] = struct{}{}
 		return
 	}
 
@@ -511,7 +507,7 @@ func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint) {
 
 	//  mtls disabled by PeerAuthentication
 	if mtlsDisabledByPeerAuthentication(ep) {
-		c.mtlsDisabledHosts[lbEpKey(ep.EnvoyEndpoint)] = struct{}{}
+		c.mtlsDisabledHosts[lbEpKey(eep)] = struct{}{}
 	}
 }
 
