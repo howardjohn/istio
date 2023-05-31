@@ -114,8 +114,10 @@ func (q *queueImpl) processNextItem() bool {
 	if shuttingdown {
 		return false
 	}
+	queue.With(nameTag.Value(q.id)).Record(float64(len(q.tasks)))
 
 	// Run the task.
+	startTime := time.Now()
 	if err := task(); err != nil {
 		delay := q.delay
 		log.Infof("Work item handle failed (%v), retry after delay %v", err, delay)
@@ -123,6 +125,7 @@ func (q *queueImpl) processNextItem() bool {
 			q.Push(task)
 		})
 	}
+	callBackTime.With(nameTag.Value(q.id)).Record(float64(time.Since(startTime)))
 	return true
 }
 
