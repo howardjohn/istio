@@ -223,7 +223,8 @@ func (b *EndpointBuilder) EndpointsWithMTLSFilter(endpoints []*LocalityEndpoints
 		}
 
 		for i, lbEp := range ep.llbEndpoints.LbEndpoints {
-			if b.mtlsChecker.isMtlsDisabled(lbEp) {
+			skip := b.mtlsChecker.isMtlsDisabled(lbEp)
+			if skip {
 				// no mTLS, skip it
 				continue
 			}

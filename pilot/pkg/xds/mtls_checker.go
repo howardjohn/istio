@@ -72,11 +72,11 @@ func (c *mtlsChecker) isMtlsDisabled(lbEp *endpoint.LbEndpoint) bool {
 }
 
 // computeForEndpoint checks destination rule, peer authentication and tls mode labels to determine if mTLS was turned off.
-func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint) {
+func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint, eep *endpoint.LbEndpoint) {
 	if drMode := c.tlsModeForDestinationRule(ep); drMode != nil {
 		switch *drMode {
 		case networkingapi.ClientTLSSettings_DISABLE:
-			c.mtlsDisabledHosts[lbEpKey(ep.EnvoyEndpoint)] = struct{}{}
+			c.mtlsDisabledHosts[lbEpKey(eep)] = struct{}{}
 			return
 		case networkingapi.ClientTLSSettings_ISTIO_MUTUAL:
 			// don't mark this EP disabled, even if PA or tlsMode meta mark disabled
@@ -86,7 +86,7 @@ func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint) {
 
 	// if endpoint has no sidecar or explicitly tls disabled by "security.istio.io/tlsMode" label.
 	if ep.TLSMode != model.IstioMutualTLSModeLabel {
-		c.mtlsDisabledHosts[lbEpKey(ep.EnvoyEndpoint)] = struct{}{}
+		c.mtlsDisabledHosts[lbEpKey(eep)] = struct{}{}
 		return
 	}
 
@@ -105,7 +105,7 @@ func (c *mtlsChecker) computeForEndpoint(ep *model.IstioEndpoint) {
 
 	//  mtls disabled by PeerAuthentication
 	if mtlsDisabledByPeerAuthentication(ep) {
-		c.mtlsDisabledHosts[lbEpKey(ep.EnvoyEndpoint)] = struct{}{}
+		c.mtlsDisabledHosts[lbEpKey(eep)] = struct{}{}
 	}
 }
 
