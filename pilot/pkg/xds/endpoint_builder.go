@@ -330,6 +330,7 @@ func (b *EndpointBuilder) buildLocalityLbEndpointsFromShards(
 			}
 			if nep, modified := util.MaybeApplyTLSModeLabel(eep, tlsMode); modified {
 				eep = nep
+				ep.ComputeEnvoyEndpoint(nep)
 			}
 		}
 		locLbEps.append(ep, eep)

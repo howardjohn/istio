@@ -1194,6 +1194,13 @@ func (ep *IstioEndpoint) DeepCopy() *IstioEndpoint {
 	return copyInternal(ep).(*IstioEndpoint)
 }
 
+// ShallowCopy creates a shallow clone of IstioEndpoint.
+func (ep *IstioEndpoint) ShallowCopy() *IstioEndpoint {
+	// nolint: govet
+	cpy := *ep
+	return &cpy
+}
+
 func copyInternal(v any) any {
 	copied, err := copystructure.Copy(v)
 	if err != nil {
