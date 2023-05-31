@@ -255,59 +255,38 @@ func (b *EndpointBuilder) buildLocalityLbEndpointsFromShards(
 	// Determine whether or not the target service is considered local to the cluster
 	// and should, therefore, not be accessed from outside the cluster.
 	isClusterLocal := b.clusterLocal
+	_ = isClusterLocal // TODO
 
-	// To avoid lock contention, grab endpoints list before we process anything
-	eps := []*model.IstioEndpoint{}
-	shards.RLock()
-	// Extract shard keys so we can iterate in order. This ensures a stable EDS output.
-	keys := shards.Keys()
-	// The shards are updated independently, now need to filter and merge for this cluster
-	for _, shardKey := range keys {
-		if shardKey.Cluster != b.clusterID {
-			// If the downstream service is configured as cluster-local, only include endpoints that
-			// reside in the same cluster.
-			if isClusterLocal || b.service.Attributes.NodeLocal {
+	for _, ep := range shards.AllEndpoints() {
+		if b.service.Attributes.NodeLocal && ep.NodeName != b.proxy.GetNodeName() {
+			continue
+		}
+		// TODO(nmittler): Consider merging discoverability policy with cluster-local
+		if !ep.IsDiscoverableFromProxy(b.proxy) {
+			continue
+		}
+		if svcPort.Name != ep.ServicePortName {
+			continue
+		}
+		// Port labels
+		if !subsetLabels.SubsetOf(ep.Labels) {
+			continue
+		}
+		// Draining endpoints are only sent to 'persistent session' clusters.
+		draining := ep.HealthStatus == model.Draining ||
+			features.DrainingLabel != "" && ep.Labels[features.DrainingLabel] != ""
+		if draining {
+			persistentSession := b.service.Attributes.Labels[features.PersistentSessionLabel] != ""
+			if !persistentSession {
 				continue
 			}
 		}
-		endpoints := shards.Shards[shardKey]
-		for _, ep := range endpoints {
-			// for ServiceInternalTrafficPolicy
-			if b.service.Attributes.NodeLocal && ep.NodeName != b.proxy.GetNodeName() {
-				continue
-			}
-			// TODO(nmittler): Consider merging discoverability policy with cluster-local
-			if !ep.IsDiscoverableFromProxy(b.proxy) {
-				continue
-			}
-			if svcPort.Name != ep.ServicePortName {
-				continue
-			}
-			// Port labels
-			if !subsetLabels.SubsetOf(ep.Labels) {
-				continue
-			}
-			// Draining endpoints are only sent to 'persistent session' clusters.
-			draining := ep.HealthStatus == model.Draining ||
-				features.DrainingLabel != "" && ep.Labels[features.DrainingLabel] != ""
-			if draining {
-				persistentSession := b.service.Attributes.Labels[features.PersistentSessionLabel] != ""
-				if !persistentSession {
-					continue
-				}
-			}
-			eps = append(eps, ep)
-		}
-	}
-	shards.RUnlock()
-
-	for _, ep := range eps {
 		locLbEps, found := localityEpMap[ep.Locality.Label]
 		if !found {
 			locLbEps = &LocalityEndpoints{
 				llbEndpoints: endpoint.LocalityLbEndpoints{
 					Locality:    util.ConvertLocality(ep.Locality.Label),
-					LbEndpoints: make([]*endpoint.LbEndpoint, 0, len(eps)),
+					LbEndpoints: make([]*endpoint.LbEndpoint, 0),
 				},
 			}
 			localityEpMap[ep.Locality.Label] = locLbEps

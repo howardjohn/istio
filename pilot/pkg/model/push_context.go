@@ -1438,9 +1438,7 @@ func (ps *PushContext) initServiceAccounts(env *Environment, services []*Service
 				// First get endpoint level service accounts
 				shard, f := env.EndpointIndex.ShardsForService(string(svc.Hostname), svc.Attributes.Namespace)
 				if f {
-					shard.RLock()
-					defer shard.RUnlock()
-					accounts = shard.ServiceAccounts
+					accounts = shard.ServiceAccounts()
 				}
 				if len(svc.ServiceAccounts) > 0 {
 					accounts = accounts.Copy().InsertAll(svc.ServiceAccounts...)

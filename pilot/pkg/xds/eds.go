@@ -30,6 +30,7 @@ import (
 	"istio.io/istio/pilot/pkg/util/protoconv"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/istio/pkg/config/schema/kind"
+	"istio.io/istio/pkg/ptr"
 	"istio.io/istio/pkg/util/sets"
 )
 
@@ -118,11 +119,10 @@ func (s *DiscoveryServer) edsCacheUpdate(shard model.ShardKey, hostname string, 
 		pushType = FullPush
 	}
 
-	ep.Lock()
-	defer ep.Unlock()
 	newIstioEndpoints := istioEndpoints
+	oldShard := ptr.OrDefault(ep.Shard(shard))
 	if features.SendUnhealthyEndpoints.Load() {
-		oldIstioEndpoints := ep.Shards[shard]
+		oldIstioEndpoints := oldShard.Endpoints
 		newIstioEndpoints = make([]*model.IstioEndpoint, 0, len(istioEndpoints))
 
 		// Check if new Endpoints are ready to be pushed. This check
@@ -168,13 +168,21 @@ func (s *DiscoveryServer) edsCacheUpdate(shard model.ShardKey, hostname string, 
 			log.Debugf("No push, either old endpoint health status did not change or new endpoint came with unhealthy status, %v", hostname)
 			pushType = NoPush
 		}
-
+	}
+	newSA := sets.NewWithLength[string](oldShard.ServiceAccounts.Len())
+	for _, ep := range newIstioEndpoints {
+		if ep.ServiceAccount != "" {
+			newSA.Insert(ep.ServiceAccount)
+		}
 	}
 
-	ep.Shards[shard] = newIstioEndpoints
+	ep.SetShard(shard, model.EndpointShard{
+		Endpoints:       newIstioEndpoints,
+		ServiceAccounts: newSA,
+	})
 
 	// Check if ServiceAccounts have changed. We should do a full push if they have changed.
-	saUpdated := s.UpdateServiceAccount(ep, hostname)
+	saUpdated := s.UpdateServiceAccount(hostname, oldShard.ServiceAccounts, newSA)
 
 	// For existing endpoints, we need to do full push if service accounts change.
 	if saUpdated && pushType != FullPush {
@@ -190,6 +198,7 @@ func (s *DiscoveryServer) edsCacheUpdate(shard model.ShardKey, hostname string, 
 	// moving forward in version. In practice, this is pretty rare and self corrects nearly
 	// immediately. However, clearing the cache here has almost no impact on cache performance as we
 	// would clear it shortly after anyways.
+	// TODO: locking is problematic
 	s.Cache.Clear(sets.New(model.ConfigKey{Kind: kind.ServiceEntry, Name: hostname, Namespace: namespace}))
 
 	return pushType
@@ -201,21 +210,10 @@ func (s *DiscoveryServer) RemoveShard(shardKey model.ShardKey) {
 
 // UpdateServiceAccount updates the service endpoints' sa when service/endpoint event happens.
 // Note: it is not concurrent safe.
-func (s *DiscoveryServer) UpdateServiceAccount(shards *model.EndpointShards, serviceName string) bool {
-	oldServiceAccount := shards.ServiceAccounts
-	serviceAccounts := sets.String{}
-	for _, epShards := range shards.Shards {
-		for _, ep := range epShards {
-			if ep.ServiceAccount != "" {
-				serviceAccounts.Insert(ep.ServiceAccount)
-			}
-		}
-	}
-
-	if !oldServiceAccount.Equals(serviceAccounts) {
-		shards.ServiceAccounts = serviceAccounts
+func (s *DiscoveryServer) UpdateServiceAccount(host string, old, now sets.String) bool {
+	if !old.Equals(now) {
 		log.Debugf("Updating service accounts now, svc %v, before service account %v, after %v",
-			serviceName, oldServiceAccount, serviceAccounts)
+			host, old, now)
 		return true
 	}
 

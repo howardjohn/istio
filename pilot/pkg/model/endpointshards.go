@@ -16,8 +16,10 @@ package model
 
 import (
 	"fmt"
-	"sort"
+	"hash/maphash"
 	"sync"
+
+	"github.com/puzpuzpuz/xsync/v2"
 
 	"istio.io/istio/pilot/pkg/serviceregistry/provider"
 	"istio.io/istio/pkg/cluster"
@@ -55,56 +57,78 @@ func (sk ShardKey) MarshalText() (text []byte, err error) {
 // individual shards incrementally. The shards are aggregated and split into
 // clusters when a push for the specific cluster is needed.
 type EndpointShards struct {
-	// mutex protecting below map.
-	sync.RWMutex
-
-	// Shards is used to track the shards. EDS updates are grouped by shard.
-	// Current implementation uses the registry name as key - in multicluster this is the
-	// name of the k8s cluster, derived from the config (secret).
-	Shards map[ShardKey][]*IstioEndpoint
-
-	// ServiceAccounts has the concatenation of all service accounts seen so far in endpoints.
-	// This is updated on push, based on shards. If the previous list is different than
-	// current list, a full push will be forced, to trigger a secure naming update.
-	// Due to the larger time, it is still possible that connection errors will occur while
-	// CDS is updated.
-	ServiceAccounts sets.String
+	shards *xsync.MapOf[ShardKey, EndpointShard]
+	//// Shards is used to track the shards. EDS updates are grouped by shard.
+	//// Current implementation uses the registry name as key - in multicluster this is the
+	//// name of the k8s cluster, derived from the config (secret).
+	//Shards map[ShardKey][]*IstioEndpoint
 }
 
-// Keys gives a sorted list of keys for EndpointShards.Shards.
-// Calls to Keys should be guarded with a lock on the EndpointShards.
-func (es *EndpointShards) Keys() []ShardKey {
-	// len(shards) ~= number of remote clusters which isn't too large, doing this sort frequently
-	// shouldn't be too problematic. If it becomes an issue we can cache it in the EndpointShards struct.
-	keys := make([]ShardKey, 0, len(es.Shards))
-	for k := range es.Shards {
-		keys = append(keys, k)
-	}
-	if len(keys) >= 2 {
-		sort.Slice(keys, func(i, j int) bool {
-			if keys[i].Provider == keys[j].Provider {
-				return keys[i].Cluster < keys[j].Cluster
-			}
-			return keys[i].Provider < keys[j].Provider
-		})
-	}
-	return keys
-}
-
-func (es *EndpointShards) DeepCopy() *EndpointShards {
-	es.RLock()
-	defer es.RUnlock()
-	res := &EndpointShards{
-		Shards:          make(map[ShardKey][]*IstioEndpoint, len(es.Shards)),
-		ServiceAccounts: es.ServiceAccounts.Copy(),
-	}
-	for k, v := range es.Shards {
-		res.Shards[k] = make([]*IstioEndpoint, 0, len(v))
-		for _, ep := range v {
-			res.Shards[k] = append(res.Shards[k], ep.DeepCopy())
-		}
-	}
+// ServiceAccounts has the concatenation of all service accounts seen so far in endpoints.
+// This is updated on push, based on shards. If the previous list is different than
+// current list, a full push will be forced, to trigger a secure naming update.
+// Due to the larger time, it is still possible that connection errors will occur while
+// CDS is updated.
+func (e *EndpointShards) ServiceAccounts() sets.String {
+	res := sets.New[string]()
+	e.shards.Range(func(key ShardKey, value EndpointShard) bool {
+		res.Merge(value.ServiceAccounts)
+		return true
+	})
 	return res
+}
+
+func (e *EndpointShards) Shard(key ShardKey) *EndpointShard {
+	v, f := e.shards.Load(key)
+	if !f {
+		return nil
+	}
+	return &v
+}
+
+func (e *EndpointShards) SetShard(key ShardKey, val EndpointShard) {
+	e.shards.Store(key, val)
+}
+
+func (e *EndpointShards) AllEndpoints() []*IstioEndpoint {
+	// TODO: sort by key
+	res := []*IstioEndpoint{}
+	e.shards.Range(func(key ShardKey, value EndpointShard) bool {
+		res = append(res, value.Endpoints...)
+		return true
+	})
+	return res
+}
+
+func (e *EndpointShards) Drop(shard ShardKey) {
+	e.shards.Delete(shard)
+}
+
+//
+//// Keys gives a sorted list of keys for EndpointShards.Shards.
+//// Calls to Keys should be guarded with a lock on the EndpointShards.
+//func (es *EndpointShards) Keys() []ShardKey {
+//	es.shards.Range()
+//	// len(shards) ~= number of remote clusters which isn't too large, doing this sort frequently
+//	// shouldn't be too problematic. If it becomes an issue we can cache it in the EndpointShards struct.
+//	keys := make([]ShardKey, 0, len(es.Shards))
+//	for k := range es.Shards {
+//		keys = append(keys, k)
+//	}
+//	if len(keys) >= 2 {
+//		sort.Slice(keys, func(i, j int) bool {
+//			if keys[i].Provider == keys[j].Provider {
+//				return keys[i].Cluster < keys[j].Cluster
+//			}
+//			return keys[i].Provider < keys[j].Provider
+//		})
+//	}
+//	return keys
+//}
+
+type EndpointShard struct {
+	Endpoints       []*IstioEndpoint
+	ServiceAccounts sets.String
 }
 
 // EndpointIndex is a mutex protected index of endpoint shards
@@ -148,9 +172,10 @@ func (e *EndpointIndex) Shardz() map[string]map[string]*EndpointShards {
 	out := make(map[string]map[string]*EndpointShards, len(e.shardsBySvc))
 	for svcKey, v := range e.shardsBySvc {
 		out[svcKey] = make(map[string]*EndpointShards, len(v))
-		for nsKey, v := range v {
-			out[svcKey][nsKey] = v.DeepCopy()
-		}
+		// TODO
+		//for nsKey, v := range v {
+		//	out[svcKey][nsKey] = v
+		//}
 	}
 	return out
 }
@@ -180,10 +205,15 @@ func (e *EndpointIndex) GetOrCreateEndpointShard(serviceName, namespace string) 
 		return ep, false
 	}
 	// This endpoint is for a service that was not previously loaded.
-	ep := &EndpointShards{
-		Shards:          map[ShardKey][]*IstioEndpoint{},
-		ServiceAccounts: sets.String{},
-	}
+	ep := &EndpointShards{shards: xsync.NewTypedMapOf[ShardKey, EndpointShard](func(seed maphash.Seed, p ShardKey) uint64 {
+		var h maphash.Hash
+		h.SetSeed(seed)
+		h.WriteString(p.Cluster.String())
+		hash := h.Sum64()
+		h.Reset()
+		h.WriteString(p.Provider.String())
+		return 31*hash + h.Sum64()
+	})}
 	e.shardsBySvc[serviceName][namespace] = ep
 	// Clear the cache here to avoid race in cache writes.
 	e.clearCacheForService(serviceName, namespace)
@@ -214,17 +244,18 @@ func (e *EndpointIndex) deleteServiceInner(shard ShardKey, serviceName, namespac
 		return
 	}
 	epShards := e.shardsBySvc[serviceName][namespace]
-	epShards.Lock()
-	delete(epShards.Shards, shard)
-	// Clear the cache here to avoid race in cache writes.
+	// Clear before and after... todo
 	e.clearCacheForService(serviceName, namespace)
-	if !preserveKeys {
-		if len(epShards.Shards) == 0 {
-			delete(e.shardsBySvc[serviceName], namespace)
-		}
-		if len(e.shardsBySvc[serviceName]) == 0 {
-			delete(e.shardsBySvc, serviceName)
-		}
-	}
-	epShards.Unlock()
+	epShards.Drop(shard)
+	e.clearCacheForService(serviceName, namespace)
+	// TODO clear...
+	//if !preserveKeys {
+	//	if len(epShards.Shards) == 0 {
+	//		delete(e.shardsBySvc[serviceName], namespace)
+	//	}
+	//	if len(e.shardsBySvc[serviceName]) == 0 {
+	//		delete(e.shardsBySvc, serviceName)
+	//	}
+	//}
+	//epShards.Unlock()
 }
