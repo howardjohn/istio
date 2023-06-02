@@ -15,6 +15,7 @@
 package xds
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -24,8 +25,10 @@ import (
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	uatomic "go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"istio.io/istio/pilot/pkg/autoregistration"
 	"istio.io/istio/pilot/pkg/features"
@@ -39,7 +42,51 @@ import (
 	"istio.io/istio/pkg/env"
 	istiolog "istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/util/sets"
+
+	_ "google.golang.org/grpc/encoding/proto"
 )
+
+// Name is the name registered for the proto compressor.
+const Name = "proto"
+
+type vtprotoCodec struct{}
+
+type vtprotoMMessage interface {
+	MarshalVT() ([]byte, error)
+}
+type vtprotoUMessage interface {
+	UnmarshalVT([]byte) error
+}
+
+func (vtprotoCodec) Marshal(v any) ([]byte, error) {
+	switch v := v.(type) {
+	case vtprotoMMessage:
+		return v.MarshalVT()
+	case proto.Message:
+		return proto.Marshal(v)
+	default:
+		return nil, fmt.Errorf("failed to marshal, message is %T, must satisfy the vtprotoMessage interface or want proto.Message", v)
+	}
+}
+
+func (vtprotoCodec) Unmarshal(data []byte, v any) error {
+	switch v := v.(type) {
+	case vtprotoUMessage:
+		return v.UnmarshalVT(data)
+	case proto.Message:
+		return proto.Unmarshal(data, v)
+	default:
+		return fmt.Errorf("failed to unmarshal, message is %T, must satisfy the vtprotoMessage interface or want proto.Message", v)
+	}
+}
+
+func (vtprotoCodec) Name() string {
+	return Name
+}
+
+func init() {
+	encoding.RegisterCodec(vtprotoCodec{})
+}
 
 var (
 	log = istiolog.RegisterScope("ads", "ads debugging")
