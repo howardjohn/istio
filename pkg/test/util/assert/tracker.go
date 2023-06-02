@@ -41,6 +41,16 @@ func (t *Tracker[T]) Record(event T) {
 	t.events = append(t.events, event)
 }
 
+// Empty asserts there are no pending events. This does not wait.
+func (t *Tracker[T]) Empty() {
+	t.t.Helper()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.events) != 0 {
+		t.t.Fatalf("expected no events, got %v", t.events)
+	}
+}
+
 // WaitOrdered waits for an event to happen, in order
 func (t *Tracker[T]) WaitOrdered(event T) {
 	t.t.Helper()
