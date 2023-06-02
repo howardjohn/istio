@@ -1,9 +1,11 @@
 package debounce
 
 import (
-	"istio.io/istio/pkg/log"
-	"k8s.io/utils/clock"
 	"time"
+
+	"k8s.io/utils/clock"
+
+	"istio.io/istio/pkg/log"
 )
 
 type Options[T any] struct {
@@ -13,6 +15,8 @@ type Options[T any] struct {
 	Input chan T
 	Merge func(existing T, incoming T) T
 	Time  clock.Clock
+
+	TestingOnlyOnWork func()
 }
 
 func Do[T any](o Options[T]) {
@@ -22,8 +26,8 @@ func Do[T any](o Options[T]) {
 	var empty T
 	var cur T
 	log.WithLabels("t", o.Time.Now())
-	var MaxDebounce = 3*time.Second
-	var ItemDebounce = 1*time.Second
+	MaxDebounce := 3 * time.Second
+	ItemDebounce := 1 * time.Second
 	var maxExpired clock.Timer
 	var itemExpired clock.Timer
 	for {
@@ -32,12 +36,14 @@ func Do[T any](o Options[T]) {
 			log.WithLabels("t", o.Time.Now()).Errorf("howardjohn: max expired: %v", cur)
 			o.Work(cur)
 			cur = empty
-			safeStop(itemExpired)
+			itemExpired = safeStop(itemExpired)
+			maxExpired = safeStop(maxExpired)
 		case <-safeC(itemExpired):
 			log.WithLabels("t", o.Time.Now()).Errorf("howardjohn: item expired: %v", cur)
 			o.Work(cur)
 			cur = empty
-			safeStop(maxExpired)
+			itemExpired = safeStop(itemExpired)
+			maxExpired = safeStop(maxExpired)
 		case r := <-o.Input:
 			log.WithLabels("t", o.Time.Now()).Errorf("howardjohn: got input %v", r)
 			cur = o.Merge(cur, r)
@@ -46,17 +52,24 @@ func Do[T any](o Options[T]) {
 			}
 			if itemExpired == nil {
 				itemExpired = o.Time.NewTimer(ItemDebounce)
+			} else {
+				itemExpired.Reset(ItemDebounce)
 			}
+			o.TestingOnlyOnWork()
 		case <-o.Stop:
 			return
 		}
 	}
 }
 
-func safeStop(t clock.Timer) {
+func safeStop(t clock.Timer) clock.Timer {
 	if !t.Stop() {
-		<-t.C()
+		select {
+		case <-t.C():
+		default:
+		}
 	}
+	return nil
 }
 
 func safeC(t clock.Timer) <-chan time.Time {
