@@ -60,7 +60,7 @@ var (
 
 	PushThrottle = env.Register(
 		"PILOT_PUSH_THROTTLE",
-		100,
+		20,
 		"Limits the number of concurrent pushes allowed. On larger machines this can be increased for faster pushes",
 	).Get()
 
