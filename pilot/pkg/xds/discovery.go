@@ -24,6 +24,8 @@ import (
 
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -275,12 +277,20 @@ func (s *DiscoveryServer) dropCacheForRequest(req *model.PushRequest) {
 
 // Push is called to push changes on config updates using ADS.
 func (s *DiscoveryServer) Push(req *model.PushRequest) {
+	ctx, span := otel.Tracer("ads").Start(context.Background(), "PushAll")
+	// time is broken but oh well
+	defer func() {
+		// time.Sleep(time.Millisecond * 1)
+		span.End()
+	}()
+	req.Ctx = ctx
 	if !req.Full {
 		req.Push = s.globalPushContext()
 		s.dropCacheForRequest(req)
 		s.AdsPushAll(req)
 		return
 	}
+
 	// Reset the status during the push.
 	oldPushContext := s.globalPushContext()
 	if oldPushContext != nil {
@@ -293,10 +303,12 @@ func (s *DiscoveryServer) Push(req *model.PushRequest) {
 	t0 := time.Now()
 
 	versionLocal := s.NextVersion()
+	_, pcSpan := otel.Tracer("ads").Start(ctx, "initPushContext")
 	push, err := s.initPushContext(req, oldPushContext, versionLocal)
 	if err != nil {
 		return
 	}
+	pcSpan.End()
 	initContextTime := time.Since(t0)
 	log.Debugf("InitContext %v for push took %s", versionLocal, initContextTime)
 	pushContextInitTime.Record(initContextTime.Seconds())
@@ -467,9 +479,16 @@ func doSendPushes(stopCh <-chan struct{}, semaphore chan struct{}, queue *PushQu
 				return
 			}
 			recordPushTriggers(push.Reason...)
+			ctx, span := otel.Tracer("ads").Start(push.Ctx, "Push")
+			span.SetAttributes(attribute.String("id", client.proxy.ID))
+
+			_, span2 := otel.Tracer("ads").Start(ctx, "SendPush")
+			span2.SetAttributes(attribute.String("id", client.proxy.ID))
+
 			// Signals that a push is done by reading from the semaphore, allowing another send on it.
 			doneFunc := func() {
 				queue.MarkDone(client)
+				span.End()
 				<-semaphore
 			}
 
@@ -482,12 +501,14 @@ func doSendPushes(stopCh <-chan struct{}, semaphore chan struct{}, queue *PushQu
 			}
 			go func() {
 				pushEv := &Event{
+					ctx:         ctx,
 					pushRequest: push,
 					done:        doneFunc,
 				}
 
 				select {
 				case client.pushChannel <- pushEv:
+					span2.End()
 					return
 				case <-closed: // grpc stream was closed
 					doneFunc()

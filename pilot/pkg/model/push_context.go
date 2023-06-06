@@ -15,6 +15,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/netip"
@@ -371,6 +372,7 @@ type PushRequest struct {
 	// Delta defines the resources that were added or removed as part of this push request.
 	// This is set only on requests from the client which change the set of resources they (un)subscribe from.
 	Delta ResourceDelta
+	Ctx   context.Context
 }
 
 // ResourceDelta records the difference in requested resources by an XDS client

@@ -15,6 +15,7 @@
 package xds
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -22,6 +23,8 @@ import (
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	uatomic "go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -115,6 +118,7 @@ type Event struct {
 
 	// function to call once a push is finished. This must be called or future changes may be blocked.
 	done func()
+	ctx  context.Context
 }
 
 func newConnection(peerAddr string, stream DiscoveryStream) *Connection {
@@ -198,9 +202,7 @@ func (s *DiscoveryServer) processRequest(req *discovery.DiscoveryRequest, con *C
 
 	// For now, don't let xDS piggyback debug requests start watchers.
 	if strings.HasPrefix(req.TypeUrl, v3.DebugType) {
-		return s.pushXds(con,
-			&model.WatchedResource{TypeUrl: req.TypeUrl, ResourceNames: req.ResourceNames},
-			&model.PushRequest{Full: true, Push: con.proxy.LastPushContext})
+		return s.pushXds(nil, con, &model.WatchedResource{TypeUrl: req.TypeUrl, ResourceNames: req.ResourceNames}, &model.PushRequest{Full: true, Push: con.proxy.LastPushContext})
 	}
 	if s.StatusReporter != nil {
 		s.StatusReporter.RegisterEvent(con.conID, req.TypeUrl, req.ResponseNonce)
@@ -229,7 +231,7 @@ func (s *DiscoveryServer) processRequest(req *discovery.DiscoveryRequest, con *C
 	if con.proxy.SidecarScope != nil && con.proxy.SidecarScope.Version != request.Push.PushVersion {
 		s.computeProxyState(con.proxy, request)
 	}
-	return s.pushXds(con, con.Watched(req.TypeUrl), request)
+	return s.pushXds(nil, con, con.Watched(req.TypeUrl), request)
 }
 
 // StreamAggregatedResources implements the ADS interface.
@@ -735,6 +737,8 @@ func (s *DiscoveryServer) DeltaAggregatedResources(stream discovery.AggregatedDi
 // Compute and send the new configuration for a connection.
 func (s *DiscoveryServer) pushConnection(con *Connection, pushEv *Event) error {
 	pushRequest := pushEv.pushRequest
+	ctx, span := otel.Tracer("ads").Start(pushEv.ctx, "Push Connection")
+	defer span.End()
 
 	if pushRequest.Full {
 		// Update Proxy with current information.
@@ -754,9 +758,13 @@ func (s *DiscoveryServer) pushConnection(con *Connection, pushEv *Event) error {
 	// Each Generator is responsible for determining if the push event requires a push
 	wrl, ignoreEvents := con.pushDetails()
 	for _, w := range wrl {
-		if err := s.pushXds(con, w, pushRequest); err != nil {
+		ctx, span := otel.Tracer("ads").Start(ctx, "Push "+v3.GetShortType(w.TypeUrl))
+		span.SetAttributes(attribute.String("type_url", w.TypeUrl))
+		span.SetAttributes(attribute.String("id", con.proxy.ID))
+		if err := s.pushXds(ctx, con, w, pushRequest); err != nil {
 			return err
 		}
+		span.End()
 	}
 	if pushRequest.Full {
 		// Report all events for unwatched resources. Watched resources will be reported in pushXds or on ack.
@@ -870,6 +878,7 @@ func (s *DiscoveryServer) startPush(req *model.PushRequest) {
 		}
 	}
 	req.Start = time.Now()
+	log.Errorf("howardjohn: req ctx: %v", req.Ctx)
 	for _, p := range s.AllClients() {
 		s.pushQueue.Enqueue(p, req)
 	}

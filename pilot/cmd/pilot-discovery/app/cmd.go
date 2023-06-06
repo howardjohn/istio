@@ -15,12 +15,21 @@
 package app
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 
 	"istio.io/istio/pilot/pkg/bootstrap"
 	"istio.io/istio/pilot/pkg/features"
@@ -69,6 +78,47 @@ func NewRootCommand() *cobra.Command {
 	return rootCmd
 }
 
+// newExporter returns a console exporter.
+func newExporter(w io.Writer) (trace.SpanExporter, error) {
+	return stdouttrace.New(
+		stdouttrace.WithWriter(w),
+		// Use human readable output.
+		stdouttrace.WithPrettyPrint(),
+		// Do not print timestamps for the demo.
+		stdouttrace.WithoutTimestamps(),
+	)
+}
+
+// newResource returns a resource describing this application.
+func newResource() *resource.Resource {
+	r := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceName("istiod"),
+		semconv.ServiceVersion("v1"),
+		attribute.String("environment", "demo"),
+	)
+	return r
+}
+
+// tracerProvider returns an OpenTelemetry TracerProvider configured to use
+// the Jaeger exporter that will send spans to the provided url. The returned
+// TracerProvider will also use a Resource configured with all the information
+// about the application.
+func jaegerProvider(url string) (*trace.TracerProvider, error) {
+	// Create the Jaeger exporter
+	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(url)))
+	if err != nil {
+		return nil, err
+	}
+	tp := trace.NewTracerProvider(
+		// Always be sure to batch in production.
+		trace.WithBatcher(exp),
+		// Record information about this application in a Resource.
+		trace.WithResource(newResource()),
+	)
+	return tp, nil
+}
+
 func newDiscoveryCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "discovery",
@@ -96,6 +146,26 @@ func newDiscoveryCommand() *cobra.Command {
 			// Create the stop channel for all the servers.
 			stop := make(chan struct{})
 
+			//exp, err := newExporter(os.Stdout)
+			//if err != nil {
+			//	return err
+			//}
+
+			//tp := trace.NewTracerProvider(
+			//	trace.WithBatcher(exp),
+			//	trace.WithResource(newResource()),
+			//)
+
+			tp, err := jaegerProvider("http://jaeger-collector:14268/api/traces")
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer func() {
+				if err := tp.Shutdown(context.Background()); err != nil {
+					log.Fatal(err)
+				}
+			}()
+			otel.SetTracerProvider(tp)
 			// Create the server for the discovery service.
 			discoveryServer, err := bootstrap.NewServer(serverArgs)
 			if err != nil {

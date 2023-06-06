@@ -15,6 +15,7 @@
 package xds
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -22,6 +23,8 @@ import (
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
@@ -93,7 +96,7 @@ func (s *DiscoveryServer) findGenerator(typeURL string, con *Connection) model.X
 // Push an XDS resource for the given connection. Configuration will be generated
 // based on the passed in generator. Based on the updates field, generators may
 // choose to send partial or even no response if there are no changes.
-func (s *DiscoveryServer) pushXds(con *Connection, w *model.WatchedResource, req *model.PushRequest) error {
+func (s *DiscoveryServer) pushXds(ctx context.Context, con *Connection, w *model.WatchedResource, req *model.PushRequest) error {
 	if w == nil {
 		return nil
 	}
@@ -161,12 +164,26 @@ func (s *DiscoveryServer) pushXds(con *Connection, w *model.WatchedResource, req
 		ptype = "PUSH INC"
 	}
 
-	if err := con.send(resp); err != nil {
-		if recordSendError(w.TypeUrl, err) {
-			log.Warnf("%s: Send failure for node:%s resources:%d size:%s%s: %v",
-				v3.GetShortType(w.TypeUrl), con.proxy.ID, len(res), util.ByteCount(configSize), info, err)
+	if ctx != nil {
+		_, span := otel.Tracer("ads").Start(ctx, "Send "+v3.GetShortType(w.TypeUrl))
+		span.SetAttributes(attribute.String("type_url", w.TypeUrl))
+		span.SetAttributes(attribute.String("id", con.proxy.ID))
+		if err := con.send(resp); err != nil {
+			if recordSendError(w.TypeUrl, err) {
+				log.Warnf("%s: Send failure for node:%s resources:%d size:%s%s: %v",
+					v3.GetShortType(w.TypeUrl), con.proxy.ID, len(res), util.ByteCount(configSize), info, err)
+			}
+			return err
 		}
-		return err
+		span.End()
+	} else {
+		if err := con.send(resp); err != nil {
+			if recordSendError(w.TypeUrl, err) {
+				log.Warnf("%s: Send failure for node:%s resources:%d size:%s%s: %v",
+					v3.GetShortType(w.TypeUrl), con.proxy.ID, len(res), util.ByteCount(configSize), info, err)
+			}
+			return err
+		}
 	}
 
 	switch {
