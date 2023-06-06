@@ -337,3 +337,27 @@ func ShutdownAll(s ...Shutdowner) {
 		h.ShutdownHandlers()
 	}
 }
+
+type StringKeyer[O any] interface {
+	Key() Key[O]
+}
+
+type Keyer[K comparable] interface {
+	Key() K
+}
+
+type Namer interface {
+	GetNamespace() string
+	GetName() string
+}
+
+func Name(o Namer) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: o.GetNamespace(),
+		Name:      o.GetName(),
+	}
+}
+
+type HandleInformer interface {
+	AddEventHandler(handler cache.ResourceEventHandler)
+}

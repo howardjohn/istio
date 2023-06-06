@@ -24,40 +24,34 @@ import (
 	klabels "k8s.io/apimachinery/pkg/labels"
 
 	"istio.io/api/security/v1beta1"
+	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/config/schema/kind"
-	"istio.io/istio/pkg/maps"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi/security"
 )
 
-func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []*security.Authorization {
-	if !c.configCluster {
-		return nil
-	}
-	cfgs := c.configController.List(gvk.AuthorizationPolicy, metav1.NamespaceAll)
+func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []model.WorkloadAuthorization {
+	// TODO: use many Gets instead of List?
+	cfgs := c.ambientIndex.authorizationPolicies.List(metav1.NamespaceAll)
 	l := len(cfgs)
 	if len(requested) > 0 {
 		l = len(requested)
 	}
-	res := make([]*security.Authorization, 0, l)
+	res := make([]model.WorkloadAuthorization, 0, l)
 	for _, cfg := range cfgs {
 		k := model.ConfigKey{
 			Kind:      kind.AuthorizationPolicy,
-			Name:      cfg.Name,
-			Namespace: cfg.Namespace,
+			Name:      cfg.Authorization.Name,
+			Namespace: cfg.Authorization.Namespace,
 		}
 		if len(requested) > 0 && !requested.Contains(k) {
 			continue
 		}
-		pol := convertAuthorizationPolicy(c.meshWatcher.Mesh().GetRootNamespace(), cfg)
-		if pol == nil {
-			continue
-		}
-		res = append(res, pol)
+		res = append(res, cfg)
 	}
 	return res
 }
@@ -84,66 +78,6 @@ func (c *Controller) selectorAuthorizationPolicies(ns string, lbls map[string]st
 	return sets.SortedList(res)
 }
 
-func (c *Controller) AuthorizationPolicyHandler(old config.Config, obj config.Config, ev model.Event) {
-	getSelector := func(c config.Config) map[string]string {
-		if c.Spec == nil {
-			return nil
-		}
-		pol := c.Spec.(*v1beta1.AuthorizationPolicy)
-		return pol.Selector.GetMatchLabels()
-	}
-	// Normal flow for AuthorizationPolicy will trigger XDS push, so we don't need to push those. But we do need
-	// to update any relevant workloads and push them.
-	sel := getSelector(obj)
-	oldSel := getSelector(old)
-
-	switch ev {
-	case model.EventUpdate:
-		if maps.Equal(sel, oldSel) {
-			// Update event, but selector didn't change. No workloads to push.
-			return
-		}
-	default:
-		if sel == nil {
-			// We only care about selector policies
-			return
-		}
-	}
-
-	pods := map[string]*v1.Pod{}
-	for _, p := range c.getPodsInPolicy(obj.Namespace, sel) {
-		pods[p.Status.PodIP] = p
-	}
-	if oldSel != nil {
-		for _, p := range c.getPodsInPolicy(obj.Namespace, oldSel) {
-			pods[p.Status.PodIP] = p
-		}
-	}
-
-	updates := map[model.ConfigKey]struct{}{}
-	for _, pod := range pods {
-		newWl := c.extractWorkload(pod)
-		if newWl != nil {
-			// Update the pod, since it now has new VIP info
-			networkAddrs := networkAddressFromWorkload(newWl)
-			c.ambientIndex.mu.Lock()
-			for _, networkAddr := range networkAddrs {
-				c.ambientIndex.byPod[networkAddr] = newWl
-			}
-			c.ambientIndex.byUID[c.generatePodUID(pod)] = newWl
-			c.ambientIndex.mu.Unlock()
-			updates[model.ConfigKey{Kind: kind.Address, Name: newWl.ResourceName()}] = struct{}{}
-		}
-	}
-
-	if len(updates) > 0 {
-		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
-			ConfigsUpdated: updates,
-			Reason:         []model.TriggerReason{model.AmbientUpdate},
-		})
-	}
-}
-
 func (c *Controller) getPodsInPolicy(ns string, sel map[string]string) []*v1.Pod {
 	if ns == c.meshWatcher.Mesh().GetRootNamespace() {
 		ns = metav1.NamespaceAll
@@ -151,8 +85,8 @@ func (c *Controller) getPodsInPolicy(ns string, sel map[string]string) []*v1.Pod
 	return c.podsClient.List(ns, klabels.ValidatedSetSelector(sel))
 }
 
-func convertAuthorizationPolicy(rootns string, obj config.Config) *security.Authorization {
-	pol := obj.Spec.(*v1beta1.AuthorizationPolicy)
+func convertAuthorizationPolicy(rootns string, obj *securityclient.AuthorizationPolicy) *security.Authorization {
+	pol := &obj.Spec
 
 	scope := security.Scope_WORKLOAD_SELECTOR
 	if pol.Selector == nil {
@@ -213,7 +147,9 @@ func handleRule(action security.Action, rule *v1beta1.Rule) []*security.Rules {
 			DestinationPorts:    stringToPort(op.Ports),
 			NotDestinationPorts: stringToPort(op.NotPorts),
 		}
+		// if !emptyRuleMatch(match) {
 		toMatches = append(toMatches, match)
+		//}
 	}
 	fromMatches := []*security.Match{}
 	for _, from := range rule.From {
@@ -231,7 +167,9 @@ func handleRule(action security.Action, rule *v1beta1.Rule) []*security.Rules {
 			Principals:    stringToMatch(op.Principals),
 			NotPrincipals: stringToMatch(op.NotPrincipals),
 		}
+		// if !emptyRuleMatch(match) {
 		fromMatches = append(fromMatches, match)
+		//}
 	}
 
 	rules := []*security.Rules{}

@@ -72,6 +72,7 @@ require (
 	github.com/prometheus/prometheus v0.44.0
 	github.com/quic-go/quic-go v0.35.1
 	github.com/ryanuber/go-glob v1.0.0
+	github.com/sasha-s/go-deadlock v0.3.1
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cobra v1.7.0
 	github.com/spf13/pflag v1.0.5
@@ -101,8 +102,9 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.12.0
-	istio.io/api v0.0.0-20230606222603-870636f5ccc4
-	istio.io/client-go v1.18.0-alpha.0.0.20230606223103-319b844413b2
+	istio.io/api v0.0.0-20230605183517-154b3c31190d
+	istio.io/client-go v1.18.0-alpha.0.0.20230605184417-73f508664aca
+	istio.io/pkg v0.0.0-20230523202533-240922a4c9ad
 	k8s.io/api v0.27.2
 	k8s.io/apiextensions-apiserver v0.27.2
 	k8s.io/apimachinery v0.27.2
@@ -206,6 +208,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0-rc3 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
+	github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/prometheus/statsd_exporter v0.23.0 // indirect

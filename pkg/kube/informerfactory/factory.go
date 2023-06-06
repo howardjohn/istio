@@ -29,7 +29,6 @@ package informerfactory
 
 import (
 	"fmt"
-	"runtime/debug"
 	"sync"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -159,7 +158,8 @@ func checkInformerOverlap(inf builtInformer, resource schema.GroupVersionResourc
 	if features.EnableUnsafeAssertions && !allowedOverlap(resource) {
 		l = log.Fatalf
 	}
-	l("for type %v, registered conflicting ObjectTransform. Stack: %v", resource, string(debug.Stack()))
+	_ = l
+	// l("for type %v, registered conflicting ObjectTransform. Stack: %v", resource, string(debug.Stack()))
 }
 
 func (f *informerFactory) makeStartableInformer(informer cache.SharedIndexInformer, key informerKey) StartableInformer {

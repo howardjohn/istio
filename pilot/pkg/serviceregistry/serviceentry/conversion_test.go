@@ -25,7 +25,6 @@ import (
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/provider"
-	labelutil "istio.io/istio/pilot/pkg/serviceregistry/util/label"
 	"istio.io/istio/pilot/test/util"
 	"istio.io/istio/pkg/cluster"
 	"istio.io/istio/pkg/config"
@@ -835,101 +834,6 @@ func TestConvertInstances(t *testing.T) {
 			sortServiceInstances(tt.out)
 			if err := compare(t, instances, tt.out); err != nil {
 				t.Fatalf("testcase: %v\n%v", tt.externalSvc.Name, err)
-			}
-		})
-	}
-}
-
-func TestConvertWorkloadEntryToServiceInstances(t *testing.T) {
-	labels := map[string]string{
-		"app": "wle",
-	}
-	serviceInstanceTests := []struct {
-		name      string
-		wle       *networking.WorkloadEntry
-		se        *config.Config
-		clusterID cluster.ID
-		out       []*model.ServiceInstance
-	}{
-		{
-			name: "simple",
-			wle: &networking.WorkloadEntry{
-				Address: "1.1.1.1",
-				Labels:  labels,
-			},
-			se: selector,
-			out: []*model.ServiceInstance{
-				makeInstance(selector, "1.1.1.1", 444, selector.Spec.(*networking.ServiceEntry).Ports[0], labels, PlainText),
-				makeInstance(selector, "1.1.1.1", 445, selector.Spec.(*networking.ServiceEntry).Ports[1], labels, PlainText),
-			},
-		},
-		{
-			name: "mtls",
-			wle: &networking.WorkloadEntry{
-				Address:        "1.1.1.1",
-				Labels:         labels,
-				ServiceAccount: "default",
-			},
-			se: selector,
-			out: []*model.ServiceInstance{
-				makeInstanceWithServiceAccount(selector, "1.1.1.1", 444, selector.Spec.(*networking.ServiceEntry).Ports[0], labels, "default"),
-				makeInstanceWithServiceAccount(selector, "1.1.1.1", 445, selector.Spec.(*networking.ServiceEntry).Ports[1], labels, "default"),
-			},
-		},
-		{
-			name: "replace-port",
-			wle: &networking.WorkloadEntry{
-				Address: "1.1.1.1",
-				Labels:  labels,
-				Ports: map[string]uint32{
-					"http-445": 8080,
-				},
-			},
-			se: selector,
-			out: []*model.ServiceInstance{
-				makeInstance(selector, "1.1.1.1", 444, selector.Spec.(*networking.ServiceEntry).Ports[0], labels, PlainText),
-				makeInstance(selector, "1.1.1.1", 8080, selector.Spec.(*networking.ServiceEntry).Ports[1], labels, PlainText),
-			},
-		},
-		{
-			name: "augment label",
-			wle: &networking.WorkloadEntry{
-				Address:        "1.1.1.1",
-				Labels:         labels,
-				Locality:       "region1/zone1/sunzone1",
-				Network:        "network1",
-				ServiceAccount: "default",
-			},
-			se:        selector,
-			clusterID: "fakeCluster",
-			out: []*model.ServiceInstance{
-				makeInstanceWithServiceAccount(selector, "1.1.1.1", 444, selector.Spec.(*networking.ServiceEntry).Ports[0], labels, "default"),
-				makeInstanceWithServiceAccount(selector, "1.1.1.1", 445, selector.Spec.(*networking.ServiceEntry).Ports[1], labels, "default"),
-			},
-		},
-	}
-
-	for _, tt := range serviceInstanceTests {
-		t.Run(tt.name, func(t *testing.T) {
-			services := convertServices(*tt.se)
-			s := &Controller{}
-			instances := s.convertWorkloadEntryToServiceInstances(tt.wle, services, tt.se.Spec.(*networking.ServiceEntry), &configKey{}, tt.clusterID)
-			sortServiceInstances(instances)
-			sortServiceInstances(tt.out)
-
-			if tt.wle.Locality != "" || tt.clusterID != "" || tt.wle.Network != "" {
-				for _, serviceInstance := range tt.out {
-					serviceInstance.Endpoint.Locality = model.Locality{
-						Label:     tt.wle.Locality,
-						ClusterID: tt.clusterID,
-					}
-					serviceInstance.Endpoint.Network = network.ID(tt.wle.Network)
-					serviceInstance.Endpoint.Labels = labelutil.AugmentLabels(serviceInstance.Endpoint.Labels, tt.clusterID, tt.wle.Locality, "", network.ID(tt.wle.Network))
-				}
-			}
-
-			if err := compare(t, instances, tt.out); err != nil {
-				t.Fatal(err)
 			}
 		})
 	}

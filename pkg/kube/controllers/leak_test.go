@@ -12,20 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package serviceentry
+package controllers
 
 import (
-	"istio.io/istio/pilot/pkg/model"
+	"testing"
+
+	"istio.io/istio/tests/util/leak"
 )
 
-// NamespaceDiscoveryHandler is to handle namespace selected or deselected because of discoverySelectors change,
-// rather than namespace add/update/delete event triggered from namespace informer.
-func (s *Controller) NamespaceDiscoveryHandler(namespace string, event model.Event) {
-	if event == model.EventDelete {
-		log.Debugf("Handle event namespace %s deselected", namespace)
-	} else {
-		log.Debugf("Handle event namespace %s selected", namespace)
-	}
-
-	panic("not implemented yet")
+func TestMain(m *testing.M) {
+	// CheckMain asserts that no goroutines are leaked after a test package exits.
+	leak.CheckMain(m)
 }

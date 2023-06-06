@@ -15,7 +15,6 @@
 package memory
 
 import (
-	"errors"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -149,9 +148,11 @@ func (c *Controller) Delete(kind config.GroupVersionKind, key, namespace string,
 				event:  model.EventDelete,
 			})
 			return
+		} else {
+			return err
 		}
 	}
-	return errors.New("Delete failure: config" + key + "does not exist")
+	return fmt.Errorf("delete: config %v/%v/%v does not exist", kind, namespace, key)
 }
 
 func (c *Controller) List(kind config.GroupVersionKind, namespace string) []config.Config {
