@@ -157,14 +157,18 @@ func NewCollection[I, O any](c Collection[I], hf HandleSingle[I, O]) Collection[
 		}
 		return []O{*res}
 	}
-	return NewManyCollection[I, O](c, hm)
+	return newManyCollection[I, O](c, hm, fmt.Sprintf("Collection[%v,%v]", ptr.TypeName[I](), ptr.TypeName[O]()))
 }
 
 func NewManyCollection[I, O any](c Collection[I], hf HandleMulti[I, O]) Collection[O] {
+	return newManyCollection[I, O](c, hf, fmt.Sprintf("ManyCollection[%v,%v]", ptr.TypeName[I](), ptr.TypeName[O]()))
+}
+
+func newManyCollection[I, O any](c Collection[I], hf HandleMulti[I, O], name string) Collection[O] {
 	// We need a set of handlers
 	h := &manyCollection[I, O]{
 		handle:          hf,
-		log:             log.WithLabels("owner", fmt.Sprintf("ManyCollection[%T,%T]", *new(I), *new(O))),
+		log:             log.WithLabels("owner", name),
 		parent:          c,
 		dependencies:    sets.New[string](),
 		objectRelations: map[Key[I]]dependencies{},

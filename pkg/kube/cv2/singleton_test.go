@@ -90,3 +90,11 @@ func TrackerHandler[T any](tracker *assert.Tracker[string]) func(cv2.Event[T]) {
 		tracker.Record(fmt.Sprintf("%v/%v", o.Event, cv2.GetKey(o.Latest())))
 	}
 }
+
+func BatchedTrackerHandler[T any](tracker *assert.Tracker[string]) func([]cv2.Event[T]) {
+	return func(o []cv2.Event[T]) {
+		tracker.Record(slices.Join(",", slices.Map(o, func(o cv2.Event[T]) string {
+			return fmt.Sprintf("%v/%v", o.Event, cv2.GetKey(o.Latest()))
+		})...))
+	}
+}

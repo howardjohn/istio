@@ -31,7 +31,7 @@ type Index[I any, K comparable] struct {
 func (i *Index[I, K]) Lookup(k K) []I {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	res := make([]I, 0)
+	var res []I
 	for obj := range i.objects[k] {
 		item := i.c.GetKey(obj)
 		if item == nil {

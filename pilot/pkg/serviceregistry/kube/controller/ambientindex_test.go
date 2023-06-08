@@ -204,6 +204,7 @@ func TestAmbientIndex(t *testing.T) {
 	// Now we should be able to look up a VIP as well
 	assertAddresses("testnetwork/10.0.0.1", "name1", "name2", "svc1")
 	// We should get an event for the new Service and the two *Pod* IPs impacted
+	// TODO: new assert unordered
 	assertEvent("cluster0//v1/pod/ns1/name1", "cluster0//v1/pod/ns1/name2", "ns1/svc1.ns1.svc.cluster.local")
 
 	// Add a new pod to the service, we should see it

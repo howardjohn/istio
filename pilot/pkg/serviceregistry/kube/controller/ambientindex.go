@@ -34,6 +34,7 @@ import (
 	"istio.io/istio/pkg/kube/cv2"
 	kubelabels "istio.io/istio/pkg/kube/labels"
 	"istio.io/istio/pkg/maps"
+	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi"
@@ -44,6 +45,7 @@ import (
 type AmbientIndex struct {
 	services              cv2.Collection[model.ServiceInfo]
 	workloads             cv2.Collection[model.WorkloadInfo]
+	workloadAddressIndex  *cv2.Index[model.WorkloadInfo, networkAddress]
 	workloadServicesIndex *cv2.Index[model.WorkloadInfo, string]
 	workloadWaypointIndex *cv2.Index[model.WorkloadInfo, model.WaypointScope]
 	waypointIndex         *cv2.Index[model.WorkloadInfo, model.WaypointScope]
@@ -59,6 +61,10 @@ func workloadToAddressInfo(w *workloadapi.Workload) model.AddressInfo {
 			},
 		},
 	}
+}
+
+func modelWorkloadToAddressInfo(w model.WorkloadInfo) model.AddressInfo {
+	return workloadToAddressInfo(w.Workload)
 }
 
 func serviceToAddressInfo(s *workloadapi.Service) model.AddressInfo {
@@ -78,9 +84,24 @@ func (c *Controller) generatePodUID(p *v1.Pod) string {
 
 // Lookup finds a given IP address.
 func (a *AmbientIndex) Lookup(key string) []model.AddressInfo {
+	// 1. Workload UID
 	if w := a.workloads.GetKey(cv2.Key[model.WorkloadInfo](key)); w != nil {
 		return []model.AddressInfo{workloadToAddressInfo(w.Workload)}
 	}
+
+	network, ip, found := strings.Cut(key, "/")
+	if !found {
+		log.Warnf(`key (%v) did not contain the expected "/" character`, key)
+		return nil
+	}
+	networkAddr := networkAddress{network: network, ip: ip}
+
+	// 2. Workload by IP
+	if wls := a.workloadAddressIndex.Lookup(networkAddr); len(wls) > 0 {
+		return slices.Map(wls, modelWorkloadToAddressInfo)
+	}
+
+	// 3. Service
 	if svc := a.lookupService(key); svc != nil {
 		vips := sets.New[string]()
 		for _, addr := range svc.Service.Addresses {
@@ -102,17 +123,21 @@ func (a *AmbientIndex) Lookup(key string) []model.AddressInfo {
 }
 
 func (a *AmbientIndex) lookupService(key string) *model.ServiceInfo {
-	_, name, _ := strings.Cut(key, "/")
+	// 1. namespace/hostname format
 	s := a.services.GetKey(cv2.Key[model.ServiceInfo](key))
 	if s != nil {
 		return s
 	}
 
+	// 2. network/ip format
+	network, ip, _ := strings.Cut(key, "/")
 	// Maybe its a hostname..
 	// TODO remove full scan
 	for _, maybe := range a.services.List(metav1.NamespaceAll) {
-		if name == maybe.Hostname {
-			return &maybe
+		for _, addr := range maybe.Addresses {
+			if network == addr.Network && ip == byteIPToString(addr.Address) {
+				return &maybe
+			}
 		}
 	}
 	return nil
@@ -316,7 +341,21 @@ func (c *Controller) setupIndex() *AmbientIndex {
 	WorkloadServices := cv2.NewCollection(Services, func(ctx cv2.HandlerContext, s *v1.Service) *model.ServiceInfo {
 		return &model.ServiceInfo{Service: c.constructService(s)}
 	})
+	WorkloadServices.RegisterBatch(func(events []cv2.Event[model.ServiceInfo]) {
+		cu := sets.New[model.ConfigKey]()
+		for _, e := range events {
+			for _, i := range e.Items() {
+				cu.Insert(model.ConfigKey{Kind: kind.Address, Name: i.ResourceName()})
+			}
+		}
+		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
+			Full:           false,
+			ConfigsUpdated: cu,
+			Reason:         []model.TriggerReason{model.AmbientUpdate},
+		})
+	})
 
+	WorkloadAddressIndex := cv2.CreateIndex[model.WorkloadInfo, networkAddress](Workloads, networkAddressFromWorkload)
 	WorkloadServiceIndex := cv2.CreateIndex[model.WorkloadInfo, string](Workloads, func(o model.WorkloadInfo) []string {
 		return maps.Keys(o.VirtualIps)
 	})
@@ -347,6 +386,7 @@ func (c *Controller) setupIndex() *AmbientIndex {
 	return &AmbientIndex{
 		workloads:             Workloads,
 		services:              WorkloadServices,
+		workloadAddressIndex:  WorkloadAddressIndex,
 		workloadServicesIndex: WorkloadServiceIndex,
 		workloadWaypointIndex: WorkloadWaypointIndex,
 		waypointIndex:         WaypointIndex,
@@ -406,6 +446,25 @@ func constructVIPs(p *v1.Pod, services []*v1.Service) map[string]*workloadapi.Po
 		}
 	}
 	return vips
+}
+
+func networkAddressFromWorkload(wl model.WorkloadInfo) []networkAddress {
+	networkAddrs := make([]networkAddress, 0, len(wl.Addresses))
+	for _, addr := range wl.Addresses {
+		ip, _ := netip.AddrFromSlice(addr)
+		networkAddrs = append(networkAddrs, networkAddress{network: wl.Network, ip: ip.String()})
+	}
+	return networkAddrs
+}
+
+// internal object used for indexing in ambientindex maps
+type networkAddress struct {
+	network string
+	ip      string
+}
+
+func (n *networkAddress) String() string {
+	return n.network + "/" + n.ip
 }
 
 func getVIPs(svc *v1.Service) []string {

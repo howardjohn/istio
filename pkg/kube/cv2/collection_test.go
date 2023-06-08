@@ -15,12 +15,12 @@
 package cv2_test
 
 import (
+	"strings"
 	"testing"
 
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	istio "istio.io/api/networking/v1alpha3"
 	istioclient "istio.io/client-go/pkg/apis/networking/v1alpha3"
@@ -32,6 +32,7 @@ import (
 	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
+	"istio.io/istio/pkg/util/sets"
 )
 
 func TestJoinCollection(t *testing.T) {
@@ -44,16 +45,16 @@ func TestJoinCollection(t *testing.T) {
 		last.Store(o.Latest().ResourceName())
 	})
 	assert.EventuallyEqual(t, last.Load, "")
-	c1.Set(&Named{types.NamespacedName{"c1", "a"}})
+	c1.Set(&Named{"c1", "a"})
 	assert.EventuallyEqual(t, last.Load, "c1/a")
 
-	c2.Set(&Named{types.NamespacedName{"c2", "a"}})
+	c2.Set(&Named{"c2", "a"})
 	assert.EventuallyEqual(t, last.Load, "c2/a")
 
-	c3.Set(&Named{types.NamespacedName{"c3", "a"}})
+	c3.Set(&Named{"c3", "a"})
 	assert.EventuallyEqual(t, last.Load, "c3/a")
 
-	c1.Set(&Named{types.NamespacedName{"c1", "b"}})
+	c1.Set(&Named{"c1", "b"})
 	assert.EventuallyEqual(t, last.Load, "c1/b")
 	// ordered by c1, c2, c3
 	sortf := func(a, b Named) bool {
@@ -63,9 +64,9 @@ func TestJoinCollection(t *testing.T) {
 		t,
 		slices.SortFunc(j.List(""), sortf),
 		slices.SortFunc([]Named{
-			{types.NamespacedName{"c1", "b"}},
-			{types.NamespacedName{"c2", "a"}},
-			{types.NamespacedName{"c3", "a"}},
+			{"c1", "b"},
+			{"c2", "a"},
+			{"c3", "a"},
 		}, sortf),
 	)
 }
@@ -89,12 +90,34 @@ func SimplePodCollection(pods cv2.Collection[*corev1.Pod]) cv2.Collection[Simple
 	})
 }
 
+type SizedPod struct {
+	Named
+	Size string
+}
+
+func SizedPodCollection(pods cv2.Collection[*corev1.Pod]) cv2.Collection[SizedPod] {
+	return cv2.NewCollection(pods, func(ctx cv2.HandlerContext, i *corev1.Pod) *SizedPod {
+		s, f := i.Labels["size"]
+		if !f {
+			return nil
+		}
+		return &SizedPod{
+			Named: NewNamed(i),
+			Size:  s,
+		}
+	})
+}
+
 func NewNamed(n config.Namer) Named {
-	return Named{config.NamespacedName(n)}
+	return Named{
+		Namespace: n.GetNamespace(),
+		Name:      n.GetName(),
+	}
 }
 
 type Named struct {
-	types.NamespacedName
+	Namespace string
+	Name      string
 }
 
 func (s Named) ResourceName() string {
@@ -342,4 +365,159 @@ func TestCollectionJoin(t *testing.T) {
 		{pod.Name, svc.Name, pod.Namespace, pod.Status.PodIP},
 		{pod2.Name, svc.Name, pod2.Namespace, pod2.Status.PodIP},
 	})
+}
+
+type PodSizeCount struct {
+	Named
+	MatchingSizes int
+}
+
+func TestCollectionCycle(t *testing.T) {
+	c := kube.NewFakeClient()
+	pods := cv2.NewInformer[*corev1.Pod](c)
+	c.RunAndWait(test.NewStop(t))
+	pc := clienttest.Wrap(t, kclient.New[*corev1.Pod](c))
+	SimplePods := SimplePodCollection(pods)
+	SizedPods := SizedPodCollection(pods)
+	Thingys := cv2.NewCollection[SimplePod, PodSizeCount](SimplePods, func(ctx cv2.HandlerContext, pd SimplePod) *PodSizeCount {
+		if _, f := pd.Labels["want-size"]; !f {
+			return nil
+		}
+		matches := cv2.Fetch(ctx, SizedPods, cv2.FilterGeneric(func(a any) bool {
+			return a.(SizedPod).Size == pd.Labels["want-size"]
+		}))
+		return &PodSizeCount{
+			Named:         pd.Named,
+			MatchingSizes: len(matches),
+		}
+	})
+	tt := assert.NewTracker[string](t)
+	Thingys.RegisterBatch(BatchedTrackerHandler[PodSizeCount](tt))
+
+	fetch := func() []PodSizeCount {
+		return Thingys.List("")
+	}
+
+	assert.Equal(t, fetch(), nil)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name",
+			Namespace: "namespace",
+			Labels:    map[string]string{"want-size": "large"},
+		},
+		Status: corev1.PodStatus{PodIP: "1.2.3.4"},
+	}
+	pc.CreateOrUpdateStatus(pod)
+	tt.WaitOrdered("add/namespace/name")
+	assert.Equal(t, fetch(), []PodSizeCount{{
+		Named:         NewNamed(pod),
+		MatchingSizes: 0,
+	}})
+
+	largePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name-large",
+			Namespace: "namespace",
+			Labels:    map[string]string{"size": "large"},
+		},
+		Status: corev1.PodStatus{PodIP: "1.2.3.5"},
+	}
+	pc.CreateOrUpdateStatus(largePod)
+	tt.WaitOrdered("update/namespace/name")
+	assert.Equal(t, fetch(), []PodSizeCount{{
+		Named:         NewNamed(pod),
+		MatchingSizes: 1,
+	}})
+
+	smallPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name-small",
+			Namespace: "namespace",
+			Labels:    map[string]string{"size": "small"},
+		},
+		Status: corev1.PodStatus{PodIP: "1.2.3.6"},
+	}
+	pc.CreateOrUpdateStatus(smallPod)
+	pc.CreateOrUpdateStatus(largePod)
+	assert.Equal(t, fetch(), []PodSizeCount{{
+		Named:         NewNamed(pod),
+		MatchingSizes: 1,
+	}})
+	tt.Empty()
+
+	largePod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name-large2",
+			Namespace: "namespace",
+			Labels:    map[string]string{"size": "large"},
+		},
+		Status: corev1.PodStatus{PodIP: "1.2.3.7"},
+	}
+	pc.CreateOrUpdateStatus(largePod2)
+	tt.WaitOrdered("update/namespace/name")
+	assert.Equal(t, fetch(), []PodSizeCount{{
+		Named:         NewNamed(pod),
+		MatchingSizes: 2,
+	}})
+
+	dual := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name-dual",
+			Namespace: "namespace",
+			Labels:    map[string]string{"size": "large", "want-size": "small"},
+		},
+		Status: corev1.PodStatus{PodIP: "1.2.3.8"},
+	}
+	pc.CreateOrUpdateStatus(dual)
+	tt.WaitUnordered("update/namespace/name", "add/namespace/name-dual")
+	assert.Equal(t, fetch(), []PodSizeCount{
+		{
+			Named:         NewNamed(pod),
+			MatchingSizes: 3,
+		},
+		{
+			Named:         NewNamed(dual),
+			MatchingSizes: 1,
+		},
+	})
+
+	largePod2.Labels["size"] = "small"
+	pc.CreateOrUpdateStatus(largePod2)
+	tt.WaitCompare(CompareUnordered("update/namespace/name-dual", "update/namespace/name"))
+	assert.Equal(t, fetch(), []PodSizeCount{
+		{
+			Named:         NewNamed(pod),
+			MatchingSizes: 2,
+		},
+		{
+			Named:         NewNamed(dual),
+			MatchingSizes: 2,
+		},
+	})
+
+	pc.Delete(dual.Name, dual.Namespace)
+	tt.WaitUnordered("update/namespace/name", "delete/namespace/name-dual")
+	assert.Equal(t, fetch(), []PodSizeCount{{
+		Named:         NewNamed(pod),
+		MatchingSizes: 1,
+	}})
+
+	pc.Delete(largePod.Name, largePod.Namespace)
+	tt.WaitOrdered("update/namespace/name")
+	assert.Equal(t, fetch(), []PodSizeCount{{
+		Named:         NewNamed(pod),
+		MatchingSizes: 0,
+	}})
+
+	pc.Delete(pod.Name, pod.Namespace)
+	tt.WaitOrdered("delete/namespace/name")
+	assert.Equal(t, fetch(), []PodSizeCount{})
+}
+
+func CompareUnordered(wants ...string) func(s string) bool {
+	want := sets.New(wants...)
+	return func(s string) bool {
+		got := sets.New(strings.Split(s, ",")...)
+		return want.Equals(got)
+	}
 }
