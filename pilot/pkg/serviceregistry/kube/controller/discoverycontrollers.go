@@ -88,9 +88,7 @@ func (c *Controller) handleSelectedNamespace(ns string) {
 	for _, pod := range pods {
 		errs = multierror.Append(errs, c.pods.onEvent(nil, pod, model.EventAdd))
 	}
-	if c.ambientIndex != nil {
-		c.ambientIndex.handlePods(pods, c)
-	}
+	// TODO: recompute ambient
 
 	errs = multierror.Append(errs, c.endpoints.sync("", ns, model.EventAdd, false))
 

@@ -15,6 +15,7 @@
 package controller
 
 import (
+	"context"
 	"net/netip"
 	"path/filepath"
 	"strings"
@@ -22,22 +23,24 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	authz "istio.io/api/security/v1beta1"
 	"istio.io/api/type/v1beta1"
+	clientsecurityv1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 	"istio.io/istio/pilot/pkg/config/kube/crd"
 	"istio.io/istio/pilot/pkg/config/memory"
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/util/xdsfake"
 	"istio.io/istio/pilot/test/util"
-	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/schema/collections"
-	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/kube/kclient/clienttest"
+	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/test/util/file"
@@ -58,7 +61,6 @@ func TestAmbientIndex(t *testing.T) {
 	controller.network = "testnetwork"
 	pc := clienttest.Wrap(t, controller.podsClient)
 	sc := clienttest.Wrap(t, controller.services)
-	cfg.RegisterEventHandler(gvk.AuthorizationPolicy, controller.AuthorizationPolicyHandler)
 	go cfg.Run(test.NewStop(t))
 	addPolicy := func(name, ns string, selector map[string]string) {
 		t.Helper()
@@ -68,19 +70,18 @@ func TestAmbientIndex(t *testing.T) {
 				MatchLabels: selector,
 			}
 		}
-		p := config.Config{
-			Meta: config.Meta{
-				GroupVersionKind: gvk.AuthorizationPolicy,
-				Name:             name,
-				Namespace:        ns,
+		p := &clientsecurityv1beta1.AuthorizationPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
 			},
-			Spec: &authz.AuthorizationPolicy{
+			Spec: authz.AuthorizationPolicy{
 				Selector: sel,
 			},
 		}
-		_, err := cfg.Create(p)
-		if err != nil && strings.Contains(err.Error(), "item already exists") {
-			_, err = cfg.Update(p)
+		_, err := controller.client.Istio().SecurityV1beta1().AuthorizationPolicies(ns).Create(context.Background(), p, metav1.CreateOptions{})
+		if err != nil && kerrors.IsAlreadyExists(err) {
+			_, err = controller.client.Istio().SecurityV1beta1().AuthorizationPolicies(ns).Update(context.Background(), p, metav1.UpdateOptions{})
 		}
 		if err != nil {
 			t.Fatal(err)
@@ -90,7 +91,7 @@ func TestAmbientIndex(t *testing.T) {
 		t.Helper()
 		want := sets.New(names...)
 		assert.EventuallyEqual(t, func() sets.String {
-			var addresses []*model.AddressInfo
+			var addresses []model.AddressInfo
 			if lookup == "" {
 				addresses = controller.ambientIndex.All()
 			} else {
@@ -112,6 +113,16 @@ func TestAmbientIndex(t *testing.T) {
 		t.Helper()
 		want := strings.Join(ip, ",")
 		fx.MatchOrFail(t, xdsfake.Event{Type: "xds", ID: want})
+	}
+	assertUnorderedEvent := func(ip ...[]string) {
+		t.Helper()
+		ev := []xdsfake.Event{}
+		for _, i := range ip {
+
+			want := strings.Join(i, ",")
+			ev = append(ev, xdsfake.Event{Type: "xds", ID: want})
+		}
+		fx.MatchOrFail(t, ev...)
 	}
 	deletePod := func(name string) {
 		t.Helper()
@@ -160,7 +171,7 @@ func TestAmbientIndex(t *testing.T) {
 	assertAddresses("testnetwork/127.0.0.1", "name1")
 	assertAddresses("testnetwork/127.0.0.2", "name2")
 	for _, key := range []string{"cluster0//Pod/ns1/name3", "testnetwork/127.0.0.3"} {
-		assert.Equal(t, controller.ambientIndex.Lookup(key), []*model.AddressInfo{
+		assert.Equal(t, controller.ambientIndex.Lookup(key), []model.AddressInfo{
 			{
 				Address: &workloadapi.Address{
 					Type: &workloadapi.Address_Workload{
@@ -201,7 +212,10 @@ func TestAmbientIndex(t *testing.T) {
 	// Now we should be able to look up a VIP as well
 	assertAddresses("testnetwork/10.0.0.1", "name1", "name2", "svc1")
 	// We should get an event for the new Service and the two *Pod* IPs impacted
-	assertEvent("cluster0//Pod/ns1/name1", "cluster0//Pod/ns1/name2", "ns1/svc1.ns1.svc.company.com")
+	assertUnorderedEvent(
+		[]string{"cluster0//Pod/ns1/name1", "cluster0//Pod/ns1/name2"},
+		[]string{"ns1/svc1.ns1.svc.company.com"},
+	)
 
 	// Add a new pod to the service, we should see it
 	addPods("127.0.0.4", "name4", "sa1", map[string]string{"app": "a"}, nil)
@@ -226,8 +240,7 @@ func TestAmbientIndex(t *testing.T) {
 	assertAddresses("", "name1", "name2", "name3", "svc1")
 	assertAddresses("testnetwork/10.0.0.1", "name2", "svc1")
 	// Need to update the *old* workload only
-	assertEvent("cluster0//Pod/ns1/name1", "cluster0//Pod/ns1/name2", "ns1/svc1.ns1.svc.company.com")
-	// assertEvent("cluster0//v1/pod/ns1/name1") TODO: This should be the event, but we are not efficient here.
+	assertEvent("cluster0//Pod/ns1/name1")
 
 	// Update an existing pod into the service
 	addPods("127.0.0.3", "name3", "sa1", map[string]string{"app": "a", "other": "label"}, nil)
@@ -245,8 +258,8 @@ func TestAmbientIndex(t *testing.T) {
 	deleteService("svc1")
 	assertAddresses("", "name1", "name2", "name3")
 	assertAddresses("testnetwork/10.0.0.1")
-	assertEvent("cluster0//Pod/ns1/name2", "ns1/svc1.ns1.svc.company.com")
-	assert.Equal(t, len(controller.ambientIndex.byService), 0)
+	assertUnorderedEvent([]string{"cluster0//Pod/ns1/name2"}, []string{"ns1/svc1.ns1.svc.company.com"})
+	assert.Equal(t, len(controller.ambientIndex.workloads.ByServiceVIP.Lookup("10.0.0.1")), 0)
 
 	// Add a waypoint proxy pod for namespace
 	addPods("127.0.0.200", "waypoint-ns-pod", "namespace-wide",
@@ -263,11 +276,14 @@ func TestAmbientIndex(t *testing.T) {
 		[]int32{80}, map[string]string{constants.GatewayNameLabel: "namespace-wide"}, "10.0.0.2")
 	assertAddresses("", "name1", "name2", "name3", "waypoint-ns", "waypoint-ns-pod")
 	// All these workloads updated, so push them
-	assertEvent("cluster0//Pod/ns1/name1",
-		"cluster0//Pod/ns1/name2",
-		"cluster0//Pod/ns1/name3",
-		"cluster0//Pod/ns1/waypoint-ns-pod",
-		"ns1/waypoint-ns.ns1.svc.company.com",
+	assertUnorderedEvent(
+		[]string{
+			"cluster0//Pod/ns1/name1",
+			"cluster0//Pod/ns1/name2",
+			"cluster0//Pod/ns1/name3",
+		},
+		[]string{"cluster0//Pod/ns1/waypoint-ns-pod"},
+		[]string{"ns1/waypoint-ns.ns1.svc.company.com"},
 	)
 	// We should now see the waypoint service IP
 	assert.Equal(t,
@@ -323,14 +339,18 @@ func TestAmbientIndex(t *testing.T) {
 		[]int32{80}, map[string]string{"app": "a"}, "10.0.0.1")
 	assertAddresses("testnetwork/10.0.0.1", "name1", "name2", "name3", "svc1")
 	// Send update for the workloads as well...
-	assertEvent("cluster0//Pod/ns1/name1",
-		"cluster0//Pod/ns1/name2",
-		"cluster0//Pod/ns1/name3",
-		"ns1/svc1.ns1.svc.company.com",
+	assertUnorderedEvent(
+		[]string{
+			"cluster0//Pod/ns1/name1",
+			"cluster0//Pod/ns1/name2",
+			"cluster0//Pod/ns1/name3",
+		},
+		[]string{"ns1/svc1.ns1.svc.company.com"},
 	)
 	// Make sure Service sees waypoints as well
 	assert.Equal(t,
-		controller.ambientIndex.Lookup("testnetwork/10.0.0.1")[0].Address.GetWorkload().Waypoint.GetAddress().Address, netip.MustParseAddr("10.0.0.2").AsSlice())
+		model.ExtractWorkloadsFromAddresses(controller.ambientIndex.Lookup("testnetwork/10.0.0.1"))[0].Waypoint.GetAddress().Address,
+		netip.MustParseAddr("10.0.0.2").AsSlice())
 
 	// Delete a waypoint
 	deletePod("waypoint2-ns-pod")
@@ -341,7 +361,7 @@ func TestAmbientIndex(t *testing.T) {
 		netip.MustParseAddr("10.0.0.2").AsSlice())
 	// As should workload via Service
 	assert.Equal(t,
-		controller.ambientIndex.Lookup("testnetwork/10.0.0.1")[0].Address.GetWorkload().Waypoint.GetAddress().Address,
+		model.ExtractWorkloadsFromAddresses(controller.ambientIndex.Lookup("testnetwork/10.0.0.1"))[0].Waypoint.GetAddress().Address,
 		netip.MustParseAddr("10.0.0.2").AsSlice())
 
 	addPods("127.0.0.201", "waypoint2-sa", "waypoint-sa",
@@ -369,13 +389,13 @@ func TestAmbientIndex(t *testing.T) {
 	assertEvent("cluster0//Pod/ns1/name2")
 
 	deleteService("waypoint-ns")
-	assertEvent("cluster0//Pod/ns1/name1",
-		"cluster0//Pod/ns1/waypoint-ns-pod",
-		"ns1/waypoint-ns.ns1.svc.company.com",
+	assertUnorderedEvent(
+		[]string{"cluster0//Pod/ns1/name1"},
+		[]string{"cluster0//Pod/ns1/waypoint-ns-pod"},
+		[]string{"ns1/waypoint-ns.ns1.svc.company.com"},
 	)
-
 	assert.Equal(t,
-		controller.ambientIndex.Lookup("testnetwork/10.0.0.1")[0].Address.GetWorkload().Waypoint,
+		model.ExtractWorkloadsFromAddresses(controller.ambientIndex.Lookup("testnetwork/10.0.0.1"))[0].Waypoint,
 		nil)
 
 	addPolicy("global", "istio-system", nil)
@@ -418,11 +438,19 @@ func TestAmbientIndex(t *testing.T) {
 		controller.ambientIndex.Lookup("testnetwork/127.0.0.1")[0].Address.GetWorkload().AuthorizationPolicies,
 		[]string{"ns1/selector"})
 
-	cfg.Delete(gvk.AuthorizationPolicy, "selector", "ns1", nil)
+	assert.Equal(t, slices.Map(controller.Policies(nil), func(t model.WorkloadAuthorization) string {
+		return t.ResourceName()
+	}), []string{"default/namespace", "istio-system/global", "istio-system/global-selector", "ns1/selector"})
+
+	controller.client.Istio().SecurityV1beta1().AuthorizationPolicies("ns1").
+		Delete(context.Background(), "selector", metav1.DeleteOptions{})
 	assertEvent("cluster0//Pod/ns1/name1", "cluster0//Pod/ns1/name2")
 	assert.Equal(t,
 		controller.ambientIndex.Lookup("testnetwork/127.0.0.1")[0].Address.GetWorkload().AuthorizationPolicies,
 		nil)
+	assert.Equal(t, slices.Map(controller.Policies(nil), func(t model.WorkloadAuthorization) string {
+		return t.ResourceName()
+	}), []string{"default/namespace", "istio-system/global", "istio-system/global-selector"})
 }
 
 func TestPodLifecycleWorkloadGates(t *testing.T) {
@@ -433,13 +461,12 @@ func TestPodLifecycleWorkloadGates(t *testing.T) {
 		MeshWatcher:      mesh.NewFixedWatcher(&meshconfig.MeshConfig{RootNamespace: "istio-system"}),
 	})
 	pc := clienttest.Wrap(t, controller.podsClient)
-	cfg.RegisterEventHandler(gvk.AuthorizationPolicy, controller.AuthorizationPolicyHandler)
 	go cfg.Run(test.NewStop(t))
 	assertWorkloads := func(lookup string, state workloadapi.WorkloadStatus, names ...string) {
 		t.Helper()
 		want := sets.New(names...)
 		assert.EventuallyEqual(t, func() sets.String {
-			var workloads []*model.AddressInfo
+			var workloads []model.AddressInfo
 			if lookup == "" {
 				workloads = controller.ambientIndex.All()
 			} else {
@@ -515,7 +542,14 @@ func TestRBACConvert(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			pol, _, err := crd.ParseInputs(file.AsStringOrFail(t, f))
 			assert.NoError(t, err)
-			o := convertAuthorizationPolicy("istio-system", pol[0])
+			o := convertAuthorizationPolicy("istio-system", &clientsecurityv1beta1.AuthorizationPolicy{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pol[0].Name,
+					Namespace: pol[0].Namespace,
+				},
+				Spec: *((pol[0].Spec).(*authz.AuthorizationPolicy)),
+			})
 			msg := ""
 			if o != nil {
 				msg, err = protomarshal.ToYAML(o)

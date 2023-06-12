@@ -807,21 +807,21 @@ type ServiceDiscovery interface {
 }
 
 type AmbientIndexes interface {
-	AddressInformation(addresses sets.String) ([]*AddressInfo, []string)
+	AddressInformation(addresses sets.String) ([]AddressInfo, []string)
 	AdditionalPodSubscriptions(
 		proxy *Proxy,
 		allAddresses sets.String,
 		currentSubs sets.String,
 	) sets.Set[string]
-	Policies(requested sets.Set[ConfigKey]) []*security.Authorization
+	Policies(requested sets.Set[ConfigKey]) []WorkloadAuthorization
 	Waypoint(scope WaypointScope) []netip.Addr
-	WorkloadsForWaypoint(scope WaypointScope) []*WorkloadInfo
+	WorkloadsForWaypoint(scope WaypointScope) []WorkloadInfo
 }
 
 // NoopAmbientIndexes provides an implementation of AmbientIndexes that always returns nil, to easily "skip" it.
 type NoopAmbientIndexes struct{}
 
-func (u NoopAmbientIndexes) AddressInformation(sets.String) ([]*AddressInfo, []string) {
+func (u NoopAmbientIndexes) AddressInformation(sets.String) ([]AddressInfo, []string) {
 	return nil, nil
 }
 
@@ -833,7 +833,7 @@ func (u NoopAmbientIndexes) AdditionalPodSubscriptions(
 	return nil
 }
 
-func (u NoopAmbientIndexes) Policies(sets.Set[ConfigKey]) []*security.Authorization {
+func (u NoopAmbientIndexes) Policies(sets.Set[ConfigKey]) []WorkloadAuthorization {
 	return nil
 }
 
@@ -841,7 +841,7 @@ func (u NoopAmbientIndexes) Waypoint(WaypointScope) []netip.Addr {
 	return nil
 }
 
-func (u NoopAmbientIndexes) WorkloadsForWaypoint(scope WaypointScope) []*WorkloadInfo {
+func (u NoopAmbientIndexes) WorkloadsForWaypoint(scope WaypointScope) []WorkloadInfo {
 	return nil
 }
 
@@ -916,8 +916,30 @@ func (i *WorkloadInfo) ResourceName() string {
 	return workloadResourceName(i.Workload)
 }
 
-func ExtractWorkloadsFromAddresses(addrs []*AddressInfo) []WorkloadInfo {
-	return slices.MapFilter(addrs, func(a *AddressInfo) *WorkloadInfo {
+type WorkloadAuthorization struct {
+	// LabelSelectors for the workload. Note these are only used internally, not sent over XDS
+	LabelSelector
+	Authorization *security.Authorization
+}
+
+type LabelSelector struct {
+	Labels map[string]string
+}
+
+func NewSelector(l map[string]string) LabelSelector {
+	return LabelSelector{l}
+}
+
+func (l LabelSelector) GetLabelSelector() map[string]string {
+	return l.Labels
+}
+
+func (i WorkloadAuthorization) ResourceName() string {
+	return i.Authorization.GetNamespace() + "/" + i.Authorization.GetName()
+}
+
+func ExtractWorkloadsFromAddresses(addrs []AddressInfo) []WorkloadInfo {
+	return slices.MapFilter(addrs, func(a AddressInfo) *WorkloadInfo {
 		switch addr := a.Type.(type) {
 		case *workloadapi.Address_Workload:
 			return &WorkloadInfo{Workload: addr.Workload}

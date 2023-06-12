@@ -196,7 +196,7 @@ func (fx *Updater) matchOrFail(t test.Failer, strict bool, events ...Event) {
 				if strict {
 					t.Fatalf("unexpected event %q/%v", e.Type, e.ID)
 				} else {
-					log.Infof("skipping event %q/%v", e.Type, e.ID)
+					log.Infof("skipping event %v/%v/%v", e.Type, e.ID, e.Namespace)
 				}
 			}
 			continue
