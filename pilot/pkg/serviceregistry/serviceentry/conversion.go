@@ -301,20 +301,6 @@ func (s *Controller) convertEndpoint(service *model.Service, servicePort *networ
 	}
 }
 
-// convertWorkloadEntryToServiceInstances translates a WorkloadEntry into ServiceInstances. This logic is largely the
-// same as the ServiceEntry convertServiceEntryToInstances.
-func (s *Controller) convertWorkloadEntryToServiceInstances(wle *networking.WorkloadEntry, services []*model.Service,
-	se *networking.ServiceEntry, configKey *configKey, clusterID cluster.ID,
-) []*model.ServiceInstance {
-	out := make([]*model.ServiceInstance, 0)
-	for _, service := range services {
-		for _, port := range se.Ports {
-			out = append(out, s.convertEndpoint(service, port, wle, configKey, clusterID))
-		}
-	}
-	return out
-}
-
 func (s *Controller) convertServiceEntryToInstances(cfg config.Config, services []*model.Service) []*model.ServiceInstance {
 	out := make([]*model.ServiceInstance, 0)
 	serviceEntry := cfg.Spec.(*networking.ServiceEntry)
@@ -373,34 +359,30 @@ func getTLSModeFromWorkloadEntry(wle *networking.WorkloadEntry) string {
 
 // The workload instance has pointer to the service and its service port.
 // We need to create our own but we can retain the endpoint already created.
-func convertWorkloadInstanceToServiceInstance(workloadInstance *model.WorkloadInstance, serviceEntryServices []*model.Service,
-	serviceEntry *networking.ServiceEntry,
-) []*model.ServiceInstance {
+func convertWorkloadInstanceToServiceInstance(workloadInstance *model.WorkloadInstance, service Service) []*model.ServiceInstance {
 	out := make([]*model.ServiceInstance, 0)
-	for _, service := range serviceEntryServices {
-		for _, serviceEntryPort := range serviceEntry.Ports {
-			// note: this is same as workloadentry handler
-			// endpoint port will first use the port defined in wle with same port name,
-			// if not port name not match, use the targetPort specified in ServiceEntry
-			// if both not matched, fallback to ServiceEntry port number.
-			var targetPort uint32
-			if port, ok := workloadInstance.PortMap[serviceEntryPort.Name]; ok && port > 0 {
-				targetPort = port
-			} else if serviceEntryPort.TargetPort > 0 {
-				targetPort = serviceEntryPort.TargetPort
-			} else {
-				targetPort = serviceEntryPort.Number
-			}
-			ep := *workloadInstance.Endpoint
-			ep.ServicePortName = serviceEntryPort.Name
-			ep.EndpointPort = targetPort
-			ep.EnvoyEndpoint = nil
-			out = append(out, &model.ServiceInstance{
-				Endpoint:    &ep,
-				Service:     service,
-				ServicePort: convertPort(serviceEntryPort),
-			})
+	for _, serviceEntryPort := range service.EntryPorts {
+		// note: this is same as workloadentry handler
+		// endpoint port will first use the port defined in wle with same port name,
+		// if not port name not match, use the targetPort specified in ServiceEntry
+		// if both not matched, fallback to ServiceEntry port number.
+		var targetPort uint32
+		if port, ok := workloadInstance.PortMap[serviceEntryPort.Name]; ok && port > 0 {
+			targetPort = port
+		} else if serviceEntryPort.TargetPort > 0 {
+			targetPort = serviceEntryPort.TargetPort
+		} else {
+			targetPort = serviceEntryPort.Number
 		}
+		ep := *workloadInstance.Endpoint
+		ep.ServicePortName = serviceEntryPort.Name
+		ep.EndpointPort = targetPort
+		ep.EnvoyEndpoint = nil
+		out = append(out, &model.ServiceInstance{
+			Endpoint:    &ep,
+			Service:     service.Service,
+			ServicePort: convertPort(serviceEntryPort),
+		})
 	}
 	return out
 }

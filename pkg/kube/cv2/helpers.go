@@ -96,6 +96,10 @@ func NewNamed(o metav1.ObjectMeta) Named {
 	return Named{Name: o.GetName(), Namespace: o.GetNamespace()}
 }
 
+//func NewNamedConfig(o config.Config) Named {
+//	return Named{Name: o.GetName(), Namespace: o.GetNamespace()}
+//}
+
 func (n Named) ResourceName() string {
 	return n.Namespace + "/" + n.Name
 }

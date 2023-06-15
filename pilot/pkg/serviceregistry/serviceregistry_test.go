@@ -85,7 +85,7 @@ func setupTest(t *testing.T) (
 	se := serviceentry.NewController(configController, xdsUpdater)
 	client.RunAndWait(stop)
 
-	kc.AppendWorkloadHandler(se.WorkloadInstanceHandler)
+	// kc.AppendWorkloadHandler(se.WorkloadInstanceHandler)
 	se.AppendWorkloadHandler(kc.WorkloadInstanceHandler)
 
 	go kc.Run(stop)

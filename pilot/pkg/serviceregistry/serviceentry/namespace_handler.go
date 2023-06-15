@@ -16,7 +16,6 @@ package serviceentry
 
 import (
 	"istio.io/istio/pilot/pkg/model"
-	"istio.io/istio/pkg/config/schema/gvk"
 )
 
 // NamespaceDiscoveryHandler is to handle namespace selected or deselected because of discoverySelectors change,
@@ -28,15 +27,5 @@ func (s *Controller) NamespaceDiscoveryHandler(namespace string, event model.Eve
 		log.Debugf("Handle event namespace %s selected", namespace)
 	}
 
-	cfgs := s.store.List(gvk.WorkloadEntry, namespace)
-	for _, cfg := range cfgs {
-		s.workloadEntryHandler(cfg, cfg, event)
-	}
-
-	if !s.workloadEntryController {
-		cfgs := s.store.List(gvk.ServiceEntry, namespace)
-		for _, cfg := range cfgs {
-			s.serviceEntryHandler(cfg, cfg, event)
-		}
-	}
+	panic("not implemented yet")
 }

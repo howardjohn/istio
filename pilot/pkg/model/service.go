@@ -115,6 +115,14 @@ type Service struct {
 	ResourceVersion string
 }
 
+func (s *Service) GetName() string {
+	return s.Attributes.Name
+}
+
+func (s *Service) GetNamespace() string {
+	return s.Attributes.Namespace
+}
+
 func (s *Service) Key() string {
 	if s == nil {
 		return ""
@@ -311,6 +319,18 @@ type WorkloadInstance struct {
 	PortMap  map[string]uint32 `json:"portMap,omitempty"`
 	// Can only be selected by service entry of DNS type.
 	DNSServiceEntryOnly bool `json:"dnsServiceEntryOnly,omitempty"`
+}
+
+func (instance WorkloadInstance) GetLabels() map[string]string {
+	return instance.Endpoint.Labels
+}
+
+func (instance WorkloadInstance) ResourceName() string {
+	return instance.Namespace + "/" + instance.Name
+}
+
+func (instance WorkloadInstance) GetNamespace() string {
+	return instance.Namespace
 }
 
 // DeepCopy creates a copy of WorkloadInstance.
@@ -899,6 +919,8 @@ type WorkloadInfo struct {
 	*workloadapi.Workload
 	// Labels for the workload. Note these are only used internally, not sent over XDS
 	Labels map[string]string
+	// Annotations for the workload. Note these are only used internally, not sent over XDS
+	Annotations map[string]string
 }
 
 func workloadResourceName(w *workloadapi.Workload) string {
@@ -907,8 +929,9 @@ func workloadResourceName(w *workloadapi.Workload) string {
 
 func (i *WorkloadInfo) Clone() *WorkloadInfo {
 	return &WorkloadInfo{
-		Workload: proto.Clone(i).(*workloadapi.Workload),
-		Labels:   maps.Clone(i.Labels),
+		Workload:    proto.Clone(i).(*workloadapi.Workload),
+		Labels:      maps.Clone(i.Labels),
+		Annotations: maps.Clone(i.Annotations),
 	}
 }
 
