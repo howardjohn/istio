@@ -27,6 +27,7 @@ spec:
         sidecar.istio.io/inject: "false"
 {{ with .Values.podAnnotations -}}{{ toYaml . | indent 8 }}{{ end }}
     spec:
+      hostNetwork: true
       serviceAccountName: ztunnel
       tolerations:
         - effect: NoSchedule
@@ -54,13 +55,7 @@ spec:
         imagePullPolicy: {{ . }}
 {{- end }}
         securityContext:
-          allowPrivilegeEscalation: false
-          privileged: false
-          capabilities:
-            drop:
-            - ALL
-            add:
-            - NET_ADMIN
+          privileged: true
           readOnlyRootFilesystem: true
           runAsGroup: 1337
           runAsNonRoot: false
