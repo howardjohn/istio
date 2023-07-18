@@ -328,7 +328,11 @@ func namespacedHostname(namespace, hostname string) string {
 
 // NOTE: Mutex is locked prior to being called.
 func (a *AmbientIndexImpl) extractWorkload(p *v1.Pod, c *Controller) *model.WorkloadInfo {
-	if p == nil || !IsPodRunning(p) || p.Spec.HostNetwork {
+	host := p.Spec.HostNetwork
+	if p.Labels["app"] == "ztunnel" {
+		host = false
+	}
+	if p == nil || !IsPodRunning(p) || host {
 		return nil
 	}
 	var waypoint *workloadapi.GatewayAddress

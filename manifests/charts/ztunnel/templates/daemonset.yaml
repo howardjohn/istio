@@ -68,6 +68,8 @@ spec:
         - proxy
         - ztunnel
         env:
+        - name: FAKE_CA
+          value: "true"
         - name: CLUSTER_ID
           value: {{ .Values.multiCluster.clusterName | default "Kubernetes" }}
         - name: POD_NAME
@@ -107,7 +109,8 @@ spec:
           name: istiod-ca-cert
         - mountPath: /var/run/secrets/tokens
           name: istio-token
-      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: 1
+      dnsPolicy: ClusterFirstWithHostNet
       volumes:
       - name: istio-token
         projected:
