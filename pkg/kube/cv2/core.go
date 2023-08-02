@@ -109,6 +109,8 @@ type dependency struct {
 }
 
 type depKey struct {
+	// TODO: this is currently broken and suggests we can only have two dependencies of the same type if they have an explicit name
+	// We should allow multiple (example: fetch from ns A and ns B)
 	// Explicit name
 	name string
 	// Type. If there are multiple with the same type, name is required

@@ -51,6 +51,29 @@ type multiIndex[I, O any] struct {
 	inputObj map[Key[I]]I
 }
 
+type dump interface {
+	Dump()
+}
+
+func Dump[O any](c Collection[O]) {
+	if d, ok := c.(dump); ok {
+		d.Dump()
+	}
+}
+
+func (h *manyCollection[I, O]) Dump() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for k, v := range h.objectRelations {
+		for kk, vv := range v.dependencies {
+			h.log.Errorf("Dependencies for: %v: %v -> %v (%v)", k, kk, vv.key, vv.filter)
+		}
+	}
+	for i, os := range h.collectionState.inputs {
+		h.log.Errorf("Input %v -> %v", i, os.UnsortedList())
+	}
+}
+
 // onUpdate takes a list of I's that changed and reruns the handler over them.
 func (h *manyCollection[I, O]) onUpdate(items []Event[any]) {
 	var events []Event[O]

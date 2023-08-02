@@ -14,7 +14,12 @@
 
 package cv2
 
-import "istio.io/istio/pkg/config/labels"
+import (
+	"fmt"
+	"strings"
+
+	"istio.io/istio/pkg/config/labels"
+)
 
 type filter struct {
 	name      string
@@ -22,6 +27,27 @@ type filter struct {
 	selects   map[string]string
 	labels    map[string]string
 	generic   func(any) bool
+}
+
+func (f filter) String() string {
+	attrs := []string{}
+	if f.name != "" {
+		attrs = append(attrs, "name="+f.name)
+	}
+	if f.namespace != "" {
+		attrs = append(attrs, "namespace="+f.namespace)
+	}
+	if f.selects != nil {
+		attrs = append(attrs, fmt.Sprintf("selects=%v", f.selects))
+	}
+	if f.labels != nil {
+		attrs = append(attrs, fmt.Sprintf("labels=%v", f.labels))
+	}
+	if f.generic != nil {
+		attrs = append(attrs, "generic")
+	}
+	res := strings.Join(attrs, ",")
+	return fmt.Sprintf("{%s}", res)
 }
 
 func FilterName(name, namespace string) DepOption {

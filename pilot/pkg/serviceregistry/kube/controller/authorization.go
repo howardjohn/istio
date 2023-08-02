@@ -31,6 +31,7 @@ import (
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/config/schema/kind"
+	istiolog "istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi/security"
 )
@@ -64,52 +65,28 @@ func (c *Controller) Policies(requested sets.Set[model.ConfigKey]) []model.Workl
 
 // convertedSelectorPeerAuthentications returns a list of keys corresponding to one or both of:
 // [static STRICT policy, port-level STRICT policy] based on the effective PeerAuthentication policy
-func (c *Controller) convertedSelectorPeerAuthentications(ns string, lbls map[string]string) []string {
-	var meshCfg, namespaceCfg, workloadCfg *config.Config
-
-	rootNamespace := c.meshWatcher.Mesh().GetRootNamespace()
-
-	matches := func(c config.Config) bool {
-		sel := c.Spec.(*v1beta1.PeerAuthentication).Selector
-		if sel == nil {
-			return false
-		}
-		return labels.Instance(sel.MatchLabels).SubsetOf(lbls)
-	}
-
-	configs := c.configController.List(gvk.PeerAuthentication, rootNamespace)
-	configs = append(configs, c.configController.List(gvk.PeerAuthentication, ns)...)
-
-	for i := range configs {
-		cfg := configs[i]
-		spec, ok := cfg.Spec.(*v1beta1.PeerAuthentication)
-
-		if !ok || spec == nil {
-			continue
-		}
-
+func (c *Controller) convertedSelectorPeerAuthentications(rootNamespace string, configs []*securityclient.PeerAuthentication) []string {
+	var meshCfg, namespaceCfg, workloadCfg *securityclient.PeerAuthentication
+	log.SetOutputLevel(istiolog.DebugLevel)
+	for _, cfg := range configs {
+		spec := &cfg.Spec
 		if spec.Selector == nil || len(spec.Selector.MatchLabels) == 0 {
 			// Namespace-level or mesh-level policy
 			if cfg.Namespace == rootNamespace {
-				if meshCfg == nil || cfg.CreationTimestamp.Before(meshCfg.CreationTimestamp) {
+				if meshCfg == nil || cfg.CreationTimestamp.Before(&meshCfg.CreationTimestamp) {
 					log.Debugf("Switch selected mesh policy to %s.%s (%v)", cfg.Name, cfg.Namespace, cfg.CreationTimestamp)
-					meshCfg = &cfg
+					meshCfg = cfg
 				}
 			} else {
-				if namespaceCfg == nil || cfg.CreationTimestamp.Before(namespaceCfg.CreationTimestamp) {
+				if namespaceCfg == nil || cfg.CreationTimestamp.Before(&namespaceCfg.CreationTimestamp) {
 					log.Debugf("Switch selected namespace policy to %s.%s (%v)", cfg.Name, cfg.Namespace, cfg.CreationTimestamp)
-					namespaceCfg = &cfg
+					namespaceCfg = cfg
 				}
 			}
 		} else if cfg.Namespace != rootNamespace {
-			// Workload-level policy, aka the one with selector and not in root namespace.
-			if !matches(cfg) {
-				continue
-			}
-
-			if workloadCfg == nil || cfg.CreationTimestamp.Before(workloadCfg.CreationTimestamp) {
+			if workloadCfg == nil || cfg.CreationTimestamp.Before(&workloadCfg.CreationTimestamp) {
 				log.Debugf("Switch selected workload policy to %s.%s (%v)", cfg.Name, cfg.Namespace, cfg.CreationTimestamp)
-				workloadCfg = &cfg
+				workloadCfg = cfg
 			}
 		}
 	}
@@ -123,16 +100,14 @@ func (c *Controller) convertedSelectorPeerAuthentications(ns string, lbls map[st
 
 	// Process in mesh, namespace, workload order to resolve inheritance (UNSET)
 	if meshCfg != nil {
-		meshSpec, ok := meshCfg.Spec.(*v1beta1.PeerAuthentication)
-		if ok && !isMtlsModeUnset(meshSpec.Mtls) {
-			isEffectiveStrictPolicy = isMtlsModeStrict(meshSpec.Mtls)
+		if !isMtlsModeUnset(meshCfg.Spec.Mtls) {
+			isEffectiveStrictPolicy = isMtlsModeStrict(meshCfg.Spec.Mtls)
 		}
 	}
 
 	if namespaceCfg != nil {
-		namespaceSpec, ok := namespaceCfg.Spec.(*v1beta1.PeerAuthentication)
-		if ok && !isMtlsModeUnset(namespaceSpec.Mtls) {
-			isEffectiveStrictPolicy = isMtlsModeStrict(namespaceSpec.Mtls)
+		if !isMtlsModeUnset(namespaceCfg.Spec.Mtls) {
+			isEffectiveStrictPolicy = isMtlsModeStrict(namespaceCfg.Spec.Mtls)
 		}
 	}
 
@@ -140,11 +115,7 @@ func (c *Controller) convertedSelectorPeerAuthentications(ns string, lbls map[st
 		return c.effectivePeerAuthenticationKeys(isEffectiveStrictPolicy, "")
 	}
 
-	workloadSpec, ok := workloadCfg.Spec.(*v1beta1.PeerAuthentication)
-	if !ok {
-		// no workload policy to calculate; go ahead and return the calculated keys
-		return c.effectivePeerAuthenticationKeys(isEffectiveStrictPolicy, "")
-	}
+	workloadSpec := &workloadCfg.Spec
 
 	// Regardless of if we have port-level overrides, if the workload policy is STRICT, then we need to reference our static STRICT policy
 	if isMtlsModeStrict(workloadSpec.Mtls) {

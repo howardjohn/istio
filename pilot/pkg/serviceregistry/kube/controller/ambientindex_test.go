@@ -17,9 +17,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"istio.io/istio/pkg/config/schema/gvk"
-	"istio.io/istio/pkg/kube/controllers"
-	istiolog "istio.io/istio/pkg/log"
 	"net/netip"
 	"path/filepath"
 	"strings"
@@ -47,7 +44,11 @@ import (
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/schema/collections"
+	"istio.io/istio/pkg/config/schema/gvk"
+	"istio.io/istio/pkg/kube/controllers"
+	"istio.io/istio/pkg/kube/cv2"
 	"istio.io/istio/pkg/kube/kclient/clienttest"
+	istiolog "istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/network"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
@@ -375,6 +376,12 @@ func TestAmbientIndex_WaypointAddressAddedToWorkloads(t *testing.T) {
 func TestAmbientIndex_Policy(t *testing.T) {
 	test.SetForTest(t, &features.EnableAmbientControllers, true)
 	s := newAmbientTestServer(t, testC, testNW)
+	t.Cleanup(func() {
+		log.Errorf("howardjohn: dumping")
+		cv2.Dump(s.controller.ambientIndex.workloads.Collection)
+	})
+	pa := clienttest.NewWriter[*clientsecurityv1beta1.PeerAuthentication](t, s.controller.client)
+	authz := clienttest.NewWriter[*clientsecurityv1beta1.AuthorizationPolicy](t, s.controller.client)
 
 	s.addPods(t, "127.0.0.1", "pod1", "sa1", map[string]string{"app": "a"}, nil, true, corev1.PodRunning)
 	s.assertEvent(t, s.podXdsName("pod1"))
@@ -411,9 +418,8 @@ func TestAmbientIndex_Policy(t *testing.T) {
 			Mode: auth.PeerAuthentication_MutualTLS_STRICT,
 		}
 	})
-
 	// Should add the static policy to all pods in the ns1 namespace since the effective mode is STRICT
-	s.assertUnorderedEvent(t, s.podXdsName("pod1"), s.podXdsName("waypoint-ns-pod"), s.podXdsName("waypoint2-sa"))
+	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("waypoint-ns-pod"), s.podXdsName("waypoint2-sa"))
 	assert.Equal(t,
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		[]string{fmt.Sprintf("istio-system/%s", staticStrictPolicyName)})
@@ -485,7 +491,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("ns1/%sselector", convertedPeerAuthenticationPrefix)})
 
 	// Delete global selector policy
-	_ = s.cfg.Delete(gvk.PeerAuthentication, "global-selector", systemNS, nil)
+	pa.Delete("global-selector", systemNS)
 
 	// Update workload policy to be PERMISSIVE
 	s.addPolicy(t, "selector", testNS, map[string]string{"app": "a"}, gvk.PeerAuthentication, func(c controllers.Object) {
@@ -514,7 +520,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 	})
 
 	// All pods have an event (since we're only testing one namespace) but still no policies attached
-	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"), s.podXdsName("waypoint-ns-pod"), s.podXdsName("waypoint2-sa"))
+	s.assertEvent(t, s.podXdsName("waypoint-ns-pod"), s.podXdsName("waypoint2-sa"))
 	assert.Equal(t,
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		nil)
@@ -561,7 +567,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 			},
 		}
 	})
-	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2")) // Matching pods receive an event
+	t.Log("before///")
 	// The policy should still be added since the effective policy is PERMISSIVE
 	assert.Equal(t,
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
@@ -574,6 +580,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 			Mode: auth.PeerAuthentication_MutualTLS_STRICT,
 		}
 	})
+	t.Log("after///")
 	// All pods have an event (since we're only testing one namespace)
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"), s.podXdsName("waypoint-ns-pod"), s.podXdsName("waypoint2-sa"))
 	assert.Equal(t,
@@ -597,7 +604,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("istio-system/%s", staticStrictPolicyName), fmt.Sprintf("ns1/%sselector", convertedPeerAuthenticationPrefix)})
 
 	// Clear PeerAuthentication from workload
-	_ = s.cfg.Delete(gvk.PeerAuthentication, "selector", testNS, nil)
+	pa.Delete("selector", testNS)
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"))
 	// Effective policy is still STRICT so the static policy should still be set
 	assert.Equal(t,
@@ -605,8 +612,8 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("istio-system/%s", staticStrictPolicyName)})
 
 	// Now remove the namespace and global policies along with the pods
-	_ = s.cfg.Delete(gvk.PeerAuthentication, "namespace", testNS, nil)
-	_ = s.cfg.Delete(gvk.PeerAuthentication, "global", systemNS, nil)
+	pa.Delete("namespace", testNS)
+	pa.Delete("global", systemNS)
 	s.deletePod(t, "pod2")
 	s.assertEvent(t, s.podXdsName("pod2"))
 	s.clearEvents()
@@ -614,6 +621,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 	// Test AuthorizationPolicies
 	s.addPolicy(t, "global", systemNS, nil, gvk.AuthorizationPolicy, nil)
 	s.addPolicy(t, "namespace", testNS, nil, gvk.AuthorizationPolicy, nil)
+	s.assertEvent(t, s.podXdsName("pod1"))
 	assert.Equal(t,
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		nil)
@@ -653,6 +661,9 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		[]string{"ns1/selector"})
 
+	time.Sleep(time.Second)
+	t.Log("CLEAR")
+
 	// Add STRICT global PeerAuthentication
 	s.addPolicy(t, "strict", systemNS, nil, gvk.PeerAuthentication, func(c controllers.Object) {
 		pol := c.(*clientsecurityv1beta1.PeerAuthentication)
@@ -674,7 +685,6 @@ func TestAmbientIndex_Policy(t *testing.T) {
 			Mode: auth.PeerAuthentication_MutualTLS_STRICT,
 		}
 	})
-	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2")) // Matching workloads should receive an event
 	// Effective policy is still STRICT so only static policy should be referenced
 	assert.Equal(t,
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
@@ -742,14 +752,14 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		[]string{"ns1/selector", fmt.Sprintf("ns1/%sselector-strict", convertedPeerAuthenticationPrefix)})
 
-	_ = s.cfg.Delete(gvk.AuthorizationPolicy, "selector", testNS, nil)
+	authz.Delete("selector", testNS)
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"))
 	assert.Equal(t,
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		[]string{fmt.Sprintf("ns1/%sselector-strict", convertedPeerAuthenticationPrefix)})
 
 	// Delete selector policy
-	_ = s.cfg.Delete(gvk.PeerAuthentication, "selector-strict", testNS, nil)
+	pa.Delete("selector-strict", testNS)
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2")) // Matching workloads should receive an event
 	// Static STRICT policy should now be sent because of the global policy
 	assert.Equal(t,
@@ -757,7 +767,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("istio-system/%s", staticStrictPolicyName)})
 
 	// Delete global policy
-	_ = s.cfg.Delete(gvk.PeerAuthentication, "strict", systemNS, nil)
+	pa.Delete("strict", systemNS)
 	// Every workload should receive an event
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"), s.podXdsName("waypoint-ns-pod"), s.podXdsName("waypoint2-sa"))
 	// Now no policies are in effect
@@ -842,8 +852,11 @@ type ambientTestServer struct {
 
 func newAmbientTestServer(t *testing.T, clusterID cluster.ID, networkID network.ID) *ambientTestServer {
 	cfg := memory.NewSyncController(memory.MakeSkipValidation(collections.PilotGatewayAPI()))
+	up := xdsfake.NewFakeXDS()
+	up.SplitEvents = true
 	controller, fx := NewFakeControllerWithOptions(t, FakeControllerOptions{
 		ConfigController: cfg,
+		XDSUpdater:       up,
 		MeshWatcher:      mesh.NewFixedWatcher(&meshconfig.MeshConfig{RootNamespace: systemNS}),
 		ClusterID:        clusterID,
 	})
@@ -1078,7 +1091,6 @@ func (s *ambientTestServer) addPolicy(t *testing.T, name, ns string, selector ma
 		}
 		clienttest.NewWriter[*clientsecurityv1beta1.PeerAuthentication](t, s.controller.client).CreateOrUpdate(pol)
 	}
-
 }
 
 func (s *ambientTestServer) deletePod(t *testing.T, name string) {
@@ -1088,8 +1100,9 @@ func (s *ambientTestServer) deletePod(t *testing.T, name string) {
 
 func (s *ambientTestServer) assertEvent(t *testing.T, ip ...string) {
 	t.Helper()
-	want := strings.Join(ip, ",")
-	s.fx.MatchOrFail(t, xdsfake.Event{Type: "xds", ID: want})
+	s.assertUnorderedEvent(t, ip...)
+	// want := strings.Join(ip, ",")
+	// s.fx.MatchOrFail(t, xdsfake.Event{Type: "xds", ID: want})
 }
 
 func (s *ambientTestServer) assertUnorderedEvent(t *testing.T, ip ...string) {

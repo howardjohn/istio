@@ -15,8 +15,6 @@
 package controller
 
 import (
-	"fmt"
-	"istio.io/istio/pkg/workloadapi/security"
 	"net/netip"
 	"strings"
 
@@ -40,6 +38,7 @@ import (
 	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi"
+	"istio.io/istio/pkg/workloadapi/security"
 )
 
 type WorkloadsCollection struct {
@@ -267,11 +266,13 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 	PeerAuthDerivedPolicies := cv2.NewCollection(PeerAuths, func(ctx cv2.HandlerContext, i *securityclient.PeerAuthentication) *model.WorkloadAuthorization {
 		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
 		pol := convertPeerAuthentication(meshCfg.GetRootNamespace(), i)
-		log.Errorf("howardjohn: compute PA: %v", pol)
 		if pol == nil {
 			return nil
 		}
-		return &model.WorkloadAuthorization{Authorization: pol, LabelSelector: model.NewSelector(i.Spec.GetSelector().GetMatchLabels())}
+		return &model.WorkloadAuthorization{
+			Authorization: pol,
+			LabelSelector: model.NewSelector(i.Spec.GetSelector().GetMatchLabels()),
+		}
 	})
 	DefaultPolicy := cv2.NewSingleton[model.WorkloadAuthorization](func(ctx cv2.HandlerContext) *model.WorkloadAuthorization {
 		if len(cv2.Fetch(ctx, PeerAuths)) == 0 {
@@ -306,6 +307,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 		}
 	})
 
+	// Policies contains all of the policies we will send down to clients
 	Policies := cv2.JoinCollection(AuthzDerivedPolicies, PeerAuthDerivedPolicies, DefaultPolicy.AsCollection())
 	Policies.RegisterBatch(func(events []cv2.Event[model.WorkloadAuthorization]) {
 		cu := sets.New[model.ConfigKey]()
@@ -322,21 +324,44 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 		})
 	})
 	Workloads := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *model.WorkloadInfo {
+		log := log.WithLabels("pod", p.Name)
 		if !IsPodRunning(p) || p.Spec.HostNetwork {
 			return nil
 		}
-		basePolicies := cv2.Fetch(ctx, Policies, cv2.FilterSelects(p.Labels), cv2.FilterGeneric(func(a any) bool {
-			// We only want label selector ones, we handle global ones through another mechanism
+		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
+		// We need to filter from the policies that are present, which apply to us.
+		// We only want label selector ones, we handle global ones through another mechanism.
+		// In general we just take all ofthe policies
+		basePolicies := cv2.Fetch(ctx, AuthzDerivedPolicies, cv2.FilterSelects(p.Labels), cv2.FilterGeneric(func(a any) bool {
 			return a.(model.WorkloadAuthorization).GetLabelSelector() != nil
 		}))
 		policies := slices.Map(basePolicies, func(t model.WorkloadAuthorization) string {
 			return t.ResourceName()
 		})
-		isEffectiveStrictPolicy := true
-		if isEffectiveStrictPolicy {
-			// TODO: do not hardcode bool or istio-system. This will need the convertedSelectorPeerAuthentications logic.
-			policies = append(policies, fmt.Sprintf("%s/%s", "istio-system", staticStrictPolicyName))
-		}
+		// We could do a non-FilterGeneric but cv2 currently blows up if we depend on the same collection twice
+		auths := cv2.Fetch(ctx, PeerAuths, cv2.FilterGeneric(func(a any) bool {
+			pol := a.(*securityclient.PeerAuthentication)
+			if pol.Namespace == meshCfg.GetRootNamespace() && pol.Spec.Selector == nil {
+				return true
+			}
+			if pol.Namespace != p.Namespace {
+				return false
+			}
+			sel := pol.Spec.Selector
+			if sel == nil {
+				return true // No selector matches everything
+			}
+			return labels.Instance(sel.MatchLabels).SubsetOf(p.Labels)
+		}))
+		// auths := cv2.Fetch(ctx, PeerAuths, cv2.FilterNamespace(meshCfg.GetRootNamespace()))
+		// auths = append(auths, cv2.Fetch(ctx, PeerAuths, cv2.FilterSelects(p.Labels), cv2.FilterNamespace(p.Namespace))...)
+		policies = append(policies, c.convertedSelectorPeerAuthentications(meshCfg.GetRootNamespace(), auths)...)
+		log.Errorf("howardjohn: policies %v", policies)
+		//isEffectiveStrictPolicy := true
+		//if isEffectiveStrictPolicy {
+		//	// TODO: do not hardcode bool or istio-system. This will need the convertedSelectorPeerAuthentications logic.
+		//	policies = append(policies, fmt.Sprintf("%s/%s", "istio-system", staticStrictPolicyName))
+		//}
 		log.Errorf("howardjohn: build workload with %v policies", len(policies))
 		services := cv2.Fetch(ctx, Services, cv2.FilterSelects(p.GetLabels()))
 		var waypoints []Waypoint
@@ -501,6 +526,7 @@ func (c *Controller) hostname(svc *v1.Service) string {
 func (c *Controller) namespacedHostname(svc *v1.Service) string {
 	return namespacedHostname(svc.Namespace, c.hostname(svc))
 }
+
 func namespacedHostname(namespace, hostname string) string {
 	return namespace + "/" + hostname
 }
