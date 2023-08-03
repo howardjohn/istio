@@ -15,6 +15,7 @@
 package controller
 
 import (
+	networkingv1alpha3 "istio.io/api/networking/v1alpha3"
 	"net/netip"
 	"strings"
 
@@ -113,7 +114,19 @@ func (a *AmbientIndexImpl) Lookup(key string) []model.AddressInfo {
 
 	// 2. Workload by IP
 	if wls := a.workloads.ByAddress.Lookup(networkAddr); len(wls) > 0 {
-		return slices.Map(wls, modelWorkloadToAddressInfo)
+		// If there is just one, return it
+		if len(wls) == 1 {
+			return []model.AddressInfo{modelWorkloadToAddressInfo(wls[0])}
+		}
+		// Otherwise, try to find a pod - pods have precedence
+		pod := slices.FindFunc(wls, func(info model.WorkloadInfo) bool {
+			return info.Source == kind.Pod
+		})
+		if pod != nil {
+			return []model.AddressInfo{modelWorkloadToAddressInfo(*pod)}
+		}
+		// Otherwise just return the first one; all WorkloadEntry have the same weight
+		return []model.AddressInfo{modelWorkloadToAddressInfo(wls[0])}
 	}
 
 	// 3. Service
@@ -161,8 +174,42 @@ func (a *AmbientIndexImpl) lookupService(key string) *model.ServiceInfo {
 // All return all known workloads. Result is un-ordered
 func (a *AmbientIndexImpl) All() []model.AddressInfo {
 	res := []model.AddressInfo{}
+	type kindindex struct {
+		k     kind.Kind
+		index int
+	}
+	addrm := map[netip.Addr]kindindex{}
 	for _, wl := range a.workloads.List("") {
-		res = append(res, workloadToAddressInfo(wl.Workload))
+		overwrite := -1
+		write := true
+		for _, addr := range wl.Addresses {
+			a := byteIPToAddr(addr)
+			if existing, f := addrm[a]; f {
+				// This address was already found. We want unique addresses in the result.
+				// Pod > WorkloadEntry
+				if wl.Source == kind.Pod && existing.k != kind.Pod {
+					overwrite = existing.index
+					addrm[a] = kindindex{
+						k:     wl.Source,
+						index: overwrite,
+					}
+				} else {
+					write = false
+				}
+			}
+		}
+		if overwrite >= 0 {
+			res[overwrite] = workloadToAddressInfo(wl.Workload)
+		} else if write {
+			res = append(res, workloadToAddressInfo(wl.Workload))
+			for _, addr := range wl.Addresses {
+				a := byteIPToAddr(addr)
+				addrm[a] = kindindex{
+					k:     wl.Source,
+					index: overwrite,
+				}
+			}
+		}
 	}
 	for _, s := range a.services.List("") {
 		res = append(res, serviceToAddressInfo(s.Service))
@@ -300,10 +347,11 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 	})
 
 	ServicesInfo := cv2.NewCollection(Services, func(ctx cv2.HandlerContext, s *v1.Service) *model.ServiceInfo {
-		portNames := map[int32]string{}
+		portNames := map[int32]model.ServicePortName{}
 		for _, p := range s.Spec.Ports {
-			if p.TargetPort.StrVal != "" {
-				portNames[p.Port] = p.TargetPort.StrVal
+			portNames[p.Port] = model.ServicePortName{
+				PortName:       p.Name,
+				TargetPortName: p.TargetPort.StrVal,
 			}
 		}
 		return &model.ServiceInfo{
@@ -314,9 +362,16 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 	})
 	ServiceEntriesInfo := cv2.NewManyCollection(ServiceEntries, func(ctx cv2.HandlerContext, s *networkingclient.ServiceEntry) []model.ServiceInfo {
 		sel := model.NewSelector(s.Spec.GetWorkloadSelector().GetLabels())
+		portNames := map[int32]model.ServicePortName{}
+		for _, p := range s.Spec.Ports {
+			portNames[int32(p.Number)] = model.ServicePortName{
+				PortName: p.Name,
+			}
+		}
 		return slices.Map(c.constructServiceEntries(s), func(e *workloadapi.Service) model.ServiceInfo {
 			return model.ServiceInfo{
 				Service:       e,
+				PortNames:     portNames,
 				LabelSelector: sel,
 			}
 		})
@@ -375,7 +430,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 					return w.ForServiceAccount == "" || w.ForServiceAccount == p.Spec.ServiceAccountName
 				}))
 		}
-		services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterSelectsNonEmpty(p.GetLabels()))
+		services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterNamespace(p.Namespace), cv2.FilterSelectsNonEmpty(p.GetLabels()))
 		status := workloadapi.WorkloadStatus_HEALTHY
 		if !IsPodReady(p) {
 			status = workloadapi.WorkloadStatus_UNHEALTHY
@@ -419,7 +474,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 			w.TunnelProtocol = workloadapi.TunnelProtocol_HBONE
 			w.NativeTunnel = true
 		}
-		return &model.WorkloadInfo{Workload: w, Labels: p.Labels}
+		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: kind.Pod}
 	})
 	WorkloadEntryWorkloads := cv2.NewCollection(WorkloadEntries, func(ctx cv2.HandlerContext, p *networkingclient.WorkloadEntry) *model.WorkloadInfo {
 		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
@@ -457,7 +512,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 					return w.ForServiceAccount == "" || w.ForServiceAccount == p.Spec.ServiceAccount
 				}))
 		}
-		services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterSelectsNonEmpty(p.GetLabels()))
+		services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterNamespace(p.Namespace), cv2.FilterSelectsNonEmpty(p.GetLabels()))
 		network := c.Network(p.Spec.Address, p.Labels).String()
 		if p.Spec.Network != "" {
 			network = p.Spec.Network
@@ -468,7 +523,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 			Namespace:             p.Namespace,
 			Network:               network,
 			ServiceAccount:        p.Spec.ServiceAccount,
-			Services:              c.constructServicesFromWorkloadEntry(p, services),
+			Services:              c.constructServicesFromWorkloadEntry(&p.Spec, services),
 			AuthorizationPolicies: policies,
 			Status:                workloadapi.WorkloadStatus_HEALTHY, // TODO: WE can be unhealthy
 		}
@@ -504,13 +559,19 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 			w.TunnelProtocol = workloadapi.TunnelProtocol_HBONE
 			w.NativeTunnel = true
 		}
-		return &model.WorkloadInfo{Workload: w, Labels: p.Labels}
+		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: kind.WorkloadEntry}
 	})
 	ServiceEntryWorkloads := cv2.NewManyCollection(ServiceEntries, func(ctx cv2.HandlerContext, se *networkingclient.ServiceEntry) []model.WorkloadInfo {
 		if len(se.Spec.Endpoints) == 0 {
 			return nil
 		}
 		res := make([]model.WorkloadInfo, 0, len(se.Spec.Endpoints))
+
+		svc := cv2.FetchOne(ctx, ServiceEntriesInfo, cv2.FilterKey(namespacedHostname(se.Namespace, se.Spec.Hosts[0])))
+		if svc == nil {
+			// Not ready yet
+			return nil
+		}
 		for _, p := range se.Spec.Endpoints {
 			meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
 			// We need to filter from the policies that are present, which apply to us.
@@ -547,7 +608,6 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 						return w.ForServiceAccount == "" || w.ForServiceAccount == p.ServiceAccount
 					}))
 			}
-			services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterSelectsNonEmpty(se.GetLabels()))
 			network := c.Network(p.Address, p.Labels).String()
 			if p.Network != "" {
 				network = p.Network
@@ -558,7 +618,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 				Namespace:             se.Namespace,
 				Network:               network,
 				ServiceAccount:        p.ServiceAccount,
-				Services:              c.constructServicesFromWorkloadEntry(p, services),
+				Services:              c.constructServicesFromWorkloadEntry(p, []model.ServiceInfo{*svc}),
 				AuthorizationPolicies: policies,
 				Status:                workloadapi.WorkloadStatus_HEALTHY, // TODO: WE can be unhealthy
 			}
@@ -594,7 +654,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 				w.TunnelProtocol = workloadapi.TunnelProtocol_HBONE
 				w.NativeTunnel = true
 			}
-			res = append(res, model.WorkloadInfo{Workload: w, Labels: se.Labels})
+			res = append(res, model.WorkloadInfo{Workload: w, Labels: se.Labels, Source: kind.WorkloadEntry})
 		}
 		return res
 	})
@@ -737,8 +797,9 @@ func (c *Controller) constructServices(p *v1.Pod, services []model.ServiceInfo) 
 		res[n] = pl
 		for _, port := range svc.Ports {
 			targetPort := port.TargetPort
-			if named, f := svc.PortNames[int32(port.ServicePort)]; f {
-				tp, ok := FindPortName(p, named)
+			if named, f := svc.PortNames[int32(port.ServicePort)]; f && named.TargetPortName != "" {
+				// Pods only match on TargetPort names
+				tp, ok := FindPortName(p, named.TargetPortName)
 				if !ok {
 					// Port not present for this workload
 					continue
@@ -755,7 +816,7 @@ func (c *Controller) constructServices(p *v1.Pod, services []model.ServiceInfo) 
 	return res
 }
 
-func (c *Controller) constructServicesFromWorkloadEntry(p any, services []model.ServiceInfo) map[string]*workloadapi.PortList {
+func (c *Controller) constructServicesFromWorkloadEntry(p *networkingv1alpha3.WorkloadEntry, services []model.ServiceInfo) map[string]*workloadapi.PortList {
 	res := map[string]*workloadapi.PortList{}
 	for _, svc := range services {
 		n := namespacedHostname(svc.Namespace, svc.Hostname)
@@ -763,10 +824,20 @@ func (c *Controller) constructServicesFromWorkloadEntry(p any, services []model.
 		res[n] = pl
 		for _, port := range svc.Ports {
 			targetPort := port.TargetPort
-			// TODO: we need the port names in ServiceInfo
-			//for _, wlPort := p.Spec.Ports {
-			//
-			//}
+			if named, f := svc.PortNames[int32(port.ServicePort)]; f {
+				// get port name or target port
+				nv, nf := p.Ports[named.PortName]
+				tv, tf := p.Ports[named.TargetPortName]
+				// TODO: is this logic/order correct?
+				if tf {
+					targetPort = tv
+				} else if nf {
+					targetPort = nv
+				} else if named.TargetPortName != "" {
+					// We needed an explicit port, but didn't find one - skip this port
+					continue
+				}
+			}
 			pl.Ports = append(pl.Ports, &workloadapi.Port{
 				ServicePort: port.ServicePort,
 				TargetPort:  targetPort,
@@ -869,6 +940,11 @@ func workloadNameAndType(pod *v1.Pod) (string, workloadapi.WorkloadType) {
 func byteIPToString(b []byte) string {
 	ip, _ := netip.AddrFromSlice(b)
 	return ip.String()
+}
+
+func byteIPToAddr(b []byte) netip.Addr {
+	ip, _ := netip.AddrFromSlice(b)
+	return ip
 }
 
 func (c *Controller) constructService(svc *v1.Service) *workloadapi.Service {

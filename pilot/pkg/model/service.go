@@ -24,6 +24,7 @@ package model
 
 import (
 	"fmt"
+	"istio.io/istio/pkg/config/schema/kind"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -881,12 +882,17 @@ func (i AddressInfo) ResourceName() string {
 	return name
 }
 
+type ServicePortName struct {
+	PortName string
+	TargetPortName string
+}
+
 type ServiceInfo struct {
 	*workloadapi.Service
 	// LabelSelectors for the Service. Note these are only used internally, not sent over XDS
 	LabelSelector
-	// PortNames provides a mapping of ServicePort -> TargetPort name for named ports.  Note these are only used internally, not sent over XDS
-	PortNames map[int32]string
+	// PortNames provides a mapping of ServicePort -> port names. Note these are only used internally, not sent over XDS
+	PortNames map[int32]ServicePortName
 }
 
 func (i ServiceInfo) ResourceName() string {
@@ -901,6 +907,8 @@ type WorkloadInfo struct {
 	*workloadapi.Workload
 	// Labels for the workload. Note these are only used internally, not sent over XDS
 	Labels map[string]string
+	// Source is the type that introduced this workload.
+	Source kind.Kind
 }
 
 func workloadResourceName(w *workloadapi.Workload) string {

@@ -15,7 +15,6 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"net/netip"
 	"path/filepath"
@@ -912,28 +911,11 @@ func (s *ambientTestServer) addPods(t *testing.T, ip string, name, sa string, la
 func (s *ambientTestServer) addWorkloadEntries(t *testing.T, ip string, name, sa string, labels map[string]string) {
 	t.Helper()
 
-	_, _ = s.controller.client.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
+	s.controller.namespaces.Create(&corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "ns1", Labels: map[string]string{"istio.io/dataplane-mode": "ambient"}},
-	}, metav1.CreateOptions{})
+	})
 
-	wkEntry := generateWorkloadEntry(ip, name, "ns1", sa, labels, nil)
-
-	w := config.Config{
-		Meta: config.Meta{
-			GroupVersionKind: gvk.WorkloadEntry,
-			Name:             wkEntry.GetObjectMeta().GetName(),
-			Namespace:        wkEntry.GetObjectMeta().GetNamespace(),
-			Labels:           wkEntry.GetObjectMeta().GetLabels(),
-		},
-		Spec: wkEntry.Spec.DeepCopy(),
-	}
-	_, err := s.cfg.Create(w)
-	if err != nil && strings.Contains(err.Error(), "item already exists") {
-		_, err = s.cfg.Update(w)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.we.CreateOrUpdate(generateWorkloadEntry(ip, name, "ns1", sa, labels, nil))
 }
 
 func generateWorkloadEntry(ip, name, namespace, saName string, labels map[string]string, annotations map[string]string) *apiv1alpha3.WorkloadEntry {
@@ -1012,7 +994,7 @@ func generateServiceEntry(host string, addresses []string, labels map[string]str
 
 func (s *ambientTestServer) deleteServiceEntry(t *testing.T, name, ns string) {
 	t.Helper()
-	_ = s.cfg.Delete(gvk.ServiceEntry, name, ns, nil)
+	s.se.Delete(name, ns)
 }
 
 func (s *ambientTestServer) assertAddresses(t *testing.T, lookup string, names ...string) {

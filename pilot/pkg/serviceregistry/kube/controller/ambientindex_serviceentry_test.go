@@ -31,7 +31,10 @@ import (
 func TestAmbientIndex_ServiceEntry(t *testing.T) {
 	test.SetForTest(t, &features.EnableAmbientControllers, true)
 	s := newAmbientTestServer(t, testC, testNW)
-	cv2.Dump(s.controller.ambientIndex.workloads.Collection)
+	t.Cleanup(func() {
+		cv2.Dump(s.controller.ambientIndex.workloads.Collection)
+		cv2.Dump(s.controller.ambientIndex.services.Collection)
+	})
 
 	// test code path where service entry creates a workload entry via `ServiceEntry.endpoints`
 	// and the inlined WE has a port override
@@ -68,6 +71,7 @@ func TestAmbientIndex_ServiceEntry(t *testing.T) {
 	}})
 
 	s.deleteServiceEntry(t, "name1", testNS)
+	s.assertEvent(t, s.seIPXdsName("name1", "127.0.0.1"), "ns1/se.istio.io")
 	assert.Equal(t, s.lookup(s.addrXdsName("127.0.0.1")), nil)
 	s.clearEvents()
 

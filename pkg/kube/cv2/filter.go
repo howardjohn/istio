@@ -22,6 +22,7 @@ import (
 )
 
 type filter struct {
+	key      string
 	name      string
 	namespace string
 
@@ -34,6 +35,9 @@ type filter struct {
 
 func (f filter) String() string {
 	attrs := []string{}
+	if f.key != "" {
+		attrs = append(attrs, "key="+f.key)
+	}
 	if f.name != "" {
 		attrs = append(attrs, "name="+f.name)
 	}
@@ -61,6 +65,12 @@ func FilterName(name, namespace string) DepOption {
 		h.filter.name = name
 		h.filter.namespace = namespace
 		h.key.name = name
+	}
+}
+
+func FilterKey(k string) DepOption {
+	return func(h *dependency) {
+		h.filter.key = k
 	}
 }
 
@@ -97,6 +107,10 @@ func FilterGeneric(f func(any) bool) DepOption {
 }
 
 func (f filter) Matches(object any) bool {
+	if f.key != "" && f.key != string(GetKey[any](object)) {
+		log.Debugf("no match key: %q vs %q", f.key, string(GetKey[any](object)))
+		return false
+	}
 	if f.name != "" && f.name != GetName(object) {
 		log.Debugf("no match name: %q vs %q", f.name, GetName(object))
 		return false
