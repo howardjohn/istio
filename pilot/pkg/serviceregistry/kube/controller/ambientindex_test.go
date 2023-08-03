@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
+	"istio.io/api/meta/v1alpha1"
 	"istio.io/api/networking/v1alpha3"
 	auth "istio.io/api/security/v1beta1"
 	authz "istio.io/api/security/v1beta1"
@@ -380,8 +381,6 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		log.Errorf("howardjohn: dumping")
 		cv2.Dump(s.controller.ambientIndex.workloads.Collection)
 	})
-	pa := clienttest.NewWriter[*clientsecurityv1beta1.PeerAuthentication](t, s.controller.client)
-	authz := clienttest.NewWriter[*clientsecurityv1beta1.AuthorizationPolicy](t, s.controller.client)
 
 	s.addPods(t, "127.0.0.1", "pod1", "sa1", map[string]string{"app": "a"}, nil, true, corev1.PodRunning)
 	s.assertEvent(t, s.podXdsName("pod1"))
@@ -491,7 +490,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("ns1/%sselector", convertedPeerAuthenticationPrefix)})
 
 	// Delete global selector policy
-	pa.Delete("global-selector", systemNS)
+	s.pa.Delete("global-selector", systemNS)
 
 	// Update workload policy to be PERMISSIVE
 	s.addPolicy(t, "selector", testNS, map[string]string{"app": "a"}, gvk.PeerAuthentication, func(c controllers.Object) {
@@ -604,7 +603,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("istio-system/%s", staticStrictPolicyName), fmt.Sprintf("ns1/%sselector", convertedPeerAuthenticationPrefix)})
 
 	// Clear PeerAuthentication from workload
-	pa.Delete("selector", testNS)
+	s.pa.Delete("selector", testNS)
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"))
 	// Effective policy is still STRICT so the static policy should still be set
 	assert.Equal(t,
@@ -612,8 +611,8 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("istio-system/%s", staticStrictPolicyName)})
 
 	// Now remove the namespace and global policies along with the pods
-	pa.Delete("namespace", testNS)
-	pa.Delete("global", systemNS)
+	s.pa.Delete("namespace", testNS)
+	s.pa.Delete("global", systemNS)
 	s.deletePod(t, "pod2")
 	s.assertEvent(t, s.podXdsName("pod2"))
 	s.clearEvents()
@@ -752,14 +751,14 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		[]string{"ns1/selector", fmt.Sprintf("ns1/%sselector-strict", convertedPeerAuthenticationPrefix)})
 
-	authz.Delete("selector", testNS)
+	s.authz.Delete("selector", testNS)
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"))
 	assert.Equal(t,
 		s.lookup(s.addrXdsName("127.0.0.1"))[0].Address.GetWorkload().AuthorizationPolicies,
 		[]string{fmt.Sprintf("ns1/%sselector-strict", convertedPeerAuthenticationPrefix)})
 
 	// Delete selector policy
-	pa.Delete("selector-strict", testNS)
+	s.pa.Delete("selector-strict", testNS)
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2")) // Matching workloads should receive an event
 	// Static STRICT policy should now be sent because of the global policy
 	assert.Equal(t,
@@ -767,7 +766,7 @@ func TestAmbientIndex_Policy(t *testing.T) {
 		[]string{fmt.Sprintf("istio-system/%s", staticStrictPolicyName)})
 
 	// Delete global policy
-	pa.Delete("strict", systemNS)
+	s.pa.Delete("strict", systemNS)
 	// Every workload should receive an event
 	s.assertEvent(t, s.podXdsName("pod1"), s.podXdsName("pod2"), s.podXdsName("waypoint-ns-pod"), s.podXdsName("waypoint2-sa"))
 	// Now no policies are in effect
@@ -848,6 +847,10 @@ type ambientTestServer struct {
 	fx         *xdsfake.Updater
 	pc         clienttest.TestClient[*corev1.Pod]
 	sc         clienttest.TestClient[*corev1.Service]
+	se         clienttest.TestWriter[*apiv1alpha3.ServiceEntry]
+	we         clienttest.TestWriter[*apiv1alpha3.WorkloadEntry]
+	pa         clienttest.TestWriter[*clientsecurityv1beta1.PeerAuthentication]
+	authz      clienttest.TestWriter[*clientsecurityv1beta1.AuthorizationPolicy]
 }
 
 func newAmbientTestServer(t *testing.T, clusterID cluster.ID, networkID network.ID) *ambientTestServer {
@@ -872,6 +875,10 @@ func newAmbientTestServer(t *testing.T, clusterID cluster.ID, networkID network.
 		fx:         fx,
 		pc:         pc,
 		sc:         sc,
+		se:         clienttest.NewWriter[*apiv1alpha3.ServiceEntry](t, controller.client),
+		we:         clienttest.NewWriter[*apiv1alpha3.WorkloadEntry](t, controller.client),
+		pa:         clienttest.NewWriter[*clientsecurityv1beta1.PeerAuthentication](t, controller.client),
+		authz:      clienttest.NewWriter[*clientsecurityv1beta1.AuthorizationPolicy](t, controller.client),
 	}
 }
 
@@ -953,27 +960,20 @@ func (s *ambientTestServer) deleteWorkloadEntry(t *testing.T, name string) {
 func (s *ambientTestServer) addServiceEntry(t *testing.T, hostStr string, addresses []string, name, ns string, labels map[string]string) {
 	t.Helper()
 
-	_, _ = s.controller.client.Kube().CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
+	s.controller.namespaces.Create(&corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: ns, Labels: map[string]string{"istio.io/dataplane-mode": "ambient"}},
-	}, metav1.CreateOptions{})
+	})
 
-	serviceEntry := generateServiceEntry(hostStr, addresses, labels)
-	w := config.Config{
-		Meta: config.Meta{
-			GroupVersionKind: gvk.ServiceEntry,
-			Name:             name,
-			Namespace:        ns,
-			Labels:           labels,
+	se := &apiv1alpha3.ServiceEntry{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+			Labels:    labels,
 		},
-		Spec: serviceEntry.DeepCopy(),
+		Spec:   *generateServiceEntry(hostStr, addresses, labels),
+		Status: v1alpha1.IstioStatus{},
 	}
-	_, err := s.cfg.Create(w)
-	if err != nil && strings.Contains(err.Error(), "item already exists") {
-		_, err = s.cfg.Update(w)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.se.CreateOrUpdate(se)
 }
 
 func generateServiceEntry(host string, addresses []string, labels map[string]string) *v1alpha3.ServiceEntry {

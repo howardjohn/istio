@@ -58,12 +58,15 @@ type dump interface {
 func Dump[O any](c Collection[O]) {
 	if d, ok := c.(dump); ok {
 		d.Dump()
+	} else {
+		log.Warnf("cannot dump collection %T", c)
 	}
 }
 
 func (h *manyCollection[I, O]) Dump() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.log.Errorf(">>> BEGIN DUMP")
 	for k, v := range h.objectRelations {
 		for kk, vv := range v.dependencies {
 			h.log.Errorf("Dependencies for: %v: %v -> %v (%v)", k, kk, vv.key, vv.filter)
@@ -72,6 +75,7 @@ func (h *manyCollection[I, O]) Dump() {
 	for i, os := range h.collectionState.inputs {
 		h.log.Errorf("Input %v -> %v", i, os.UnsortedList())
 	}
+	h.log.Errorf("<<< END DUMP")
 }
 
 // onUpdate takes a list of I's that changed and reruns the handler over them.

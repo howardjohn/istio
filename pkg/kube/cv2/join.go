@@ -21,6 +21,14 @@ type join[T any] struct {
 	merge       func(ts []T) T
 }
 
+func (j join[I]) Dump() {
+	log.Errorf("> BEGIN DUMP (join)")
+	for _, c := range j.collections {
+		Dump(c)
+	}
+	log.Errorf("< END DUMP (join)")
+}
+
 func (j join[T]) GetKey(k Key[T]) *T {
 	var found []T
 	for _, c := range j.collections {

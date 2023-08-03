@@ -24,9 +24,12 @@ import (
 type filter struct {
 	name      string
 	namespace string
-	selects   map[string]string
-	labels    map[string]string
-	generic   func(any) bool
+
+	// selectsNonEmpty is like selects, but it treats an empty selector as not matching
+	selectsNonEmpty map[string]string
+	selects         map[string]string
+	labels          map[string]string
+	generic         func(any) bool
 }
 
 func (f filter) String() string {
@@ -36,6 +39,9 @@ func (f filter) String() string {
 	}
 	if f.namespace != "" {
 		attrs = append(attrs, "namespace="+f.namespace)
+	}
+	if f.selectsNonEmpty != nil {
+		attrs = append(attrs, fmt.Sprintf("selectsNonEmpty=%v", f.selectsNonEmpty))
 	}
 	if f.selects != nil {
 		attrs = append(attrs, fmt.Sprintf("selects=%v", f.selects))
@@ -64,9 +70,17 @@ func FilterNamespace(namespace string) DepOption {
 	}
 }
 
+// FilterSelects only includes objects that select this label. If the selector is empty, it is a match.
 func FilterSelects(lbls map[string]string) DepOption {
 	return func(h *dependency) {
 		h.filter.selects = lbls
+	}
+}
+
+// FilterSelectsNonEmpty only includes objects that select this label. If the selector is empty, it is not a match.
+func FilterSelectsNonEmpty(lbls map[string]string) DepOption {
+	return func(h *dependency) {
+		h.filter.selectsNonEmpty = lbls
 	}
 }
 
@@ -93,6 +107,10 @@ func (f filter) Matches(object any) bool {
 	}
 	if f.selects != nil && !labels.Instance(GetLabelSelector(object)).SubsetOf(f.selects) {
 		log.Debugf("no match selects: %q vs %q", f.selects, GetLabelSelector(object))
+		return false
+	}
+	if f.selectsNonEmpty != nil && !labels.Instance(GetLabelSelector(object)).Match(f.selectsNonEmpty) {
+		log.Debugf("no match selectsNonEmpty: %q vs %q", f.selectsNonEmpty, GetLabelSelector(object))
 		return false
 	}
 	if f.labels != nil && !labels.Instance(f.labels).SubsetOf(GetLabels(object)) {

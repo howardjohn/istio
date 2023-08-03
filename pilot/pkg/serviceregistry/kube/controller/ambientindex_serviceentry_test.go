@@ -22,6 +22,7 @@ import (
 
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
+	"istio.io/istio/pkg/kube/cv2"
 	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/workloadapi"
@@ -30,12 +31,13 @@ import (
 func TestAmbientIndex_ServiceEntry(t *testing.T) {
 	test.SetForTest(t, &features.EnableAmbientControllers, true)
 	s := newAmbientTestServer(t, testC, testNW)
+	cv2.Dump(s.controller.ambientIndex.workloads.Collection)
 
 	// test code path where service entry creates a workload entry via `ServiceEntry.endpoints`
 	// and the inlined WE has a port override
 	s.addServiceEntry(t, "se.istio.io", []string{"240.240.23.45"}, "name1", testNS, nil)
-	s.assertWorkloads(t, "", workloadapi.WorkloadStatus_HEALTHY, "name1")
 	s.assertEvent(t, s.seIPXdsName("name1", "127.0.0.1"), "ns1/se.istio.io")
+	s.assertWorkloads(t, "", workloadapi.WorkloadStatus_HEALTHY, "name1")
 	assert.Equal(t, s.lookup(s.addrXdsName("127.0.0.1")), []model.AddressInfo{{
 		Address: &workloadapi.Address{
 			Type: &workloadapi.Address_Workload{

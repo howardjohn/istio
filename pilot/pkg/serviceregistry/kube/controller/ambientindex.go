@@ -23,6 +23,7 @@ import (
 	klabels "k8s.io/apimachinery/pkg/labels"
 
 	meshapi "istio.io/api/mesh/v1alpha1"
+	networkingclient "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	securityclient "istio.io/client-go/pkg/apis/security/v1beta1"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
@@ -221,40 +222,16 @@ func (w Waypoint) ResourceName() string {
 
 func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 	ConfigMaps := cv2.NewInformer[*v1.ConfigMap](c.client)
-	MeshConfig := cv2.NewSingleton[meshapi.MeshConfig](
-		func(ctx cv2.HandlerContext) *meshapi.MeshConfig {
-			meshCfg := mesh.DefaultMeshConfig()
-			cms := []*v1.ConfigMap{}
-			cms = cv2.AppendNonNil(cms, cv2.FetchOne(ctx, ConfigMaps, cv2.FilterName("istio-user", c.opts.SystemNamespace)))
-			cms = cv2.AppendNonNil(cms, cv2.FetchOne(ctx, ConfigMaps, cv2.FilterName("istio", c.opts.SystemNamespace)))
-
-			for _, c := range cms {
-				n, err := mesh.ApplyMeshConfig(meshConfigMapData(c), meshCfg)
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				meshCfg = n
-			}
-			return meshCfg
-		},
-	)
 	AuthzPolicies := cv2.NewInformer[*securityclient.AuthorizationPolicy](c.client)
 	PeerAuths := cv2.NewInformer[*securityclient.PeerAuthentication](c.client)
+	ServiceEntries := cv2.NewInformer[*networkingclient.ServiceEntry](c.client)
+	WorkloadEntries := cv2.NewInformer[*networkingclient.WorkloadEntry](c.client)
 	Services := cv2.WrapClient[*v1.Service](c.services)
 	Pods := cv2.WrapClient[*v1.Pod](c.podsClient)
-	Waypoints := cv2.NewCollection(Services, func(ctx cv2.HandlerContext, svc *v1.Service) *Waypoint {
-		if svc.Labels[constants.ManagedGatewayLabel] != constants.ManagedGatewayMeshControllerLabel {
-			// not a waypoint
-			return nil
-		}
-		sa := svc.Annotations[constants.WaypointServiceAccount]
-		return &Waypoint{
-			Named:             cv2.NewNamed(svc.ObjectMeta),
-			ForServiceAccount: sa,
-			Addresses:         getVIPAddrs(svc),
-		}
-	})
+
+	MeshConfig := MeshConfigCollection(ConfigMaps, options)
+	Waypoints := c.Waypointscollection(Services)
+
 	AuthzDerivedPolicies := cv2.NewCollection(AuthzPolicies, func(ctx cv2.HandlerContext, i *securityclient.AuthorizationPolicy) *model.WorkloadAuthorization {
 		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
 		pol := convertAuthorizationPolicy(meshCfg.GetRootNamespace(), i)
@@ -306,7 +283,6 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 			},
 		}
 	})
-
 	// Policies contains all of the policies we will send down to clients
 	Policies := cv2.JoinCollection(AuthzDerivedPolicies, PeerAuthDerivedPolicies, DefaultPolicy.AsCollection())
 	Policies.RegisterBatch(func(events []cv2.Event[model.WorkloadAuthorization]) {
@@ -316,15 +292,51 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 				cu.Insert(model.ConfigKey{Kind: kind.AuthorizationPolicy, Name: i.Authorization.Name, Namespace: i.Authorization.Namespace})
 			}
 		}
-		log.Errorf("howardjohn: policy events: %+v", cu)
 		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
 			Full:           false,
 			ConfigsUpdated: cu,
 			Reason:         model.NewReasonStats(model.AmbientUpdate),
 		})
 	})
-	Workloads := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *model.WorkloadInfo {
-		log := log.WithLabels("pod", p.Name)
+
+	ServicesInfo := cv2.NewCollection(Services, func(ctx cv2.HandlerContext, s *v1.Service) *model.ServiceInfo {
+		portNames := map[int32]string{}
+		for _, p := range s.Spec.Ports {
+			if p.TargetPort.StrVal != "" {
+				portNames[p.Port] = p.TargetPort.StrVal
+			}
+		}
+		return &model.ServiceInfo{
+			Service:       c.constructService(s),
+			PortNames:     portNames,
+			LabelSelector: model.NewSelector(s.Spec.Selector),
+		}
+	})
+	ServiceEntriesInfo := cv2.NewManyCollection(ServiceEntries, func(ctx cv2.HandlerContext, s *networkingclient.ServiceEntry) []model.ServiceInfo {
+		sel := model.NewSelector(s.Spec.GetWorkloadSelector().GetLabels())
+		return slices.Map(c.constructServiceEntries(s), func(e *workloadapi.Service) model.ServiceInfo {
+			return model.ServiceInfo{
+				Service:       e,
+				LabelSelector: sel,
+			}
+		})
+	})
+	WorkloadServices := cv2.JoinCollection(ServicesInfo, ServiceEntriesInfo)
+	WorkloadServices.RegisterBatch(func(events []cv2.Event[model.ServiceInfo]) {
+		cu := sets.New[model.ConfigKey]()
+		for _, e := range events {
+			for _, i := range e.Items() {
+				cu.Insert(model.ConfigKey{Kind: kind.Address, Name: i.ResourceName()})
+			}
+		}
+		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
+			Full:           false,
+			ConfigsUpdated: cu,
+			Reason:         model.NewReasonStats(model.AmbientUpdate),
+		})
+	})
+
+	PodWorkloads := cv2.NewCollection(Pods, func(ctx cv2.HandlerContext, p *v1.Pod) *model.WorkloadInfo {
 		if !IsPodRunning(p) || p.Spec.HostNetwork {
 			return nil
 		}
@@ -353,17 +365,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 			}
 			return labels.Instance(sel.MatchLabels).SubsetOf(p.Labels)
 		}))
-		// auths := cv2.Fetch(ctx, PeerAuths, cv2.FilterNamespace(meshCfg.GetRootNamespace()))
-		// auths = append(auths, cv2.Fetch(ctx, PeerAuths, cv2.FilterSelects(p.Labels), cv2.FilterNamespace(p.Namespace))...)
 		policies = append(policies, c.convertedSelectorPeerAuthentications(meshCfg.GetRootNamespace(), auths)...)
-		log.Errorf("howardjohn: policies %v", policies)
-		//isEffectiveStrictPolicy := true
-		//if isEffectiveStrictPolicy {
-		//	// TODO: do not hardcode bool or istio-system. This will need the convertedSelectorPeerAuthentications logic.
-		//	policies = append(policies, fmt.Sprintf("%s/%s", "istio-system", staticStrictPolicyName))
-		//}
-		log.Errorf("howardjohn: build workload with %v policies", len(policies))
-		services := cv2.Fetch(ctx, Services, cv2.FilterSelects(p.GetLabels()))
 		var waypoints []Waypoint
 		if p.Labels[constants.ManagedGatewayLabel] != constants.ManagedGatewayMeshControllerLabel {
 			// Waypoints do not have waypoints, but anything else does
@@ -373,6 +375,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 					return w.ForServiceAccount == "" || w.ForServiceAccount == p.Spec.ServiceAccountName
 				}))
 		}
+		services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterSelectsNonEmpty(p.GetLabels()))
 		status := workloadapi.WorkloadStatus_HEALTHY
 		if !IsPodReady(p) {
 			status = workloadapi.WorkloadStatus_UNHEALTHY
@@ -394,10 +397,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 			wp := waypoints[0]
 			w.Waypoint = &workloadapi.GatewayAddress{
 				Destination: &workloadapi.GatewayAddress_Address{
-					Address: &workloadapi.NetworkAddress{
-						Network: c.Network(wp.Addresses[0].String(), nil).String(),
-						Address: wp.Addresses[0].AsSlice(),
-					},
+					Address: c.toNetworkAddress(wp.Addresses[0].String()),
 				},
 				// TODO: look up the HBONE port instead of hardcoding it
 				Port: 15008,
@@ -421,23 +421,185 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 		}
 		return &model.WorkloadInfo{Workload: w, Labels: p.Labels}
 	})
-	Workloads.RegisterBatch(func(events []cv2.Event[model.WorkloadInfo]) {
-		cu := sets.New[model.ConfigKey]()
-		for _, e := range events {
-			for _, i := range e.Items() {
-				cu.Insert(model.ConfigKey{Kind: kind.Address, Name: i.ResourceName()})
+	WorkloadEntryWorkloads := cv2.NewCollection(WorkloadEntries, func(ctx cv2.HandlerContext, p *networkingclient.WorkloadEntry) *model.WorkloadInfo {
+		meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
+		// We need to filter from the policies that are present, which apply to us.
+		// We only want label selector ones, we handle global ones through another mechanism.
+		// In general we just take all ofthe policies
+		basePolicies := cv2.Fetch(ctx, AuthzDerivedPolicies, cv2.FilterSelects(p.Labels), cv2.FilterGeneric(func(a any) bool {
+			return a.(model.WorkloadAuthorization).GetLabelSelector() != nil
+		}))
+		policies := slices.Map(basePolicies, func(t model.WorkloadAuthorization) string {
+			return t.ResourceName()
+		})
+		// We could do a non-FilterGeneric but cv2 currently blows up if we depend on the same collection twice
+		auths := cv2.Fetch(ctx, PeerAuths, cv2.FilterGeneric(func(a any) bool {
+			pol := a.(*securityclient.PeerAuthentication)
+			if pol.Namespace == meshCfg.GetRootNamespace() && pol.Spec.Selector == nil {
+				return true
+			}
+			if pol.Namespace != p.Namespace {
+				return false
+			}
+			sel := pol.Spec.Selector
+			if sel == nil {
+				return true // No selector matches everything
+			}
+			return labels.Instance(sel.MatchLabels).SubsetOf(p.Labels)
+		}))
+		policies = append(policies, c.convertedSelectorPeerAuthentications(meshCfg.GetRootNamespace(), auths)...)
+		var waypoints []Waypoint
+		if p.Labels[constants.ManagedGatewayLabel] != constants.ManagedGatewayMeshControllerLabel {
+			// Waypoints do not have waypoints, but anything else does
+			waypoints = cv2.Fetch(ctx, Waypoints,
+				cv2.FilterNamespace(p.Namespace), cv2.FilterGeneric(func(a any) bool {
+					w := a.(Waypoint)
+					return w.ForServiceAccount == "" || w.ForServiceAccount == p.Spec.ServiceAccount
+				}))
+		}
+		services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterSelectsNonEmpty(p.GetLabels()))
+		network := c.Network(p.Spec.Address, p.Labels).String()
+		if p.Spec.Network != "" {
+			network = p.Spec.Network
+		}
+		w := &workloadapi.Workload{
+			Uid:                   c.generateWorkloadEntryUID(p.Namespace, p.Name),
+			Name:                  p.Name,
+			Namespace:             p.Namespace,
+			Network:               network,
+			ServiceAccount:        p.Spec.ServiceAccount,
+			Services:              c.constructServicesFromWorkloadEntry(p, services),
+			AuthorizationPolicies: policies,
+			Status:                workloadapi.WorkloadStatus_HEALTHY, // TODO: WE can be unhealthy
+		}
+
+		if addr, err := netip.ParseAddr(p.Spec.Address); err == nil {
+			w.Addresses = [][]byte{addr.AsSlice()}
+		} else {
+			log.Warnf("skipping workload entry %s/%s; DNS Address resolution is not yet implemented", p.Namespace, p.Name)
+		}
+		if len(waypoints) > 0 {
+			wp := waypoints[0]
+			w.Waypoint = &workloadapi.GatewayAddress{
+				Destination: &workloadapi.GatewayAddress_Address{
+					Address: c.toNetworkAddress(wp.Addresses[0].String()),
+				},
+				// TODO: look up the HBONE port instead of hardcoding it
+				Port: 15008,
 			}
 		}
-		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
-			Full:           false,
-			ConfigsUpdated: cu,
-			Reason:         model.NewReasonStats(model.AmbientUpdate),
-		})
+
+		if td := spiffe.GetTrustDomain(); td != "cluster.local" {
+			w.TrustDomain = td
+		}
+		w.WorkloadName, w.WorkloadType = p.Name, workloadapi.WorkloadType_POD // XXX(shashankram): HACK to impersonate pod
+		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
+
+		if p.Annotations[constants.AmbientRedirection] == constants.AmbientRedirectionEnabled {
+			// Configured for override
+			w.TunnelProtocol = workloadapi.TunnelProtocol_HBONE
+		}
+		// Otherwise supports tunnel directly
+		if model.SupportsTunnel(p.Labels, model.TunnelHTTP) {
+			w.TunnelProtocol = workloadapi.TunnelProtocol_HBONE
+			w.NativeTunnel = true
+		}
+		return &model.WorkloadInfo{Workload: w, Labels: p.Labels}
 	})
-	WorkloadServices := cv2.NewCollection(Services, func(ctx cv2.HandlerContext, s *v1.Service) *model.ServiceInfo {
-		return &model.ServiceInfo{Service: c.constructService(s)}
+	ServiceEntryWorkloads := cv2.NewManyCollection(ServiceEntries, func(ctx cv2.HandlerContext, se *networkingclient.ServiceEntry) []model.WorkloadInfo {
+		if len(se.Spec.Endpoints) == 0 {
+			return nil
+		}
+		res := make([]model.WorkloadInfo, 0, len(se.Spec.Endpoints))
+		for _, p := range se.Spec.Endpoints {
+			meshCfg := cv2.FetchOne(ctx, MeshConfig.AsCollection())
+			// We need to filter from the policies that are present, which apply to us.
+			// We only want label selector ones, we handle global ones through another mechanism.
+			// In general we just take all ofthe policies
+			basePolicies := cv2.Fetch(ctx, AuthzDerivedPolicies, cv2.FilterSelects(se.Labels), cv2.FilterGeneric(func(a any) bool {
+				return a.(model.WorkloadAuthorization).GetLabelSelector() != nil
+			}))
+			policies := slices.Map(basePolicies, func(t model.WorkloadAuthorization) string {
+				return t.ResourceName()
+			})
+			// We could do a non-FilterGeneric but cv2 currently blows up if we depend on the same collection twice
+			auths := cv2.Fetch(ctx, PeerAuths, cv2.FilterGeneric(func(a any) bool {
+				pol := a.(*securityclient.PeerAuthentication)
+				if pol.Namespace == meshCfg.GetRootNamespace() && pol.Spec.Selector == nil {
+					return true
+				}
+				if pol.Namespace != se.Namespace {
+					return false
+				}
+				sel := pol.Spec.Selector
+				if sel == nil {
+					return true // No selector matches everything
+				}
+				return labels.Instance(sel.MatchLabels).SubsetOf(p.Labels)
+			}))
+			policies = append(policies, c.convertedSelectorPeerAuthentications(meshCfg.GetRootNamespace(), auths)...)
+			var waypoints []Waypoint
+			if p.Labels[constants.ManagedGatewayLabel] != constants.ManagedGatewayMeshControllerLabel {
+				// Waypoints do not have waypoints, but anything else does
+				waypoints = cv2.Fetch(ctx, Waypoints,
+					cv2.FilterNamespace(se.Namespace), cv2.FilterGeneric(func(a any) bool {
+						w := a.(Waypoint)
+						return w.ForServiceAccount == "" || w.ForServiceAccount == p.ServiceAccount
+					}))
+			}
+			services := cv2.Fetch(ctx, WorkloadServices, cv2.FilterSelectsNonEmpty(se.GetLabels()))
+			network := c.Network(p.Address, p.Labels).String()
+			if p.Network != "" {
+				network = p.Network
+			}
+			w := &workloadapi.Workload{
+				Uid:                   c.generateServiceEntryUID(se.Namespace, se.Name, p.Address),
+				Name:                  se.Name,
+				Namespace:             se.Namespace,
+				Network:               network,
+				ServiceAccount:        p.ServiceAccount,
+				Services:              c.constructServicesFromWorkloadEntry(p, services),
+				AuthorizationPolicies: policies,
+				Status:                workloadapi.WorkloadStatus_HEALTHY, // TODO: WE can be unhealthy
+			}
+
+			if addr, err := netip.ParseAddr(p.Address); err == nil {
+				w.Addresses = [][]byte{addr.AsSlice()}
+			} else {
+				log.Warnf("skipping workload entry %s/%s; DNS Address resolution is not yet implemented", se.Namespace, se.Name)
+			}
+			if len(waypoints) > 0 {
+				wp := waypoints[0]
+				w.Waypoint = &workloadapi.GatewayAddress{
+					Destination: &workloadapi.GatewayAddress_Address{
+						Address: c.toNetworkAddress(wp.Addresses[0].String()),
+					},
+					// TODO: look up the HBONE port instead of hardcoding it
+					Port: 15008,
+				}
+			}
+
+			if td := spiffe.GetTrustDomain(); td != "cluster.local" {
+				w.TrustDomain = td
+			}
+			w.WorkloadName, w.WorkloadType = se.Name, workloadapi.WorkloadType_POD // XXX(shashankram): HACK to impersonate pod
+			w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(se.Labels, w.WorkloadName)
+
+			if se.Annotations[constants.AmbientRedirection] == constants.AmbientRedirectionEnabled {
+				// Configured for override
+				w.TunnelProtocol = workloadapi.TunnelProtocol_HBONE
+			}
+			// Otherwise supports tunnel directly
+			if model.SupportsTunnel(se.Labels, model.TunnelHTTP) {
+				w.TunnelProtocol = workloadapi.TunnelProtocol_HBONE
+				w.NativeTunnel = true
+			}
+			res = append(res, model.WorkloadInfo{Workload: w, Labels: se.Labels})
+		}
+		return res
 	})
-	WorkloadServices.RegisterBatch(func(events []cv2.Event[model.ServiceInfo]) {
+	Workloads := cv2.JoinCollection(PodWorkloads, WorkloadEntryWorkloads, ServiceEntryWorkloads)
+	Workloads.RegisterBatch(func(events []cv2.Event[model.WorkloadInfo]) {
 		cu := sets.New[model.ConfigKey]()
 		for _, e := range events {
 			for _, i := range e.Items() {
@@ -491,6 +653,42 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 	}
 }
 
+func (c *Controller) Waypointscollection(Services cv2.Collection[*v1.Service]) cv2.Collection[Waypoint] {
+	return cv2.NewCollection(Services, func(ctx cv2.HandlerContext, svc *v1.Service) *Waypoint {
+		if svc.Labels[constants.ManagedGatewayLabel] != constants.ManagedGatewayMeshControllerLabel {
+			// not a waypoint
+			return nil
+		}
+		sa := svc.Annotations[constants.WaypointServiceAccount]
+		return &Waypoint{
+			Named:             cv2.NewNamed(svc.ObjectMeta),
+			ForServiceAccount: sa,
+			Addresses:         getVIPAddrs(svc),
+		}
+	})
+}
+
+func MeshConfigCollection(ConfigMaps cv2.Collection[*v1.ConfigMap], options Options) cv2.Singleton[meshapi.MeshConfig] {
+	return cv2.NewSingleton[meshapi.MeshConfig](
+		func(ctx cv2.HandlerContext) *meshapi.MeshConfig {
+			meshCfg := mesh.DefaultMeshConfig()
+			cms := []*v1.ConfigMap{}
+			cms = cv2.AppendNonNil(cms, cv2.FetchOne(ctx, ConfigMaps, cv2.FilterName("istio-user", options.SystemNamespace)))
+			cms = cv2.AppendNonNil(cms, cv2.FetchOne(ctx, ConfigMaps, cv2.FilterName("istio", options.SystemNamespace)))
+
+			for _, c := range cms {
+				n, err := mesh.ApplyMeshConfig(meshConfigMapData(c), meshCfg)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				meshCfg = n
+			}
+			return meshCfg
+		},
+	)
+}
+
 func (c *Controller) getPodsInService(svc *v1.Service) []*v1.Pod {
 	if svc.Spec.Selector == nil {
 		// services with nil selectors match nothing, not everything.
@@ -531,24 +729,47 @@ func namespacedHostname(namespace, hostname string) string {
 	return namespace + "/" + hostname
 }
 
-func (c *Controller) constructServices(p *v1.Pod, services []*v1.Service) map[string]*workloadapi.PortList {
+func (c *Controller) constructServices(p *v1.Pod, services []model.ServiceInfo) map[string]*workloadapi.PortList {
 	res := map[string]*workloadapi.PortList{}
 	for _, svc := range services {
-		n := c.namespacedHostname(svc)
-		if res[n] == nil {
-			res[n] = &workloadapi.PortList{}
+		n := namespacedHostname(svc.Namespace, svc.Hostname)
+		pl := &workloadapi.PortList{}
+		res[n] = pl
+		for _, port := range svc.Ports {
+			targetPort := port.TargetPort
+			if named, f := svc.PortNames[int32(port.ServicePort)]; f {
+				tp, ok := FindPortName(p, named)
+				if !ok {
+					// Port not present for this workload
+					continue
+				}
+				targetPort = uint32(tp)
+			}
+
+			pl.Ports = append(pl.Ports, &workloadapi.Port{
+				ServicePort: port.ServicePort,
+				TargetPort:  targetPort,
+			})
 		}
-		for _, port := range svc.Spec.Ports {
-			if port.Protocol != v1.ProtocolTCP {
-				continue
-			}
-			targetPort, err := FindPort(p, &port)
-			if err != nil {
-				continue
-			}
-			res[n].Ports = append(res[n].Ports, &workloadapi.Port{
-				ServicePort: uint32(port.Port),
-				TargetPort:  uint32(targetPort),
+	}
+	return res
+}
+
+func (c *Controller) constructServicesFromWorkloadEntry(p any, services []model.ServiceInfo) map[string]*workloadapi.PortList {
+	res := map[string]*workloadapi.PortList{}
+	for _, svc := range services {
+		n := namespacedHostname(svc.Namespace, svc.Hostname)
+		pl := &workloadapi.PortList{}
+		res[n] = pl
+		for _, port := range svc.Ports {
+			targetPort := port.TargetPort
+			// TODO: we need the port names in ServiceInfo
+			//for _, wlPort := p.Spec.Ports {
+			//
+			//}
+			pl.Ports = append(pl.Ports, &workloadapi.Port{
+				ServicePort: port.ServicePort,
+				TargetPort:  targetPort,
 			})
 		}
 	}
@@ -660,19 +881,41 @@ func (c *Controller) constructService(svc *v1.Service) *workloadapi.Service {
 	}
 
 	// TODO this is only checking one controller - we may be missing service vips for instances in another cluster
-	vips := getVIPs(svc)
-	addrs := make([]*workloadapi.NetworkAddress, 0, len(vips))
-	for _, vip := range vips {
-		addrs = append(addrs, &workloadapi.NetworkAddress{
-			Network: c.Network(vip, make(labels.Instance, 0)).String(),
-			Address: netip.MustParseAddr(vip).AsSlice(),
-		})
-	}
 	return &workloadapi.Service{
 		Name:      svc.Name,
 		Namespace: svc.Namespace,
 		Hostname:  string(kube.ServiceHostname(svc.Name, svc.Namespace, c.opts.DomainSuffix)),
-		Addresses: addrs,
+		Addresses: slices.Map(getVIPs(svc), c.toNetworkAddress),
 		Ports:     ports,
+	}
+}
+
+func (c *Controller) constructServiceEntries(svc *networkingclient.ServiceEntry) []*workloadapi.Service {
+	ports := make([]*workloadapi.Port, 0, len(svc.Spec.Ports))
+	for _, p := range svc.Spec.Ports {
+		ports = append(ports, &workloadapi.Port{
+			ServicePort: p.Number,
+			TargetPort:  p.TargetPort,
+		})
+	}
+
+	// TODO this is only checking one controller - we may be missing service vips for instances in another cluster
+	res := make([]*workloadapi.Service, 0, len(svc.Spec.Hosts))
+	for _, h := range svc.Spec.Hosts {
+		res = append(res, &workloadapi.Service{
+			Name:      svc.Name,
+			Namespace: svc.Namespace,
+			Hostname:  h,
+			Addresses: slices.Map(svc.Spec.Addresses, c.toNetworkAddress),
+			Ports:     ports,
+		})
+	}
+	return res
+}
+
+func (c *Controller) toNetworkAddress(vip string) *workloadapi.NetworkAddress {
+	return &workloadapi.NetworkAddress{
+		Network: c.Network(vip, make(labels.Instance, 0)).String(),
+		Address: netip.MustParseAddr(vip).AsSlice(),
 	}
 }

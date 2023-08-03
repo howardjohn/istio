@@ -883,6 +883,10 @@ func (i AddressInfo) ResourceName() string {
 
 type ServiceInfo struct {
 	*workloadapi.Service
+	// LabelSelectors for the Service. Note these are only used internally, not sent over XDS
+	LabelSelector
+	// PortNames provides a mapping of ServicePort -> TargetPort name for named ports.  Note these are only used internally, not sent over XDS
+	PortNames map[int32]string
 }
 
 func (i ServiceInfo) ResourceName() string {
