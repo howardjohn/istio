@@ -17,6 +17,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -69,6 +70,7 @@ func newResource() *resource.Resource {
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
+			semconv.ServiceName("test"),
 			// TODO: consider adding attributes here.
 			// Component, hostname, version are all possibly useful
 		),
@@ -124,5 +126,5 @@ func InitializeFullBinary(rootSpan string) (context.Context, func(), error) {
 }
 
 func Start(ctx context.Context, span string) (context.Context, traceapi.Span) {
-	return tracer().Start(ctx, span)
+	return tracer().Start(ctx, span, traceapi.WithAttributes(attribute.String("service.name", "svc")))
 }

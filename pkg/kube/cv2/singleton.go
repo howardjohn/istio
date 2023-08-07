@@ -58,7 +58,11 @@ func (s singletonAdapter[T]) List(namespace string) []T {
 var _ Collection[any] = &singletonAdapter[any]{}
 
 func (h *singleton[T]) execute(ctx context.Context) {
-	res := h.handle(h)
+	c := &singletonCtx[T]{
+		deps: &h.deps,
+		ctx:  ctx,
+	}
+	res := h.handle(c)
 	oldRes := h.state.Swap(res)
 	updated := !Equal(res, oldRes)
 	if updated {
@@ -100,7 +104,7 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 		log := log.WithLabels("dep", dep.key)
 		log.Debugf("insert dep, filter: %+v", dep.filter)
 		dep.collection.register(func(ctx context.Context, events []Event[any]) {
-			ctx, span := tracing.Start(ctx, fmt.Sprintf("handle %v for singleton[%v]", GetTypeOf(events[0].Latest()), ptr.TypeName[T]()))
+			ctx, span := tracing.Start(ctx, fmt.Sprintf("dependency %v for singleton[%v]", GetTypeOf(events[0].Latest()), ptr.TypeName[T]()))
 			defer span.End()
 			mu.Lock()
 			defer mu.Unlock()
@@ -146,6 +150,11 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 	return h
 }
 
+type singletonCtx[T any] struct {
+	deps       *dependencies
+	ctx context.Context
+}
+
 type singleton[T any] struct {
 	deps       dependencies
 	handle     HandleEmpty[T]
@@ -154,7 +163,7 @@ type singleton[T any] struct {
 	state      *atomic.Pointer[T]
 }
 
-func (h *singleton[T]) _internalHandler() {
+func (h *singletonCtx[T]) _internalHandler() {
 }
 
 func (h *singleton[T]) AsCollection() Collection[T] {
@@ -179,11 +188,15 @@ func (h *singleton[T]) RegisterBatch(f func(ctx context.Context, o []Event[T])) 
 	if len(objs) > 0 {
 		f(context.Background(), objs)
 	}
-	h.handlers = append(h.handlers, f)
+	h.handlers = append(h.handlers, func(ctx context.Context, o []Event[T]) {
+		ctx, span := tracing.Start(ctx, fmt.Sprintf("run handler for single[%v]", ptr.TypeName[T]()))
+		defer span.End()
+		f(ctx, o)
+	})
 }
 
 // registerDependency creates a
-func (h *singleton[T]) registerDependency(d dependency) bool {
+func (h *singletonCtx[T]) registerDependency(d dependency) bool {
 	_, exists := h.deps.dependencies[d.key]
 	if exists && !h.deps.finalized {
 		panic(fmt.Sprintf("dependency already registered, %+v", d.key))
@@ -193,6 +206,10 @@ func (h *singleton[T]) registerDependency(d dependency) bool {
 	}
 	h.deps.dependencies[d.key] = d
 	return h.deps.finalized
+}
+
+func (h *singletonCtx[T]) getctx() context.Context {
+	return h.ctx
 }
 
 func (h *singleton[T]) Get() *T {

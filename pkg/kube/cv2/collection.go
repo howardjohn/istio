@@ -81,7 +81,7 @@ func (h *manyCollection[I, O]) Dump() {
 }
 
 // onUpdate takes a list of I's that changed and reruns the handler over them.
-func (h *manyCollection[I, O]) onUpdate(ctx context.Context,items []Event[any]) {
+func (h *manyCollection[I, O]) onUpdate(ctx context.Context, items []Event[any]) {
 	var events []Event[O]
 	for _, a := range items {
 		i := a.Latest().(I)
@@ -123,9 +123,11 @@ func (h *manyCollection[I, O]) onUpdate(ctx context.Context,items []Event[any]) 
 			h.mu.Unlock()
 		} else {
 			h.mu.Unlock()
-			ctx := &indexedManyCollection[I, O]{h, d, ctx}
+			tctx, span := tracing.Start(ctx, fmt.Sprintf("recompute collection[%v, %v] from  %v", ptr.TypeName[I](), ptr.TypeName[O](), GetKey(i)))
+			ctx := &indexedManyCollection[I, O]{h, d, tctx}
 			// Handler shouldn't be called with lock
 			results := slices.GroupUnique(h.handle(ctx, i), GetKey[O])
+			span.End()
 			h.mu.Lock()
 			newKeys := sets.New(maps.Keys(results)...)
 			oldKeys := h.collectionState.inputs[iKey]
@@ -173,6 +175,7 @@ func (h *manyCollection[I, O]) onUpdate(ctx context.Context,items []Event[any]) 
 	h.handlersMu.RUnlock()
 
 	log.WithLabels("events", len(events), "handlers", len(handlers)).Debugf("calling handlers")
+	log.WithLabels("events", len(events), "handlers", len(handlers)).Errorf("howardjohn: calling handlers")
 	for _, handler := range handlers {
 		handler(ctx, events)
 	}
@@ -217,6 +220,8 @@ func newManyCollection[I, O any](c Collection[I], hf HandleMulti[I, O], name str
 	}))
 	// Setup primary manyCollection. On any change, trigger only that one
 	c.RegisterBatch(func(ctx context.Context, events []Event[I]) {
+		ctx, span := tracing.Start(ctx, fmt.Sprintf("primary change for collection[%v->%v]", ptr.TypeName[I](), ptr.TypeName[O]()))
+		defer span.End()
 		log := h.log.WithLabels("dep", "primary")
 		log.WithLabels("batch", len(events)).Debugf("got event")
 		h.onUpdate(ctx, slices.Map(events, castEvent[I, any]))
@@ -227,7 +232,7 @@ func newManyCollection[I, O any](c Collection[I], hf HandleMulti[I, O], name str
 // Handler is called when a dependency changes. We will take as inputs the item that changed.
 // Then we find all of our own values (I) that changed and onUpdate() them
 func (h *manyCollection[I, O]) onDependencyEvent(ctx context.Context, events []Event[any]) {
-	ctx, span := tracing.Start(ctx, fmt.Sprintf("handle %v for collection[%v->%v]", GetTypeOf(events[0].Latest()), ptr.TypeName[I](), ptr.TypeName[O]()))
+	ctx, span := tracing.Start(ctx, fmt.Sprintf("dependency %v for collection[%v->%v]", GetTypeOf(events[0].Latest()), ptr.TypeName[I](), ptr.TypeName[O]()))
 	defer span.End()
 	h.mu.Lock()
 	// Got an event. Now we need to find out who depends on it..
@@ -341,7 +346,11 @@ func (h *manyCollection[I, O]) RegisterBatch(f func(ctx context.Context, o []Eve
 	h.handlersMu.Lock()
 	defer h.handlersMu.Unlock()
 	// TODO: locking here is probably not reliable to avoid duplicate events
-	h.handlers = append(h.handlers, f)
+	h.handlers = append(h.handlers, func(ctx context.Context, o []Event[O]) {
+		ctx, span := tracing.Start(ctx, fmt.Sprintf("run handler for collection[%v, %v]", ptr.TypeName[I](), ptr.TypeName[O]()))
+		defer span.End()
+		f(ctx, o)
+	})
 	// Send all existing objects through handler
 	objs := slices.Map(h.List(metav1.NamespaceAll), func(t O) Event[O] {
 		return Event[O]{
@@ -355,8 +364,8 @@ func (h *manyCollection[I, O]) RegisterBatch(f func(ctx context.Context, o []Eve
 }
 
 type indexedManyCollection[I, O any] struct {
-	h *manyCollection[I, O]
-	d dependencies
+	h   *manyCollection[I, O]
+	d   dependencies
 	ctx context.Context
 }
 

@@ -44,7 +44,8 @@ func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	if c, ok := ctx.(ctxer); ok {
 		_, span := tracing.Start(c.getctx(), fmt.Sprintf("Collection Fetch[%v]()", ptr.TypeName[T]()))
 		defer span.End()
-
+	} else {
+		log.Errorf("howardjohn: not a ctxer %T", ctx)
 	}
 	d := dependency{
 		collection: eraseCollection(c),

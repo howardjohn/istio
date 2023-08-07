@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"istio.io/istio/pkg/tracing"
+	"sync"
 
 	"golang.org/x/exp/slices"
 	klabels "k8s.io/apimachinery/pkg/labels"
@@ -34,6 +35,64 @@ import (
 type informer[I controllers.ComparableObject] struct {
 	inf kclient.Informer[I]
 	log *istiolog.Scope
+
+	handlers *handlers[I]
+}
+
+type handlers[I controllers.ComparableObject] struct {
+	handlersMu sync.Mutex
+	handlers   []func(ctx context.Context, o Event[any])
+}
+
+func (h *handlers[I]) handler() cache.ResourceEventHandler {
+	return cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj any) {
+			ctx, span := tracing.Start(context.Background(), fmt.Sprintf("incoming event for informer[%v]", ptr.TypeName[I]()))
+			defer span.End()
+			h.handlersMu.Lock()
+			handlers := slices.Clone(h.handlers)
+			h.handlersMu.Unlock()
+			for _, handler := range handlers {
+				handler(ctx, Event[any]{
+					New:   &obj,
+					Event: controllers.EventAdd,
+				})
+			}
+		},
+		UpdateFunc: func(oldInterface, newInterface any) {
+			ctx, span := tracing.Start(context.Background(), fmt.Sprintf("incoming event for informer[%v]", ptr.TypeName[I]()))
+			defer span.End()
+			h.handlersMu.Lock()
+			handlers := slices.Clone(h.handlers)
+			h.handlersMu.Unlock()
+			for _, handler := range handlers {
+				handler(ctx, Event[any]{
+					New:   &newInterface,
+					Old:   &oldInterface,
+					Event: controllers.EventUpdate,
+				})
+			}
+		},
+		DeleteFunc: func(obj any) {
+			ctx, span := tracing.Start(context.Background(), fmt.Sprintf("incoming event for informer[%v]", ptr.TypeName[I]()))
+			defer span.End()
+			h.handlersMu.Lock()
+			handlers := slices.Clone(h.handlers)
+			h.handlersMu.Unlock()
+			for _, handler := range handlers {
+				handler(ctx, Event[any]{
+					Old:   &obj,
+					Event: controllers.EventDelete,
+				})
+			}
+		},
+	}
+}
+
+func (h *handlers[I]) add(f func(ctx context.Context, o Event[any])) {
+	h.handlersMu.Lock()
+	defer h.handlersMu.Unlock()
+	h.handlers = append(h.handlers, f)
 }
 
 var _ Collection[controllers.Object] = &informer[controllers.Object]{}
@@ -65,10 +124,10 @@ func (i informer[I]) Register(f func(ctx context.Context, o Event[I])) {
 }
 
 func (i informer[I]) RegisterBatch(f func(ctx context.Context, o []Event[I])) {
-	i.inf.AddEventHandler(EventHandler[I](func(ctx context.Context, o Event[any]) {
+	i.handlers.add(func(ctx context.Context, o Event[any]) {
 		i.log.WithLabels("key", GetKey(o.Latest()), "type", o.Event).Debugf("handling event")
 		f(ctx, []Event[I]{castEvent[any, I](o)})
-	}))
+	})
 }
 
 func EventHandler[I any](handler func(ctx context.Context, o Event[any])) cache.ResourceEventHandler {
@@ -102,7 +161,13 @@ func EventHandler[I any](handler func(ctx context.Context, o Event[any])) cache.
 }
 
 func WrapClient[I controllers.ComparableObject](c kclient.Informer[I]) Collection[I] {
-	return informer[I]{c, log.WithLabels("owner", fmt.Sprintf("NewInformer[%v]", ptr.TypeName[I]()))}
+	h := &handlers[I]{}
+	c.AddEventHandler(h.handler())
+	return informer[I]{
+		inf:      c,
+		log:      log.WithLabels("owner", fmt.Sprintf("NewInformer[%v]", ptr.TypeName[I]())),
+		handlers: h,
+	}
 }
 
 func NewInformer[I controllers.ComparableObject](c kube.Client) Collection[I] {
