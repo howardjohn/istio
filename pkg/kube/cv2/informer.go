@@ -15,7 +15,9 @@
 package cv2
 
 import (
+	"context"
 	"fmt"
+	"istio.io/istio/pkg/tracing"
 
 	"golang.org/x/exp/slices"
 	klabels "k8s.io/apimachinery/pkg/labels"
@@ -58,34 +60,40 @@ func (i informer[I]) GetKey(k Key[I]) *I {
 	return nil
 }
 
-func (i informer[I]) Register(f func(o Event[I])) {
+func (i informer[I]) Register(f func(ctx context.Context, o Event[I])) {
 	batchedRegister[I](i, f)
 }
 
-func (i informer[I]) RegisterBatch(f func(o []Event[I])) {
-	i.inf.AddEventHandler(EventHandler(func(o Event[any]) {
+func (i informer[I]) RegisterBatch(f func(ctx context.Context, o []Event[I])) {
+	i.inf.AddEventHandler(EventHandler[I](func(ctx context.Context, o Event[any]) {
 		i.log.WithLabels("key", GetKey(o.Latest()), "type", o.Event).Debugf("handling event")
-		f([]Event[I]{castEvent[any, I](o)})
+		f(ctx, []Event[I]{castEvent[any, I](o)})
 	}))
 }
 
-func EventHandler(handler func(o Event[any])) cache.ResourceEventHandler {
+func EventHandler[I any](handler func(ctx context.Context, o Event[any])) cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
-			handler(Event[any]{
+			ctx, span := tracing.Start(context.Background(), fmt.Sprintf("informer[%v]", ptr.TypeName[I]()))
+			defer span.End()
+			handler(ctx, Event[any]{
 				New:   &obj,
 				Event: controllers.EventAdd,
 			})
 		},
 		UpdateFunc: func(oldInterface, newInterface any) {
-			handler(Event[any]{
+			ctx, span := tracing.Start(context.Background(), fmt.Sprintf("informer[%v]", ptr.TypeName[I]()))
+			defer span.End()
+			handler(ctx, Event[any]{
 				Old:   &oldInterface,
 				New:   &newInterface,
 				Event: controllers.EventUpdate,
 			})
 		},
 		DeleteFunc: func(obj any) {
-			handler(Event[any]{
+			ctx, span := tracing.Start(context.Background(), fmt.Sprintf("informer[%v]", ptr.TypeName[I]()))
+			defer span.End()
+			handler(ctx, Event[any]{
 				Old:   &obj,
 				Event: controllers.EventDelete,
 			})

@@ -15,7 +15,10 @@
 package cv2
 
 import (
+	"context"
 	"fmt"
+	"istio.io/istio/pkg/ptr"
+	"istio.io/istio/pkg/tracing"
 )
 
 func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T {
@@ -30,10 +33,19 @@ func FetchOne[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) *T 
 	}
 }
 
+type ctxer interface {
+	getctx() context.Context
+}
+
 func Fetch[T any](ctx HandlerContext, c Collection[T], opts ...DepOption) []T {
 	// First, set up the dependency. On first run, this will be new.
 	// One subsequent runs, we just validate
 	h := ctx.(depper)
+	if c, ok := ctx.(ctxer); ok {
+		_, span := tracing.Start(c.getctx(), fmt.Sprintf("Collection Fetch[%v]()", ptr.TypeName[T]()))
+		defer span.End()
+
+	}
 	d := dependency{
 		collection: eraseCollection(c),
 		key:        depKey{dtype: GetType[T]()},

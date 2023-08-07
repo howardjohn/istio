@@ -15,7 +15,9 @@
 package cv2
 
 import (
+	"context"
 	"fmt"
+	"istio.io/istio/pkg/tracing"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -31,13 +33,13 @@ type singletonAdapter[T any] struct {
 	s Singleton[T]
 }
 
-func (s singletonAdapter[T]) RegisterBatch(f func(o []Event[T])) {
-	s.s.Register(func(o Event[T]) {
-		f([]Event[T]{o})
+func (s singletonAdapter[T]) RegisterBatch(f func(ctx context.Context, o []Event[T])) {
+	s.s.Register(func(ctx context.Context, o Event[T]) {
+		f(ctx, []Event[T]{o})
 	})
 }
 
-func (s singletonAdapter[T]) Register(f func(o Event[T])) {
+func (s singletonAdapter[T]) Register(f func(ctx context.Context, o Event[T])) {
 	s.s.Register(f)
 }
 
@@ -55,7 +57,7 @@ func (s singletonAdapter[T]) List(namespace string) []T {
 
 var _ Collection[any] = &singletonAdapter[any]{}
 
-func (h *singleton[T]) execute() {
+func (h *singleton[T]) execute(ctx context.Context) {
 	res := h.handle(h)
 	oldRes := h.state.Swap(res)
 	updated := !Equal(res, oldRes)
@@ -67,7 +69,7 @@ func (h *singleton[T]) execute() {
 			} else if res == nil {
 				event = controllers.EventDelete
 			}
-			handler([]Event[T]{{
+			handler(ctx, []Event[T]{{
 				Old:   oldRes,
 				New:   res,
 				Event: event,
@@ -90,14 +92,16 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 	// hf(h)
 	// TODO: wait for dependencies to be ready
 	// Populate initial state. It is a singleton so we don't have any hard dependencies
-	h.execute()
+	h.execute(context.Background())
 	h.deps.finalized = true
 	mu := sync.Mutex{}
 	for _, dep := range h.deps.dependencies {
 		dep := dep
 		log := log.WithLabels("dep", dep.key)
 		log.Debugf("insert dep, filter: %+v", dep.filter)
-		dep.collection.register(func(events []Event[any]) {
+		dep.collection.register(func(ctx context.Context, events []Event[any]) {
+			ctx, span := tracing.Start(ctx, fmt.Sprintf("handle %v for singleton[%v]", GetTypeOf(events[0].Latest()), ptr.TypeName[T]()))
+			defer span.End()
 			mu.Lock()
 			defer mu.Unlock()
 			matched := false
@@ -135,7 +139,7 @@ func NewSingleton[T any](hf HandleEmpty[T]) Singleton[T] {
 				}
 			}
 			if matched {
-				h.execute()
+				h.execute(ctx)
 			}
 		})
 	}
@@ -146,7 +150,7 @@ type singleton[T any] struct {
 	deps       dependencies
 	handle     HandleEmpty[T]
 	handlersMu sync.RWMutex
-	handlers   []func(o []Event[T])
+	handlers   []func(ctx context.Context, o []Event[T])
 	state      *atomic.Pointer[T]
 }
 
@@ -157,11 +161,11 @@ func (h *singleton[T]) AsCollection() Collection[T] {
 	return singletonAdapter[T]{h}
 }
 
-func (h *singleton[T]) Register(f func(o Event[T])) {
+func (h *singleton[T]) Register(f func(ctx context.Context, o Event[T])) {
 	batchedRegister[T](h, f)
 }
 
-func (h *singleton[T]) RegisterBatch(f func(o []Event[T])) {
+func (h *singleton[T]) RegisterBatch(f func(ctx context.Context, o []Event[T])) {
 	h.handlersMu.Lock()
 	defer h.handlersMu.Unlock()
 	// TODO: locking here is probably not reliable to avoid duplicate events
@@ -173,7 +177,7 @@ func (h *singleton[T]) RegisterBatch(f func(o []Event[T])) {
 		}
 	})
 	if len(objs) > 0 {
-		f(objs)
+		f(context.Background(), objs)
 	}
 	h.handlers = append(h.handlers, f)
 }

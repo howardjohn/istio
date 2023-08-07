@@ -14,7 +14,10 @@
 
 package cv2
 
-import "istio.io/istio/pkg/ptr"
+import (
+	"context"
+	"istio.io/istio/pkg/ptr"
+)
 
 type join[T any] struct {
 	collections []Collection[T]
@@ -57,13 +60,13 @@ func (j join[T]) List(namespace string) []T {
 	return l
 }
 
-func (j join[T]) Register(f func(o Event[T])) {
+func (j join[T]) Register(f func(ctx context.Context, o Event[T])) {
 	for _, c := range j.collections {
 		c.Register(f)
 	}
 }
 
-func (j join[T]) RegisterBatch(f func(o []Event[T])) {
+func (j join[T]) RegisterBatch(f func(ctx context.Context, o []Event[T])) {
 	for _, c := range j.collections {
 		c.RegisterBatch(f)
 	}

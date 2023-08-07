@@ -14,7 +14,10 @@
 
 package cv2
 
-import "go.uber.org/atomic"
+import (
+	"context"
+	"go.uber.org/atomic"
+)
 
 type static[T any] struct {
 	*singleton[T]
@@ -24,7 +27,7 @@ type static[T any] struct {
 func (s static[T]) Set(t *T) {
 	s.state.Store(t)
 	// Retrigger
-	s.execute()
+	s.execute(context.Background())
 }
 
 type StaticSingleton[T any] interface {

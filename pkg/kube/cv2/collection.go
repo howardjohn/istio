@@ -15,7 +15,9 @@
 package cv2
 
 import (
+	"context"
 	"fmt"
+	"istio.io/istio/pkg/tracing"
 	"sync"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,7 +42,7 @@ type manyCollection[I, O any] struct {
 	objectRelations map[Key[I]]dependencies
 
 	handlersMu sync.RWMutex
-	handlers   []func(o []Event[O])
+	handlers   []func(ctx context.Context, o []Event[O])
 
 	handle HandleMulti[I, O]
 }
@@ -79,7 +81,7 @@ func (h *manyCollection[I, O]) Dump() {
 }
 
 // onUpdate takes a list of I's that changed and reruns the handler over them.
-func (h *manyCollection[I, O]) onUpdate(items []Event[any]) {
+func (h *manyCollection[I, O]) onUpdate(ctx context.Context,items []Event[any]) {
 	var events []Event[O]
 	for _, a := range items {
 		i := a.Latest().(I)
@@ -121,7 +123,7 @@ func (h *manyCollection[I, O]) onUpdate(items []Event[any]) {
 			h.mu.Unlock()
 		} else {
 			h.mu.Unlock()
-			ctx := &indexedManyCollection[I, O]{h, d}
+			ctx := &indexedManyCollection[I, O]{h, d, ctx}
 			// Handler shouldn't be called with lock
 			results := slices.GroupUnique(h.handle(ctx, i), GetKey[O])
 			h.mu.Lock()
@@ -172,7 +174,7 @@ func (h *manyCollection[I, O]) onUpdate(items []Event[any]) {
 
 	log.WithLabels("events", len(events), "handlers", len(handlers)).Debugf("calling handlers")
 	for _, handler := range handlers {
-		handler(events)
+		handler(ctx, events)
 	}
 }
 
@@ -207,24 +209,26 @@ func newManyCollection[I, O any](c Collection[I], hf HandleMulti[I, O], name str
 	}
 	// TODO: wait for dependencies to be ready
 	// Build up the initial state
-	h.onUpdate(slices.Map(c.List(metav1.NamespaceAll), func(t I) Event[any] {
+	h.onUpdate(context.Background(), slices.Map(c.List(metav1.NamespaceAll), func(t I) Event[any] {
 		return Event[any]{
 			New:   ptr.Of(any(t)),
 			Event: controllers.EventAdd,
 		}
 	}))
 	// Setup primary manyCollection. On any change, trigger only that one
-	c.RegisterBatch(func(events []Event[I]) {
+	c.RegisterBatch(func(ctx context.Context, events []Event[I]) {
 		log := h.log.WithLabels("dep", "primary")
 		log.WithLabels("batch", len(events)).Debugf("got event")
-		h.onUpdate(slices.Map(events, castEvent[I, any]))
+		h.onUpdate(ctx, slices.Map(events, castEvent[I, any]))
 	})
 	return h
 }
 
 // Handler is called when a dependency changes. We will take as inputs the item that changed.
 // Then we find all of our own values (I) that changed and onUpdate() them
-func (h *manyCollection[I, O]) onDependencyEvent(events []Event[any]) {
+func (h *manyCollection[I, O]) onDependencyEvent(ctx context.Context, events []Event[any]) {
+	ctx, span := tracing.Start(ctx, fmt.Sprintf("handle %v for collection[%v->%v]", GetTypeOf(events[0].Latest()), ptr.TypeName[I](), ptr.TypeName[O]()))
+	defer span.End()
 	h.mu.Lock()
 	// Got an event. Now we need to find out who depends on it..
 	ks := sets.Set[Key[I]]{}
@@ -292,7 +296,7 @@ func (h *manyCollection[I, O]) onDependencyEvent(events []Event[any]) {
 		}
 	}
 	h.mu.Unlock()
-	h.onUpdate(toRun)
+	h.onUpdate(ctx, toRun)
 }
 
 func (h *manyCollection[I, O]) _internalHandler() {
@@ -329,11 +333,11 @@ func (h *manyCollection[I, O]) List(namespace string) (res []O) {
 	return
 }
 
-func (h *manyCollection[I, O]) Register(f func(o Event[O])) {
+func (h *manyCollection[I, O]) Register(f func(ctx context.Context, o Event[O])) {
 	batchedRegister[O](h, f)
 }
 
-func (h *manyCollection[I, O]) RegisterBatch(f func(o []Event[O])) {
+func (h *manyCollection[I, O]) RegisterBatch(f func(ctx context.Context, o []Event[O])) {
 	h.handlersMu.Lock()
 	defer h.handlersMu.Unlock()
 	// TODO: locking here is probably not reliable to avoid duplicate events
@@ -346,13 +350,14 @@ func (h *manyCollection[I, O]) RegisterBatch(f func(o []Event[O])) {
 		}
 	})
 	if len(objs) > 0 {
-		f(objs)
+		f(context.Background(), objs)
 	}
 }
 
 type indexedManyCollection[I, O any] struct {
 	h *manyCollection[I, O]
 	d dependencies
+	ctx context.Context
 }
 
 // registerDependency creates a
@@ -381,4 +386,8 @@ func (i *indexedManyCollection[I, O]) registerDependency(d dependency) bool {
 }
 
 func (i *indexedManyCollection[I, O]) _internalHandler() {
+}
+
+func (i *indexedManyCollection[I, O]) getctx() context.Context {
+	return i.ctx
 }

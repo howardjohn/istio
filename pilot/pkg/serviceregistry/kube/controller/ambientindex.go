@@ -15,6 +15,7 @@
 package controller
 
 import (
+	"context"
 	networkingv1alpha3 "istio.io/api/networking/v1alpha3"
 	"net/netip"
 	"strings"
@@ -332,7 +333,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 	})
 	// Policies contains all of the policies we will send down to clients
 	Policies := cv2.JoinCollection(AuthzDerivedPolicies, PeerAuthDerivedPolicies, DefaultPolicy.AsCollection())
-	Policies.RegisterBatch(func(events []cv2.Event[model.WorkloadAuthorization]) {
+	Policies.RegisterBatch(func(ctx context.Context, events []cv2.Event[model.WorkloadAuthorization]) {
 		cu := sets.New[model.ConfigKey]()
 		for _, e := range events {
 			for _, i := range e.Items() {
@@ -377,7 +378,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 		})
 	})
 	WorkloadServices := cv2.JoinCollection(ServicesInfo, ServiceEntriesInfo)
-	WorkloadServices.RegisterBatch(func(events []cv2.Event[model.ServiceInfo]) {
+	WorkloadServices.RegisterBatch(func(ctx context.Context, events []cv2.Event[model.ServiceInfo]) {
 		cu := sets.New[model.ConfigKey]()
 		for _, e := range events {
 			for _, i := range e.Items() {
@@ -659,7 +660,7 @@ func (c *Controller) setupIndex(options Options) *AmbientIndexImpl {
 		return res
 	})
 	Workloads := cv2.JoinCollection(PodWorkloads, WorkloadEntryWorkloads, ServiceEntryWorkloads)
-	Workloads.RegisterBatch(func(events []cv2.Event[model.WorkloadInfo]) {
+	Workloads.RegisterBatch(func(ctx context.Context, events []cv2.Event[model.WorkloadInfo]) {
 		cu := sets.New[model.ConfigKey]()
 		for _, e := range events {
 			for _, i := range e.Items() {

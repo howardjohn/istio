@@ -15,6 +15,7 @@
 package cv2_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -85,14 +86,14 @@ func TestNewStatic(t *testing.T) {
 }
 
 // TrackerHandler returns an object handler that records each event
-func TrackerHandler[T any](tracker *assert.Tracker[string]) func(cv2.Event[T]) {
-	return func(o cv2.Event[T]) {
+func TrackerHandler[T any](tracker *assert.Tracker[string]) func(context.Context, cv2.Event[T]) {
+	return func(ctx context.Context, o cv2.Event[T]) {
 		tracker.Record(fmt.Sprintf("%v/%v", o.Event, cv2.GetKey(o.Latest())))
 	}
 }
 
-func BatchedTrackerHandler[T any](tracker *assert.Tracker[string]) func([]cv2.Event[T]) {
-	return func(o []cv2.Event[T]) {
+func BatchedTrackerHandler[T any](tracker *assert.Tracker[string]) func(context.Context, []cv2.Event[T]) {
+	return func(ctx context.Context, o []cv2.Event[T]) {
 		tracker.Record(slices.Join(",", slices.Map(o, func(o cv2.Event[T]) string {
 			return fmt.Sprintf("%v/%v", o.Event, cv2.GetKey(o.Latest()))
 		})...))

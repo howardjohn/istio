@@ -16,6 +16,7 @@ package controller
 
 import (
 	"fmt"
+	"istio.io/istio/pkg/tracing"
 	"net/netip"
 	"path/filepath"
 	"strings"
@@ -376,6 +377,8 @@ func TestAmbientIndex_WaypointAddressAddedToWorkloads(t *testing.T) {
 func TestAmbientIndex_Policy(t *testing.T) {
 	test.SetForTest(t, &features.EnableAmbientControllers, true)
 	s := newAmbientTestServer(t, testC, testNW)
+	cleanup, _ := 	tracing.Initialize()
+	t.Cleanup(cleanup)
 	t.Cleanup(func() {
 		log.Errorf("howardjohn: dumping")
 		cv2.Dump(s.controller.ambientIndex.workloads.Collection)

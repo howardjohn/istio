@@ -1,6 +1,7 @@
 package cv2_test
 
 import (
+	"context"
 	"testing"
 
 	"go.uber.org/atomic"
@@ -24,7 +25,7 @@ func TestJoinCollection(t *testing.T) {
 	c3 := cv2.NewStatic[Named](nil)
 	j := cv2.JoinCollection(c1.AsCollection(), c2.AsCollection(), c3.AsCollection())
 	last := atomic.NewString("")
-	j.Register(func(o cv2.Event[Named]) {
+	j.Register(func(ctx context.Context, o cv2.Event[Named]) {
 		last.Store(o.Latest().ResourceName())
 	})
 	assert.EventuallyEqual(t, last.Load, "")

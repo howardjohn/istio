@@ -15,6 +15,7 @@
 package cv2
 
 import (
+	"context"
 	"sync"
 
 	"istio.io/istio/pkg/util/sets"
@@ -55,7 +56,7 @@ func CreateIndex[I any, K comparable](
 		c:       c,
 		mu:      sync.RWMutex{},
 	}
-	c.Register(func(o Event[I]) {
+	c.Register(func(ctx context.Context, o Event[I]) {
 		idx.mu.Lock()
 		defer idx.mu.Unlock()
 
