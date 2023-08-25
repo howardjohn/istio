@@ -16,6 +16,7 @@ package log
 
 import (
 	"errors"
+	"os"
 	"regexp"
 	"strconv"
 	"testing"
@@ -442,4 +443,46 @@ func TestBadWriter(t *testing.T) {
 	// for now, we just make sure this doesn't crash. To be totally correct, we'd need to capture stderr and
 	// inspect it, but it's just not worth it
 	defaultScope.Error("TestBadWriter")
+}
+
+func BenchmarkLog(b *testing.B) {
+	run := func(name string, f func()) {
+		b.Run(name, func(b *testing.B) {
+
+			d := b.TempDir()
+			tf, err := os.CreateTemp(d, "log")
+			if err != nil {
+				b.Fatal(err)
+			}
+			old := os.Stdout
+			os.Stdout = tf
+			b.Cleanup(func() {
+				os.Stdout = old
+			})
+			o := DefaultOptions()
+			if err := Configure(o); err != nil {
+				b.Fatalf("Unable to configure logger: %v", err)
+			}
+			for i := 0; i < b.N; i++ {
+				f()
+			}
+		})
+	}
+	run("f-string", func() {
+		Infof("cat %s", "dog")
+		Sync()
+	})
+	run("standard", func() {
+		Info("cat dog")
+		Sync()
+	})
+	run("label", func() {
+		WithLabels("key", "value").Info("cat")
+		Sync()
+	})
+	cl := WithLabels("key", "value")
+	run("cached label", func() {
+		cl.Info("cat")
+		Sync()
+	})
 }
