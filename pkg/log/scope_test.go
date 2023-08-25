@@ -16,6 +16,7 @@ package log
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
@@ -446,43 +447,62 @@ func TestBadWriter(t *testing.T) {
 }
 
 func BenchmarkLog(b *testing.B) {
-	run := func(name string, f func()) {
+	for _, json := range []bool{true, false} {
+		name := "json"
+		if !json {
+			name = "plain"
+		}
 		b.Run(name, func(b *testing.B) {
+			run := func(name string, f func()) {
+				b.Run(name, func(b *testing.B) {
 
-			d := b.TempDir()
-			tf, err := os.CreateTemp(d, "log")
-			if err != nil {
-				b.Fatal(err)
+					d := b.TempDir()
+					tf, err := os.CreateTemp(d, "log")
+					if err != nil {
+						b.Fatal(err)
+					}
+					old := os.Stdout
+					os.Stdout = tf
+					b.Cleanup(func() {
+						os.Stdout = old
+					})
+					o := DefaultOptions()
+					o.JSONEncoding = json
+					if err := Configure(o); err != nil {
+						b.Fatalf("Unable to configure logger: %v", err)
+					}
+					for i := 0; i < b.N; i++ {
+						f()
+					}
+				})
 			}
-			old := os.Stdout
-			os.Stdout = tf
-			b.Cleanup(func() {
-				os.Stdout = old
+
+			// basic
+			run("standard", func() {
+				Info("cat dog")
 			})
-			o := DefaultOptions()
-			if err := Configure(o); err != nil {
-				b.Fatalf("Unable to configure logger: %v", err)
-			}
-			for i := 0; i < b.N; i++ {
-				f()
-			}
+			run("f-string", func() {
+				Infof("cat %s", "dog")
+			})
+			run("label", func() {
+				WithLabels("key", "value").Info("cat")
+			})
+			cl := WithLabels("key", "value")
+			run("cached label", func() {
+				cl.Info("cat")
+			})
+
+			// slog
+			run("slog", func() {
+				slog.Info("cat")
+			})
+			run("slog labels", func() {
+				slog.Info("cat", "key", "value")
+			})
+			scl := slog.With("key", "value")
+			run("slog cached labels", func() {
+				scl.Info("cat")
+			})
 		})
 	}
-	run("f-string", func() {
-		Infof("cat %s", "dog")
-		Sync()
-	})
-	run("standard", func() {
-		Info("cat dog")
-		Sync()
-	})
-	run("label", func() {
-		WithLabels("key", "value").Info("cat")
-		Sync()
-	})
-	cl := WithLabels("key", "value")
-	run("cached label", func() {
-		cl.Info("cat")
-		Sync()
-	})
 }

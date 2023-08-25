@@ -91,6 +91,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.0.0
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.25.0
+	go.uber.org/zap/exp v0.1.1-0.20230825131617-98e9c4fe632c
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
 	golang.org/x/net v0.14.0
 	golang.org/x/oauth2 v0.11.0

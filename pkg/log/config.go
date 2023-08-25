@@ -52,11 +52,13 @@
 package log
 
 import (
+	"log/slog"
 	"os"
 	"strings"
 	"sync/atomic"
 	"time"
 
+"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zapgrpc"
@@ -417,6 +419,10 @@ func Configure(options *Options) error {
 	if klogVerbose() {
 		KlogScope.SetOutputLevel(DebugLevel)
 	}
+
+	handler := zapslog.NewHandler(core, nil)
+	slogger := slog.New(handler)
+	slog.SetDefault(slogger)
 
 	return nil
 }
