@@ -58,8 +58,8 @@ import (
 	"sync/atomic"
 	"time"
 
-"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zapgrpc"
 	"google.golang.org/grpc/grpclog"

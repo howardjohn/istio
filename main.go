@@ -7,7 +7,7 @@ import (
 
 func main() {
 	log.Configure(log.DefaultOptions())
-	slog.Info("hello")
+	slog.Info("hello", "key", "value")
 	slog.With("key", "value").Info("hello")
 	slog.With(slog.Group("key", "baz", "value")).Info("hello")
 }
