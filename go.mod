@@ -8,6 +8,8 @@ exclude k8s.io/kubernetes v1.13.0
 // Client-go does not handle different versions of mergo due to some breaking changes - use the matching version
 replace github.com/imdario/mergo => github.com/imdario/mergo v0.3.5
 
+replace sigs.k8s.io/controller-runtime => ../../sigs.k8s.io/controller-runtime
+
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
 	cloud.google.com/go/logging v1.8.1
@@ -111,16 +113,16 @@ require (
 	helm.sh/helm/v3 v3.12.3
 	istio.io/api v1.19.0-alpha.1.0.20230829094834-68bd84f7b0c2
 	istio.io/client-go v1.19.0-alpha.1.0.20230829095435-98ad1e819fb3
-	k8s.io/api v0.28.0
+	k8s.io/api v0.28.1
 	k8s.io/apiextensions-apiserver v0.28.0
-	k8s.io/apimachinery v0.28.0
-	k8s.io/apiserver v0.28.0
+	k8s.io/apimachinery v0.28.1
+	k8s.io/apiserver v0.28.1
 	k8s.io/cli-runtime v0.28.0
-	k8s.io/client-go v0.28.0
+	k8s.io/client-go v0.28.1
 	k8s.io/klog/v2 v2.100.1
 	k8s.io/kubectl v0.28.0
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
-	sigs.k8s.io/controller-runtime v0.15.1
+	sigs.k8s.io/controller-runtime v0.16.0
 	sigs.k8s.io/gateway-api v0.8.0-rc2
 	sigs.k8s.io/mcs-api v0.1.0
 	sigs.k8s.io/yaml v1.3.0
@@ -207,7 +209,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/onsi/ginkgo/v2 v2.11.0 // indirect
+	github.com/onsi/ginkgo/v2 v2.12.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc3 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
@@ -243,7 +245,7 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	k8s.io/component-base v0.28.0 // indirect
+	k8s.io/component-base v0.28.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20230811205723-7ac0aad8c58d // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
