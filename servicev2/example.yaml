@@ -1,0 +1,11 @@
+apiVersion: networking.example.io/v1
+kind: SuperService
+metadata:
+  name: echo
+  namespace: default
+spec:
+  ports:
+  - port: 80
+    appProtocol: HTTP
+  selector:
+    app: echo

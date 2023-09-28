@@ -1,0 +1,51 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+  gatewayClassName: gke-l7-rilb
+  listeners:
+    - name: default
+      port: 80
+      protocol: HTTP
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: echo
+  namespace: server
+spec:
+  hostnames:
+  - "{{.Name}}.{{.Namespace}}.{{.Suffix}}"
+  - "{{.Name}}.{{.Namespace}}.svc.cluster.local"
+  parentRefs:
+    - name: {{.Name}}
+  rules:
+    - backendRefs:
+        - name: echo-v1
+          port: 80
+          weight: 1
+        - name: echo-v2
+          port: 80
+          weight: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+  externalName: "{{.Name}}.{{.Namespace}}.{{.Suffix}}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.Name}}-internal
+  namespace: {{.Namespace}}
+spec:
+  ports:
+    - port: {{.Port}}
+  selector: {{.Selector | toJson}}
+
+

@@ -31,6 +31,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/credentials"
+	examplefake "istio.io/istio/servicev2/pkg/client/clientset/versioned/fake"
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kubeExtClient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -68,7 +69,6 @@ import (
 	gatewayapibeta "sigs.k8s.io/gateway-api/apis/v1beta1"
 	gatewayapiclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gatewayapifake "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned/fake"
-	examplefake "istio.io/istio/servicev2/pkg/client/clientset/versioned/fake"
 
 	"istio.io/api/annotation"
 	"istio.io/api/label"
@@ -78,7 +78,6 @@ import (
 	clientsecurity "istio.io/client-go/pkg/apis/security/v1beta1"
 	clienttelemetry "istio.io/client-go/pkg/apis/telemetry/v1alpha1"
 	istioclient "istio.io/client-go/pkg/clientset/versioned"
-	exampleclient "istio.io/istio/servicev2/pkg/client/clientset/versioned"
 	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
 	"istio.io/istio/pkg/cluster"
 	"istio.io/istio/pkg/config/schema/gvk"
@@ -90,6 +89,7 @@ import (
 	"istio.io/istio/pkg/sleep"
 	"istio.io/istio/pkg/test/util/yml"
 	"istio.io/istio/pkg/version"
+	exampleclient "istio.io/istio/servicev2/pkg/client/clientset/versioned"
 )
 
 const (
@@ -330,7 +330,7 @@ type client struct {
 	dynamic    dynamic.Interface
 	metadata   metadata.Interface
 	istio      istioclient.Interface
-	example      exampleclient.Interface
+	example    exampleclient.Interface
 	gatewayapi gatewayapiclient.Interface
 
 	started atomic.Bool
@@ -399,6 +399,11 @@ func newClientInternal(clientFactory *clientFactory, revision string, cluster cl
 	}
 
 	c.istio, err = istioclient.NewForConfig(c.config)
+	if err != nil {
+		return nil, err
+	}
+
+	c.example, err = exampleclient.NewForConfig(c.config)
 	if err != nil {
 		return nil, err
 	}
