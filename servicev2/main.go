@@ -69,15 +69,16 @@ type Controller struct {
 }
 
 type Inputs struct {
-	Name string
+	Name      string
 	Namespace string
-	Suffix string
-	Port uint32
+	Suffix    string
+	Port      uint32
+	Selector  map[string]string
 }
 
 const (
 	GatewayClass = "gke-l7-rilb"
-	Suffix = "mesh.howardjohn.net"
+	Suffix       = "mesh.howardjohn.net"
 )
 
 func (c *Controller) Reconcile(key types.NamespacedName) error {
@@ -97,6 +98,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		Namespace: key.Namespace,
 		Suffix:    Suffix,
 		Port:      ss.Spec.Ports[0].Port,
+		Selector:  ss.Spec.Selector,
 	}
 	result, err := runTemplate(inputs)
 	if err != nil {
