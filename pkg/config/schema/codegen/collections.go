@@ -162,7 +162,9 @@ func toTypePath(r *ast.Resource) string {
 }
 
 func toGetter(protoPackage string) string {
-	if strings.Contains(protoPackage, "istio.io") {
+	if strings.Contains(protoPackage, "servicev2") {
+		return "Example"
+	} else if strings.Contains(protoPackage, "istio.io") {
 		return "Istio"
 	} else if strings.Contains(protoPackage, "sigs.k8s.io/gateway-api") {
 		return "GatewayAPI"
@@ -194,7 +196,7 @@ func toImport(p string) string {
 
 func toIstioAwareImport(p string) string {
 	imp := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(p, "/", ""), ".", ""), "-", "")
-	if strings.Contains(p, "istio.io") {
+	if strings.Contains(p, "istio.io") && !strings.Contains(p, "servicev2") {
 		return "api" + imp
 	}
 	return imp

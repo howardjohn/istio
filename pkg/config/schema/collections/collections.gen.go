@@ -29,6 +29,7 @@ import (
 	"istio.io/istio/pkg/config/schema/collection"
 	"istio.io/istio/pkg/config/schema/resource"
 	"istio.io/istio/pkg/config/validation"
+	istioioistioservicev2apisv1 "istio.io/istio/servicev2/apis/v1"
 )
 
 var (
@@ -542,6 +543,21 @@ var (
 		ValidateProto: validation.ValidateSidecar,
 	}.MustBuild()
 
+	SuperService = resource.Builder{
+		Identifier:    "SuperService",
+		Group:         "networking.example.io",
+		Kind:          "SuperService",
+		Plural:        "superservices",
+		Version:       "v1",
+		Proto:         "k8s.io.gateway_api.api.v1alpha1.SuperServiceSpec",
+		ReflectType:   reflect.TypeOf(&istioioistioservicev2apisv1.SuperServiceSpec{}).Elem(),
+		ProtoPackage:  "istio.io/istio/servicev2/apis/v1",
+		ClusterScoped: false,
+		Synthetic:     false,
+		Builtin:       false,
+		ValidateProto: validation.EmptyValidate,
+	}.MustBuild()
+
 	TCPRoute = resource.Builder{
 		Identifier: "TCPRoute",
 		Group:      "gateway.networking.k8s.io",
@@ -720,6 +736,7 @@ var (
 		MustAdd(ServiceAccount).
 		MustAdd(ServiceEntry).
 		MustAdd(Sidecar).
+		MustAdd(SuperService).
 		MustAdd(TCPRoute).
 		MustAdd(TLSRoute).
 		MustAdd(Telemetry).

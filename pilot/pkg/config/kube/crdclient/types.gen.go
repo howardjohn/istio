@@ -36,6 +36,7 @@ import (
 	apiistioioapinetworkingv1beta1 "istio.io/client-go/pkg/apis/networking/v1beta1"
 	apiistioioapisecurityv1beta1 "istio.io/client-go/pkg/apis/security/v1beta1"
 	apiistioioapitelemetryv1alpha1 "istio.io/client-go/pkg/apis/telemetry/v1alpha1"
+	istioioistioservicev2apisv1 "istio.io/istio/servicev2/apis/v1"
 )
 
 func create(c kube.Client, cfg config.Config, objMeta metav1.ObjectMeta) (metav1.Object, error) {
@@ -109,6 +110,11 @@ func create(c kube.Client, cfg config.Config, objMeta metav1.ObjectMeta) (metav1
 		return c.Istio().NetworkingV1alpha3().Sidecars(cfg.Namespace).Create(context.TODO(), &apiistioioapinetworkingv1alpha3.Sidecar{
 			ObjectMeta: objMeta,
 			Spec:       *(cfg.Spec.(*istioioapinetworkingv1alpha3.Sidecar)),
+		}, metav1.CreateOptions{})
+	case gvk.SuperService:
+		return c.Example().ApisV1().SuperServices(cfg.Namespace).Create(context.TODO(), &istioioistioservicev2apisv1.SuperService{
+			ObjectMeta: objMeta,
+			Spec:       *(cfg.Spec.(*istioioistioservicev2apisv1.SuperServiceSpec)),
 		}, metav1.CreateOptions{})
 	case gvk.TCPRoute:
 		return c.GatewayAPI().GatewayV1alpha2().TCPRoutes(cfg.Namespace).Create(context.TODO(), &sigsk8siogatewayapiapisv1alpha2.TCPRoute{
@@ -226,6 +232,11 @@ func update(c kube.Client, cfg config.Config, objMeta metav1.ObjectMeta) (metav1
 		return c.Istio().NetworkingV1alpha3().Sidecars(cfg.Namespace).Update(context.TODO(), &apiistioioapinetworkingv1alpha3.Sidecar{
 			ObjectMeta: objMeta,
 			Spec:       *(cfg.Spec.(*istioioapinetworkingv1alpha3.Sidecar)),
+		}, metav1.UpdateOptions{})
+	case gvk.SuperService:
+		return c.Example().ApisV1().SuperServices(cfg.Namespace).Update(context.TODO(), &istioioistioservicev2apisv1.SuperService{
+			ObjectMeta: objMeta,
+			Spec:       *(cfg.Spec.(*istioioistioservicev2apisv1.SuperServiceSpec)),
 		}, metav1.UpdateOptions{})
 	case gvk.TCPRoute:
 		return c.GatewayAPI().GatewayV1alpha2().TCPRoutes(cfg.Namespace).Update(context.TODO(), &sigsk8siogatewayapiapisv1alpha2.TCPRoute{
@@ -599,6 +610,21 @@ func patch(c kube.Client, orig config.Config, origMeta metav1.ObjectMeta, mod co
 		}
 		return c.Istio().NetworkingV1alpha3().Sidecars(orig.Namespace).
 			Patch(context.TODO(), orig.Name, typ, patchBytes, metav1.PatchOptions{FieldManager: "pilot-discovery"})
+	case gvk.SuperService:
+		oldRes := &istioioistioservicev2apisv1.SuperService{
+			ObjectMeta: origMeta,
+			Spec:       *(orig.Spec.(*istioioistioservicev2apisv1.SuperServiceSpec)),
+		}
+		modRes := &istioioistioservicev2apisv1.SuperService{
+			ObjectMeta: modMeta,
+			Spec:       *(mod.Spec.(*istioioistioservicev2apisv1.SuperServiceSpec)),
+		}
+		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
+		if err != nil {
+			return nil, err
+		}
+		return c.Example().ApisV1().SuperServices(orig.Namespace).
+			Patch(context.TODO(), orig.Name, typ, patchBytes, metav1.PatchOptions{FieldManager: "pilot-discovery"})
 	case gvk.TCPRoute:
 		oldRes := &sigsk8siogatewayapiapisv1alpha2.TCPRoute{
 			ObjectMeta: origMeta,
@@ -758,6 +784,8 @@ func delete(c kube.Client, typ config.GroupVersionKind, name, namespace string, 
 		return c.Istio().NetworkingV1alpha3().ServiceEntries(namespace).Delete(context.TODO(), name, deleteOptions)
 	case gvk.Sidecar:
 		return c.Istio().NetworkingV1alpha3().Sidecars(namespace).Delete(context.TODO(), name, deleteOptions)
+	case gvk.SuperService:
+		return c.Example().ApisV1().SuperServices(namespace).Delete(context.TODO(), name, deleteOptions)
 	case gvk.TCPRoute:
 		return c.GatewayAPI().GatewayV1alpha2().TCPRoutes(namespace).Delete(context.TODO(), name, deleteOptions)
 	case gvk.TLSRoute:
@@ -1333,6 +1361,24 @@ var translationMap = map[config.GroupVersionKind]func(r runtime.Object) config.C
 			},
 			Spec:   &obj.Spec,
 			Status: &obj.Status,
+		}
+	},
+	gvk.SuperService: func(r runtime.Object) config.Config {
+		obj := r.(*istioioistioservicev2apisv1.SuperService)
+		return config.Config{
+			Meta: config.Meta{
+				GroupVersionKind:  gvk.SuperService,
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+				OwnerReferences:   obj.OwnerReferences,
+				UID:               string(obj.UID),
+				Generation:        obj.Generation,
+			},
+			Spec: &obj.Spec,
 		}
 	},
 	gvk.TCPRoute: func(r runtime.Object) config.Config {

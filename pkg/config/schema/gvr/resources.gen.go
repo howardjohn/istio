@@ -39,6 +39,7 @@ var (
 	ServiceAccount                 = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "serviceaccounts"}
 	ServiceEntry                   = schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "serviceentries"}
 	Sidecar                        = schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "sidecars"}
+	SuperService                   = schema.GroupVersionResource{Group: "networking.example.io", Version: "v1", Resource: "superservices"}
 	TCPRoute                       = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Resource: "tcproutes"}
 	TLSRoute                       = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Resource: "tlsroutes"}
 	Telemetry                      = schema.GroupVersionResource{Group: "telemetry.istio.io", Version: "v1alpha1", Resource: "telemetries"}
@@ -115,6 +116,8 @@ func IsClusterScoped(g schema.GroupVersionResource) bool {
 	case ServiceEntry:
 		return false
 	case Sidecar:
+		return false
+	case SuperService:
 		return false
 	case TCPRoute:
 		return false

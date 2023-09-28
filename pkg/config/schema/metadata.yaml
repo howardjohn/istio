@@ -196,6 +196,13 @@ resources:
     statusProto: "k8s.io.gateway_api.api.v1alpha1.HTTPRouteStatus"
     statusProtoPackage: "sigs.k8s.io/gateway-api/apis/v1beta1"
 
+  - kind: "SuperService"
+    plural: "superservices"
+    group: "networking.example.io"
+    version: "v1"
+    protoPackage: "istio.io/istio/servicev2/apis/v1"
+    proto: "k8s.io.gateway_api.api.v1alpha1.SuperServiceSpec"
+
   - kind: "GRPCRoute"
     plural: "grpcroutes"
     group: "gateway.networking.k8s.io"

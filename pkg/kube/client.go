@@ -68,6 +68,7 @@ import (
 	gatewayapibeta "sigs.k8s.io/gateway-api/apis/v1beta1"
 	gatewayapiclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gatewayapifake "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned/fake"
+	examplefake "istio.io/istio/servicev2/pkg/client/clientset/versioned/fake"
 
 	"istio.io/api/annotation"
 	"istio.io/api/label"
@@ -77,6 +78,7 @@ import (
 	clientsecurity "istio.io/client-go/pkg/apis/security/v1beta1"
 	clienttelemetry "istio.io/client-go/pkg/apis/telemetry/v1alpha1"
 	istioclient "istio.io/client-go/pkg/clientset/versioned"
+	exampleclient "istio.io/istio/servicev2/pkg/client/clientset/versioned"
 	istiofake "istio.io/client-go/pkg/clientset/versioned/fake"
 	"istio.io/istio/pkg/cluster"
 	"istio.io/istio/pkg/config/schema/gvk"
@@ -116,6 +118,8 @@ type Client interface {
 
 	// Istio returns the Istio kube client.
 	Istio() istioclient.Interface
+
+	Example() exampleclient.Interface
 
 	// GatewayAPI returns the gateway-api kube client.
 	GatewayAPI() gatewayapiclient.Interface
@@ -236,6 +240,7 @@ func NewFakeClient(objects ...runtime.Object) CLIClient {
 	c.metadata = metadatafake.NewSimpleMetadataClient(s)
 	c.dynamic = dynamicfake.NewSimpleDynamicClient(s)
 	c.istio = istiofake.NewSimpleClientset()
+	c.example = examplefake.NewSimpleClientset()
 	c.gatewayapi = gatewayapifake.NewSimpleClientset()
 	c.extSet = extfake.NewSimpleClientset()
 
@@ -325,6 +330,7 @@ type client struct {
 	dynamic    dynamic.Interface
 	metadata   metadata.Interface
 	istio      istioclient.Interface
+	example      exampleclient.Interface
 	gatewayapi gatewayapiclient.Interface
 
 	started atomic.Bool
@@ -483,6 +489,10 @@ func (c *client) Metadata() metadata.Interface {
 
 func (c *client) Istio() istioclient.Interface {
 	return c.istio
+}
+
+func (c *client) Example() exampleclient.Interface {
+	return c.example
 }
 
 func (c *client) GatewayAPI() gatewayapiclient.Interface {

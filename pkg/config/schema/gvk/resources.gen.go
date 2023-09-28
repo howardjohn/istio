@@ -42,6 +42,7 @@ var (
 	ServiceAccount                 = config.GroupVersionKind{Group: "", Version: "v1", Kind: "ServiceAccount"}
 	ServiceEntry                   = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "ServiceEntry"}
 	Sidecar                        = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "Sidecar"}
+	SuperService                   = config.GroupVersionKind{Group: "networking.example.io", Version: "v1", Kind: "SuperService"}
 	TCPRoute                       = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Kind: "TCPRoute"}
 	TLSRoute                       = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Kind: "TLSRoute"}
 	Telemetry                      = config.GroupVersionKind{Group: "telemetry.istio.io", Version: "v1alpha1", Kind: "Telemetry"}
@@ -120,6 +121,8 @@ func ToGVR(g config.GroupVersionKind) (schema.GroupVersionResource, bool) {
 		return gvr.ServiceEntry, true
 	case Sidecar:
 		return gvr.Sidecar, true
+	case SuperService:
+		return gvr.SuperService, true
 	case TCPRoute:
 		return gvr.TCPRoute, true
 	case TLSRoute:
@@ -220,6 +223,8 @@ func FromGVR(g schema.GroupVersionResource) (config.GroupVersionKind, bool) {
 		return ServiceEntry, true
 	case gvr.Sidecar:
 		return Sidecar, true
+	case gvr.SuperService:
+		return SuperService, true
 	case gvr.TCPRoute:
 		return TCPRoute, true
 	case gvr.TLSRoute:

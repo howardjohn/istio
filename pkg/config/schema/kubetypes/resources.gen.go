@@ -31,6 +31,7 @@ import (
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/ptr"
+	istioioistioservicev2apisv1 "istio.io/istio/servicev2/apis/v1"
 )
 
 func GetGVK[T runtime.Object]() config.GroupVersionKind {
@@ -117,6 +118,8 @@ func GetGVK[T runtime.Object]() config.GroupVersionKind {
 		return gvk.Sidecar
 	case *apiistioioapinetworkingv1alpha3.Sidecar:
 		return gvk.Sidecar
+	case *istioioistioservicev2apisv1.SuperService:
+		return gvk.SuperService
 	case *sigsk8siogatewayapiapisv1alpha2.TCPRoute:
 		return gvk.TCPRoute
 	case *sigsk8siogatewayapiapisv1alpha2.TLSRoute:

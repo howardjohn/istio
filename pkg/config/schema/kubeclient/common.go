@@ -16,6 +16,7 @@ package kubeclient
 
 import (
 	"context"
+	exampleclient "istio.io/istio/servicev2/pkg/client/clientset/versioned"
 
 	kubeext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,6 +53,8 @@ type ClientGetter interface {
 
 	// Istio returns the Istio kube client.
 	Istio() istioclient.Interface
+
+	Example() exampleclient.Interface
 
 	// GatewayAPI returns the gateway-api kube client.
 	GatewayAPI() gatewayapiclient.Interface

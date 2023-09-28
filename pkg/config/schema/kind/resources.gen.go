@@ -41,6 +41,7 @@ const (
 	ServiceAccount
 	ServiceEntry
 	Sidecar
+	SuperService
 	TCPRoute
 	TLSRoute
 	Telemetry
@@ -120,6 +121,8 @@ func (k Kind) String() string {
 		return "ServiceEntry"
 	case Sidecar:
 		return "Sidecar"
+	case SuperService:
+		return "SuperService"
 	case TCPRoute:
 		return "TCPRoute"
 	case TLSRoute:
@@ -209,6 +212,8 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 		return ServiceEntry
 	case gvk.Sidecar:
 		return Sidecar
+	case gvk.SuperService:
+		return SuperService
 	case gvk.TCPRoute:
 		return TCPRoute
 	case gvk.TLSRoute:
