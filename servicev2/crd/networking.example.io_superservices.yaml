@@ -15,19 +15,15 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.controllerName
-      name: Controller
+    - jsonPath: .spec.class
+      name: Class
       type: string
-    - jsonPath: .status.conditions[?(@.type=="Accepted")].status
-      name: Accepted
+    - jsonPath: .status.addresses[*].value
+      name: Address
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - jsonPath: .spec.description
-      name: Description
-      priority: 1
-      type: string
     name: v1
     schema:
       openAPIV3Schema:
@@ -47,6 +43,10 @@ spec:
           spec:
             description: Spec defines the desired state of SuperService.
             properties:
+              class:
+                default: Exclusive
+                pattern: ^Shared|Exclusive$
+                type: string
               ports:
                 items:
                   properties:

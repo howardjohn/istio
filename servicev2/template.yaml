@@ -1,12 +1,12 @@
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: Gateway
 metadata:
-  name: {{.Name}}
+  name: {{.Shared | ternary "all-services" .Name }}
   namespace: {{.Namespace}}
 spec:
   gatewayClassName: gke-l7-rilb
   listeners:
-    - name: default
+    - name: "{{.Name}}"
       port: 80
       protocol: HTTP
 ---
@@ -23,7 +23,7 @@ spec:
   - "{{.Name}}.{{.Namespace}}"
   - "{{.Name}}"
   parentRefs:
-  - name: {{.Name}}
+  - name: {{.Shared | ternary "all-services" .Name }}
   rules:
   - backendRefs:
     - name: {{.Name}}-internal

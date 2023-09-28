@@ -4,8 +4,22 @@ metadata:
   name: echo
   namespace: default
 spec:
+  class: Shared
   ports:
   - port: 80
     appProtocol: HTTP
   selector:
     app: echo
+---
+apiVersion: networking.example.io/v1
+kind: SuperService
+metadata:
+  name: hyper
+  namespace: default
+spec:
+  class: Shared
+  ports:
+    - port: 8080
+      appProtocol: HTTP
+  selector:
+    app: hyper

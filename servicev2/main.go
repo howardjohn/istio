@@ -5,7 +5,19 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	klabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
+	"sigs.k8s.io/yaml"
+
 	"istio.io/istio/pkg/cmd"
+	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/kube"
@@ -15,15 +27,6 @@ import (
 	"istio.io/istio/pkg/test/util/tmpl"
 	"istio.io/istio/pkg/test/util/yml"
 	examplev1 "istio.io/istio/servicev2/apis/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	klabels "k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
-	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
-	"sigs.k8s.io/yaml"
-	"strings"
 )
 
 //go:embed template.yaml
@@ -41,7 +44,7 @@ var runTemplate = func() func(d any) ([]string, error) {
 }()
 
 func main() {
-	//log.EnableKlogWithVerbosity(6)
+	// log.EnableKlogWithVerbosity(9)
 	c, err := kube.NewDefaultClient()
 	fatal(err)
 	stop := make(chan struct{})
@@ -74,6 +77,7 @@ type Inputs struct {
 	Suffix    string
 	Port      uint32
 	Selector  map[string]string
+	Shared    bool
 }
 
 const (
@@ -99,6 +103,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		Suffix:    Suffix,
 		Port:      ss.Spec.Ports[0].Port,
 		Selector:  ss.Spec.Selector,
+		Shared:    ss.Spec.Class != nil && (*ss.Spec.Class) == "Shared",
 	}
 	result, err := runTemplate(inputs)
 	if err != nil {
@@ -109,7 +114,54 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 			return fmt.Errorf("apply failed: %v", err)
 		}
 	}
+	gwName := key.Name
+	if inputs.Shared {
+		gwName = "all-services"
+	}
+	gw := c.gateways.Get(gwName, key.Namespace)
+	if gw != nil {
+		ss := &examplev1.SuperService{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       gvk.SuperService.Kind,
+				APIVersion: gvk.SuperService.Group + "/" + gvk.SuperService.Version,
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ss.Name,
+				Namespace: ss.Namespace,
+			},
+		}
+		for _, s := range gw.Status.Addresses {
+			ss.Status.Addresses = append(ss.Status.Addresses, examplev1.SuperServiceStatusAddress{
+				Type:  (*examplev1.AddressType)(s.Type),
+				Value: s.Value,
+			})
+		}
+		if err := c.ApplyObject(ss, "status"); err != nil {
+			return fmt.Errorf("update service status: %v", err)
+		}
+	}
+	log.Info("service updated")
 	return nil
+}
+
+// ApplyObject renders an object with the given input and (server-side) applies the results to the cluster.
+func (c *Controller) ApplyObject(obj controllers.Object, subresources ...string) error {
+	j, err := config.ToJSON(obj)
+	if err != nil {
+		return err
+	}
+	m := map[string]any{}
+	json.Unmarshal(j, &m)
+	delete(m["metadata"].(map[string]any), "creationTimestamp")
+	j, _ = json.Marshal(m)
+
+	gvr, err := controllers.ObjectToGVR(obj)
+	if err != nil {
+		return err
+	}
+	log.Debugf("applying %v", string(j))
+
+	return c.patcher(gvr, obj.GetName(), obj.GetNamespace(), j, subresources...)
 }
 
 func (c *Controller) Run(stop <-chan struct{}) {
@@ -159,9 +211,10 @@ func NewController(client kube.Client) *Controller {
 		patcher: func(gvr schema.GroupVersionResource, name string, namespace string, data []byte, subresources ...string) error {
 			c := client.Dynamic().Resource(gvr).Namespace(namespace)
 			t := true
+			fm := fmt.Sprintf("istio-%v", name) // Unique per name for shared type usage
 			_, err := c.Patch(context.Background(), name, types.ApplyPatchType, data, metav1.PatchOptions{
 				Force:        &t,
-				FieldManager: constants.ManagedGatewayController,
+				FieldManager: fm,
 			}, subresources...)
 			return err
 		},
