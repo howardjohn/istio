@@ -15,6 +15,10 @@
 package controller
 
 import (
+	"fmt"
+	"istio.io/istio/pkg/kube/kclient"
+	"istio.io/istio/pkg/slices"
+	examplev1 "istio.io/istio/servicev2/apis/v1"
 	"net/netip"
 	"strings"
 	"sync"
@@ -425,6 +429,69 @@ func (c *Controller) setupIndex() *AmbientIndexImpl {
 	}
 
 	c.podsClient.AddEventHandler(podHandler)
+
+	handleSS := func(ss *examplev1.SuperService) {
+		idx.mu.Lock()
+		defer idx.mu.Unlock()
+		log.Errorf("howardjohn: handle super service %v", ss.Name)
+		if len(ss.Status.Addresses) == 0 {
+			return
+		}
+		ports := make([]*workloadapi.Port, 0, len(ss.Spec.Ports))
+		for _, p := range ss.Spec.Ports {
+			ports = append(ports, &workloadapi.Port{
+				ServicePort: p.Port,
+				TargetPort:  p.Port,
+			})
+		}
+
+		// TODO this is only checking one controller - we may be missing service vips for instances in another cluster
+		vips := slices.Map(ss.Status.Addresses, func(e examplev1.SuperServiceStatusAddress) string {
+			return e.Value
+		})
+		addrs := make([]*workloadapi.NetworkAddress, 0, len(vips))
+		for _, vip := range vips {
+			addrs = append(addrs, &workloadapi.NetworkAddress{
+				Network: c.Network(vip, make(labels.Instance, 0)).String(),
+				Address: netip.MustParseAddr(vip).AsSlice(),
+			})
+		}
+
+		si := &model.ServiceInfo{
+			Service: &workloadapi.Service{
+				Name:            ss.Name,
+				Namespace:       ss.Namespace,
+				Hostname:        fmt.Sprintf("%s.%s.%s", ss.Name, ss.Namespace, "mesh.howardjohn.net"),
+				Addresses:       addrs,
+				Ports:           ports,
+				SubjectAltNames: []string{fmt.Sprintf("%s.%s.%s", ss.Name, ss.Namespace, "mesh.howardjohn.net")},
+			},
+		}
+		for _, a := range addrs {
+			log.Errorf("howardjohn: insert %+v", a)
+			ip, _ := netip.AddrFromSlice(a.Address)
+			idx.serviceByAddr[networkAddress{
+				network: a.Network,
+				ip:      ip.String(),
+			}] = si
+		}
+		log.Errorf("howardjohn: insert %+v", si.ResourceName())
+		idx.serviceByNamespacedHostname[si.ResourceName()] = si
+		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
+			ConfigsUpdated: sets.New(model.ConfigKey{Kind: kind.Address, Name: si.ResourceName()}),
+			Reason:         model.NewReasonStats(model.AmbientUpdate),
+		})
+	}
+	superServices := kclient.New[*examplev1.SuperService](c.client)
+	superServices.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			handleSS(obj.(*examplev1.SuperService))
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			handleSS(newObj.(*examplev1.SuperService))
+		},
+		DeleteFunc: nil,
+	})
 
 	// We only handle WLE and SE from config cluster, otherwise we could get duplicate workload from remote clusters.
 	if c.configCluster {

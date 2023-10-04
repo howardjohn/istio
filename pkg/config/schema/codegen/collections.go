@@ -175,6 +175,9 @@ func toGetter(protoPackage string) string {
 }
 
 func toGroup(protoPackage string) string {
+	if len(protoPackage) == 0 {
+		return ""
+	}
 	p := strings.Split(protoPackage, "/")
 	e := len(p) - 1
 	if strings.Contains(protoPackage, "sigs.k8s.io/gateway-api") {

@@ -287,7 +287,7 @@ func (s *schemaImpl) Validate() (err error) {
 	if !labels.IsDNS1123Label(s.plural) {
 		err = multierror.Append(err, fmt.Errorf("invalid plural for kind %s: %s", s.Kind(), s.plural))
 	}
-	if s.reflectType == nil && getProtoMessageType(s.proto) == nil {
+	if s.reflectType == nil && s.proto != "" && getProtoMessageType(s.proto) == nil {
 		err = multierror.Append(err, fmt.Errorf("proto message or reflect type not found: %v", s.proto))
 	}
 	return

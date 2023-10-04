@@ -4,7 +4,7 @@ metadata:
   name: echo
   namespace: default
 spec:
-  class: Shared
+#  class: Shared
   ports:
   - port: 80
     appProtocol: HTTP
@@ -17,7 +17,7 @@ metadata:
   name: hyper
   namespace: default
 spec:
-  class: Shared
+#  class: Shared
   ports:
     - port: 8080
       appProtocol: HTTP

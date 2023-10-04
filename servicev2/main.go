@@ -44,7 +44,7 @@ var runTemplate = func() func(d any) ([]string, error) {
 }()
 
 func main() {
-	// log.EnableKlogWithVerbosity(9)
+	//log.EnableKlogWithVerbosity(6)
 	c, err := kube.NewDefaultClient()
 	fatal(err)
 	stop := make(chan struct{})
@@ -65,10 +65,11 @@ type Controller struct {
 	queue         controllers.Queue
 	superServices kclient.Client[*examplev1.SuperService]
 	services      kclient.Client[*corev1.Service]
+	secrets       kclient.Client[*corev1.Secret]
 	gateways      kclient.Client[*gateway.Gateway]
 	namespaces    kclient.Client[*corev1.Namespace]
 
-	patcher func(gvr schema.GroupVersionResource, name string, namespace string, data []byte, subresources ...string) error
+	patcher func(gvr schema.GroupVersionResource, parentName string, name string, namespace string, data []byte, subresources ...string) error
 }
 
 type Inputs struct {
@@ -78,6 +79,8 @@ type Inputs struct {
 	Port      uint32
 	Selector  map[string]string
 	Shared    bool
+
+	CACert, CAKey string
 }
 
 const (
@@ -97,6 +100,8 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		return nil
 	}
 
+	caCert, caKey := c.fetchCA()
+
 	inputs := Inputs{
 		Name:      key.Name,
 		Namespace: key.Namespace,
@@ -104,13 +109,15 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		Port:      ss.Spec.Ports[0].Port,
 		Selector:  ss.Spec.Selector,
 		Shared:    ss.Spec.Class != nil && (*ss.Spec.Class) == "Shared",
+		CACert:    caCert,
+		CAKey:     caKey,
 	}
 	result, err := runTemplate(inputs)
 	if err != nil {
 		return fmt.Errorf("template: %v", err)
 	}
 	for _, t := range result {
-		if err := c.apply(t); err != nil {
+		if err := c.apply(key, t); err != nil {
 			return fmt.Errorf("apply failed: %v", err)
 		}
 	}
@@ -118,6 +125,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	if inputs.Shared {
 		gwName = "all-services"
 	}
+	log.Infof("gateway name %v", gwName)
 	gw := c.gateways.Get(gwName, key.Namespace)
 	if gw != nil {
 		ss := &examplev1.SuperService{
@@ -136,8 +144,10 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 				Value: s.Value,
 			})
 		}
-		if err := c.ApplyObject(ss, "status"); err != nil {
-			return fmt.Errorf("update service status: %v", err)
+		if len(ss.Status.Addresses) > 0 {
+			if err := c.ApplyObject(ss, "status"); err != nil {
+				return fmt.Errorf("update service status: %v", err)
+			}
 		}
 	}
 	log.Info("service updated")
@@ -161,7 +171,7 @@ func (c *Controller) ApplyObject(obj controllers.Object, subresources ...string)
 	}
 	log.Debugf("applying %v", string(j))
 
-	return c.patcher(gvr, obj.GetName(), obj.GetNamespace(), j, subresources...)
+	return c.patcher(gvr, obj.GetName(), obj.GetName(), obj.GetNamespace(), j, subresources...)
 }
 
 func (c *Controller) Run(stop <-chan struct{}) {
@@ -170,13 +180,14 @@ func (c *Controller) Run(stop <-chan struct{}) {
 		stop,
 		c.namespaces.HasSynced,
 		c.services.HasSynced,
+		c.secrets.HasSynced,
 		c.gateways.HasSynced,
 		c.superServices.HasSynced,
 	)
 	c.queue.Run(stop)
 }
 
-func (c *Controller) apply(yml string) error {
+func (c *Controller) apply(parent types.NamespacedName, yml string) error {
 	data := map[string]any{}
 	err := yaml.Unmarshal([]byte(yml), &data)
 	if err != nil {
@@ -199,19 +210,28 @@ func (c *Controller) apply(yml string) error {
 	}
 
 	log.Debugf("applying %v", string(j))
-	if err := c.patcher(gvr, us.GetName(), us.GetNamespace(), j); err != nil {
+	if err := c.patcher(gvr, parent.Name, us.GetName(), us.GetNamespace(), j); err != nil {
 		return fmt.Errorf("patch %v/%v/%v: %v", us.GroupVersionKind(), us.GetNamespace(), us.GetName(), err)
 	}
 	return nil
 }
 
+func (c *Controller) fetchCA() (string, string) {
+	s := c.secrets.Get("cacerts", "istio-system")
+	if s == nil {
+		return "", ""
+	}
+	return string(s.Data["ca-cert.pem"]), string(s.Data["ca-key.pem"])
+
+}
+
 func NewController(client kube.Client) *Controller {
 	c := &Controller{
 		client: client,
-		patcher: func(gvr schema.GroupVersionResource, name string, namespace string, data []byte, subresources ...string) error {
+		patcher: func(gvr schema.GroupVersionResource, parentName string, name string, namespace string, data []byte, subresources ...string) error {
 			c := client.Dynamic().Resource(gvr).Namespace(namespace)
 			t := true
-			fm := fmt.Sprintf("istio-%v", name) // Unique per name for shared type usage
+			fm := fmt.Sprintf("istio-%v", parentName) // Unique per name for shared type usage
 			_, err := c.Patch(context.Background(), name, types.ApplyPatchType, data, metav1.PatchOptions{
 				Force:        &t,
 				FieldManager: fm,
@@ -230,6 +250,8 @@ func NewController(client kube.Client) *Controller {
 
 	c.services = kclient.New[*corev1.Service](client)
 	c.services.AddEventHandler(parentHandler)
+	c.secrets = kclient.New[*corev1.Secret](client)
+	c.secrets.AddEventHandler(parentHandler)
 
 	c.namespaces = kclient.New[*corev1.Namespace](client)
 	c.namespaces.AddEventHandler(controllers.ObjectHandler(func(o controllers.Object) {

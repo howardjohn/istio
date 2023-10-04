@@ -1,3 +1,4 @@
+{{$certManager := true}}
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: Gateway
 metadata:
@@ -6,9 +7,18 @@ metadata:
 spec:
   gatewayClassName: gke-l7-rilb
   listeners:
-    - name: "{{.Name}}"
+    # We use Name and server side apply to merge everything if Shared.
+    - name: "http"
       port: 80
       protocol: HTTP
+    - name: "{{.Name}}-https"
+      protocol: HTTPS
+      port: 443
+#      hostname: "{{.Name}}.{{.Namespace}}.{{.Suffix}}" # This breaks `curl echo`
+      tls:
+        mode: Terminate
+        certificateRefs:
+        - name: {{.Name}}-tls
 ---
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: HTTPRoute
@@ -24,6 +34,9 @@ spec:
   - "{{.Name}}"
   parentRefs:
   - name: {{.Shared | ternary "all-services" .Name }}
+    sectionName: "http"
+  - name: {{.Shared | ternary "all-services" .Name }}
+    sectionName: "{{.Name}}-https"
   rules:
   - backendRefs:
     - name: {{.Name}}-internal
@@ -48,4 +61,47 @@ spec:
     - port: {{.Port}}
   selector: {{.Selector | toJson}}
 
-
+{{- if and $certManager .CACert .CAKey }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: istio-signer
+  namespace: cert-manager
+data:
+  tls.crt: {{.CACert|b64enc}}
+  tls.key: {{.CAKey|b64enc}}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ca-issuer
+spec:
+  ca:
+    secretName: istio-signer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{.Name}}-tls
+  namespace: {{.Namespace}}
+spec:
+  secretName: {{.Name}}-tls
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - client auth
+  dnsNames:
+    - "{{.Name}}.{{.Namespace}}.{{.Suffix}}"
+  uris:
+    - spiffe://cluster.local/ns/{{.Namespace}}/sa/waypoint
+  issuerRef:
+    name: ca-issuer
+    kind: ClusterIssuer
+{{- end }}

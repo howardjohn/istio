@@ -51,6 +51,20 @@ var (
 		ValidateProto: validation.ValidateAuthorizationPolicy,
 	}.MustBuild()
 
+	Certificate = resource.Builder{
+		Identifier:    "Certificate",
+		Group:         "cert-manager.io",
+		Kind:          "Certificate",
+		Plural:        "certificates",
+		Version:       "v1",
+		Proto:         "",
+		ProtoPackage:  "",
+		ClusterScoped: false,
+		Synthetic:     true,
+		Builtin:       false,
+		ValidateProto: validation.EmptyValidate,
+	}.MustBuild()
+
 	CertificateSigningRequest = resource.Builder{
 		Identifier: "CertificateSigningRequest",
 		Group:      "certificates.k8s.io",
@@ -63,6 +77,20 @@ var (
 		ClusterScoped: true,
 		Synthetic:     false,
 		Builtin:       true,
+		ValidateProto: validation.EmptyValidate,
+	}.MustBuild()
+
+	ClusterIssuer = resource.Builder{
+		Identifier:    "ClusterIssuer",
+		Group:         "cert-manager.io",
+		Kind:          "ClusterIssuer",
+		Plural:        "clusterissuers",
+		Version:       "v1",
+		Proto:         "",
+		ProtoPackage:  "",
+		ClusterScoped: false,
+		Synthetic:     true,
+		Builtin:       false,
 		ValidateProto: validation.EmptyValidate,
 	}.MustBuild()
 
@@ -705,7 +733,9 @@ var (
 	// All contains all collections in the system.
 	All = collection.NewSchemasBuilder().
 		MustAdd(AuthorizationPolicy).
+		MustAdd(Certificate).
 		MustAdd(CertificateSigningRequest).
+		MustAdd(ClusterIssuer).
 		MustAdd(ConfigMap).
 		MustAdd(CustomResourceDefinition).
 		MustAdd(Deployment).
