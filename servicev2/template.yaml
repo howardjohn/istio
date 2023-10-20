@@ -4,8 +4,10 @@ kind: Gateway
 metadata:
   name: {{.Shared | ternary "all-services" .Name }}
   namespace: {{.Namespace}}
+  annotations:
+    networking.istio.io/service-type: "ClusterIP"
 spec:
-  gatewayClassName: gke-l7-rilb
+  gatewayClassName: istio
   listeners:
     # We use Name and server side apply to merge everything if Shared.
     - name: "http"
@@ -27,7 +29,12 @@ metadata:
   namespace: {{.Namespace}}
 spec:
   hostnames:
+  {{- if not (eq .Suffix "") }}
   - "{{.Name}}.{{.Namespace}}.{{.Suffix}}"
+  {{- end }}
+  {{- if not (eq .GatewayHostname "") }}
+  - "{{.GatewayHostname}}"
+  {{- end }}
   - "{{.Name}}.{{.Namespace}}.svc.cluster.local"
   - "{{.Name}}.{{.Namespace}}.svc"
   - "{{.Name}}.{{.Namespace}}"
@@ -49,7 +56,11 @@ metadata:
   namespace: {{.Namespace}}
 spec:
   type: ExternalName
+  {{- if not (eq .GatewayHostname "") }}
+  externalName: "{{.GatewayHostname}}"
+  {{- else }}
   externalName: "{{.Name}}.{{.Namespace}}.{{.Suffix}}"
+  {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -98,7 +109,12 @@ spec:
     - server auth
     - client auth
   dnsNames:
-    - "{{.Name}}.{{.Namespace}}.{{.Suffix}}"
+  {{- if not (eq .Suffix "") }}
+  - "{{.Name}}.{{.Namespace}}.{{.Suffix}}"
+  {{- end }}
+  {{- if not (eq .GatewayHostname "") }}
+  - "{{.GatewayHostname}}"
+  {{- end }}
   uris:
     - spiffe://cluster.local/ns/{{.Namespace}}/sa/waypoint
   issuerRef:

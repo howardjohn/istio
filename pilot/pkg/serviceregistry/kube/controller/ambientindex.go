@@ -446,8 +446,11 @@ func (c *Controller) setupIndex() *AmbientIndexImpl {
 		}
 
 		// TODO this is only checking one controller - we may be missing service vips for instances in another cluster
-		vips := slices.Map(ss.Status.Addresses, func(e examplev1.SuperServiceStatusAddress) string {
-			return e.Value
+		vips := slices.MapFilter(ss.Status.Addresses, func(e examplev1.SuperServiceStatusAddress) *string {
+			if e.Type == nil || *e.Type == "IPAddress" {
+				return &e.Value
+			}
+			return nil
 		})
 		addrs := make([]*workloadapi.NetworkAddress, 0, len(vips))
 		for _, vip := range vips {

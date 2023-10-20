@@ -16,6 +16,7 @@ package gateway
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -2118,26 +2119,33 @@ func reportGatewayStatus(
 	obj.Status.(*kstatus.WrappedStatus).Mutate(func(s config.Status) config.Status {
 		gs := s.(*k8s.GatewayStatus)
 		addressesToReport := external
-		addrType := k8s.IPAddressType
 		if len(addressesToReport) == 0 {
 			// There are no external addresses, so report the internal ones
 			// TODO: should we always report both?
 			if classInfo.addressType == k8s.IPAddressType {
 				addressesToReport = internalIP
-			} else {
-				addrType = k8s.HostnameAddressType
 				for _, hostport := range internal {
 					svchost, _, _ := net.SplitHostPort(hostport)
 					if !slices.Contains(pending, svchost) && !slices.Contains(addressesToReport, svchost) {
 						addressesToReport = append(addressesToReport, svchost)
 					}
 				}
+			} else {
+				for _, hostport := range internal {
+					svchost, _, _ := net.SplitHostPort(hostport)
+					if !slices.Contains(pending, svchost) && !slices.Contains(addressesToReport, svchost) {
+						addressesToReport = append(addressesToReport, svchost)
+					}
+				}
+				addressesToReport = append(addressesToReport, internalIP...)
 			}
 		}
+		log.Errorf("howardjohn: %v", addressesToReport)
 		// Do not report an address until we are ready. But once we are ready, never remove the address.
 		if len(addressesToReport) > 0 {
 			gs.Addresses = make([]k8sv1.GatewayStatusAddress, 0, len(addressesToReport))
 			for _, addr := range addressesToReport {
+				var addrType k8s.AddressType
 				if _, err := netip.ParseAddr(addr); err == nil {
 					addrType = k8s.IPAddressType
 				} else {
@@ -2149,6 +2157,8 @@ func reportGatewayStatus(
 				})
 			}
 		}
+		debug, _ := json.MarshalIndent(gs.Addresses, "howardjohn", "  ")
+		log.Errorf("howardjohn: %s", debug)
 		// Prune listeners that have been removed
 		haveListeners := getListenerNames(obj)
 		listeners := make([]k8s.ListenerStatus, 0, len(gs.Listeners))

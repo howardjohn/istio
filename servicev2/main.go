@@ -73,12 +73,13 @@ type Controller struct {
 }
 
 type Inputs struct {
-	Name      string
-	Namespace string
-	Suffix    string
-	Port      uint32
-	Selector  map[string]string
-	Shared    bool
+	Name            string
+	Namespace       string
+	Suffix          string
+	GatewayHostname string
+	Port            uint32
+	Selector        map[string]string
+	Shared          bool
 
 	CACert, CAKey string
 }
@@ -112,6 +113,23 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		CACert:    caCert,
 		CAKey:     caKey,
 	}
+
+	gwName := key.Name
+	if inputs.Shared {
+		gwName = "all-services"
+	}
+	log.Infof("gateway name %v", gwName)
+	gw := c.gateways.Get(gwName, key.Namespace)
+
+	if gw != nil {
+		for _, s := range gw.Status.Addresses {
+			if s.Type != nil && *s.Type == gateway.HostnameAddressType {
+				inputs.GatewayHostname = s.Value
+				break
+			}
+		}
+	}
+
 	result, err := runTemplate(inputs)
 	if err != nil {
 		return fmt.Errorf("template: %v", err)
@@ -121,12 +139,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 			return fmt.Errorf("apply failed: %v", err)
 		}
 	}
-	gwName := key.Name
-	if inputs.Shared {
-		gwName = "all-services"
-	}
-	log.Infof("gateway name %v", gwName)
-	gw := c.gateways.Get(gwName, key.Namespace)
+
 	if gw != nil {
 		ss := &examplev1.SuperService{
 			TypeMeta: metav1.TypeMeta{
