@@ -6,6 +6,13 @@ metadata:
   namespace: {{.Namespace}}
   annotations:
     networking.istio.io/service-type: "ClusterIP"
+  {{- if not .Shared }}
+  ownerReferences:
+    - apiVersion: networking.example.io/v1
+      kind: SuperService
+      name: {{.Name}}
+      uid: "{{.UID}}"
+  {{- end }}
 spec:
   gatewayClassName: istio
   listeners:
@@ -21,12 +28,19 @@ spec:
         mode: Terminate
         certificateRefs:
         - name: {{.Name}}-tls
+          group: ""
+          kind: Secret
 ---
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: HTTPRoute
 metadata:
   name: {{.Name}}
   namespace: {{.Namespace}}
+  ownerReferences:
+    - apiVersion: networking.example.io/v1
+      kind: SuperService
+      name: {{.Name}}
+      uid: "{{.UID}}"
 spec:
   hostnames:
   {{- if not (eq .Suffix "") }}
@@ -54,6 +68,11 @@ kind: Service
 metadata:
   name: {{.Name}}
   namespace: {{.Namespace}}
+  ownerReferences:
+  - apiVersion: networking.example.io/v1
+    kind: SuperService
+    name: {{.Name}}
+    uid: "{{.UID}}"
 spec:
   type: ExternalName
   {{- if not (eq .GatewayHostname "") }}
@@ -67,6 +86,11 @@ kind: Service
 metadata:
   name: {{.Name}}-internal
   namespace: {{.Namespace}}
+  ownerReferences:
+    - apiVersion: networking.example.io/v1
+      kind: SuperService
+      name: {{.Name}}
+      uid: "{{.UID}}"
 spec:
   ports:
     - port: {{.Port}}
@@ -96,6 +120,11 @@ kind: Certificate
 metadata:
   name: {{.Name}}-tls
   namespace: {{.Namespace}}
+  ownerReferences:
+    - apiVersion: networking.example.io/v1
+      kind: SuperService
+      name: {{.Name}}
+      uid: "{{.UID}}"
 spec:
   secretName: {{.Name}}-tls
   duration: 2160h # 90d

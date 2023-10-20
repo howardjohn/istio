@@ -15,10 +15,8 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
-	"istio.io/istio/pkg/kube/kclient"
-	"istio.io/istio/pkg/slices"
-	examplev1 "istio.io/istio/servicev2/apis/v1"
 	"net/netip"
 	"strings"
 	"sync"
@@ -44,11 +42,14 @@ import (
 	"istio.io/istio/pkg/config/schema/kind"
 	kubeutil "istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/kube/controllers"
+	"istio.io/istio/pkg/kube/kclient"
 	kubelabels "istio.io/istio/pkg/kube/labels"
 	"istio.io/istio/pkg/maps"
+	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/workloadapi"
+	examplev1 "istio.io/istio/servicev2/apis/v1"
 )
 
 type AmbientIndex interface {
@@ -226,6 +227,8 @@ func (a *AmbientIndexImpl) All() []*model.AddressInfo {
 	}
 
 	for _, s := range a.serviceByNamespacedHostname {
+		debug, _ := json.MarshalIndent(s, "howardjohn", "  ")
+		log.Errorf("howardjohn: %s", debug)
 		res = append(res, serviceToAddressInfo(s.Service))
 	}
 	return res
@@ -452,6 +455,13 @@ func (c *Controller) setupIndex() *AmbientIndexImpl {
 			}
 			return nil
 		})
+		hostname := fmt.Sprintf("%s.%s.%s", ss.Name, ss.Namespace, "mesh.howardjohn.net")
+		for _, a := range ss.Status.Addresses {
+			if a.Type != nil && *a.Type == "Hostname" {
+				hostname = a.Value
+				break
+			}
+		}
 		addrs := make([]*workloadapi.NetworkAddress, 0, len(vips))
 		for _, vip := range vips {
 			addrs = append(addrs, &workloadapi.NetworkAddress{
@@ -464,10 +474,10 @@ func (c *Controller) setupIndex() *AmbientIndexImpl {
 			Service: &workloadapi.Service{
 				Name:            ss.Name,
 				Namespace:       ss.Namespace,
-				Hostname:        fmt.Sprintf("%s.%s.%s", ss.Name, ss.Namespace, "mesh.howardjohn.net"),
+				Hostname:        hostname,
 				Addresses:       addrs,
 				Ports:           ports,
-				SubjectAltNames: []string{fmt.Sprintf("%s.%s.%s", ss.Name, ss.Namespace, "mesh.howardjohn.net")},
+				SubjectAltNames: []string{hostname},
 			},
 		}
 		for _, a := range addrs {
@@ -765,6 +775,15 @@ func (a *AmbientIndexImpl) handleService(obj any, isDelete bool, c *Controller) 
 
 	// We send an update for each *workload* IP address previously in the service; they may have changed
 	namespacedName := si.ResourceName()
+	// HACK
+	for _, networkAddr := range networkAddrs {
+		if e, f := a.serviceByAddr[networkAddr]; f {
+			// Let super service take precedence
+			if len(e.Service.SubjectAltNames) > 0 {
+				return updates
+			}
+		}
+	}
 	for _, wl := range a.byService[namespacedName] {
 		updates.Insert(model.ConfigKey{Kind: kind.Address, Name: wl.ResourceName()})
 	}

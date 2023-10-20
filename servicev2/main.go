@@ -44,7 +44,7 @@ var runTemplate = func() func(d any) ([]string, error) {
 }()
 
 func main() {
-	//log.EnableKlogWithVerbosity(6)
+	// log.EnableKlogWithVerbosity(6)
 	c, err := kube.NewDefaultClient()
 	fatal(err)
 	stop := make(chan struct{})
@@ -74,6 +74,7 @@ type Controller struct {
 
 type Inputs struct {
 	Name            string
+	UID             types.UID
 	Namespace       string
 	Suffix          string
 	GatewayHostname string
@@ -86,7 +87,8 @@ type Inputs struct {
 
 const (
 	GatewayClass = "gke-l7-rilb"
-	Suffix       = "mesh.howardjohn.net"
+	//Suffix       = "mesh.howardjohn.net"
+	Suffix       = ""
 )
 
 func (c *Controller) Reconcile(key types.NamespacedName) error {
@@ -106,6 +108,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	inputs := Inputs{
 		Name:      key.Name,
 		Namespace: key.Namespace,
+		UID:       ss.UID,
 		Suffix:    Suffix,
 		Port:      ss.Spec.Ports[0].Port,
 		Selector:  ss.Spec.Selector,
@@ -176,6 +179,9 @@ func (c *Controller) ApplyObject(obj controllers.Object, subresources ...string)
 	m := map[string]any{}
 	json.Unmarshal(j, &m)
 	delete(m["metadata"].(map[string]any), "creationTimestamp")
+	if len(subresources) == 1 && subresources[0] == "status" {
+		delete(m, "spec")
+	}
 	j, _ = json.Marshal(m)
 
 	gvr, err := controllers.ObjectToGVR(obj)
@@ -235,7 +241,6 @@ func (c *Controller) fetchCA() (string, string) {
 		return "", ""
 	}
 	return string(s.Data["ca-cert.pem"]), string(s.Data["ca-key.pem"])
-
 }
 
 func NewController(client kube.Client) *Controller {

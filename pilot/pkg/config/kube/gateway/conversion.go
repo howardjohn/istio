@@ -16,7 +16,6 @@ package gateway
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -2140,7 +2139,6 @@ func reportGatewayStatus(
 				addressesToReport = append(addressesToReport, internalIP...)
 			}
 		}
-		log.Errorf("howardjohn: %v", addressesToReport)
 		// Do not report an address until we are ready. But once we are ready, never remove the address.
 		if len(addressesToReport) > 0 {
 			gs.Addresses = make([]k8sv1.GatewayStatusAddress, 0, len(addressesToReport))
@@ -2157,8 +2155,6 @@ func reportGatewayStatus(
 				})
 			}
 		}
-		debug, _ := json.MarshalIndent(gs.Addresses, "howardjohn", "  ")
-		log.Errorf("howardjohn: %s", debug)
 		// Prune listeners that have been removed
 		haveListeners := getListenerNames(obj)
 		listeners := make([]k8s.ListenerStatus, 0, len(gs.Listeners))
