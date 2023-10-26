@@ -44,6 +44,7 @@ spec:
     spec:
       {{if .Values.cni.ambient.enabled }}hostNetwork: true{{ end }}
       nodeSelector:
+        cni: "true"
         kubernetes.io/os: linux
       # Can be configured to allow for excluding instio-cni from being scheduled on specified nodes
       {{- with .Values.cni.affinity }}
@@ -64,6 +65,7 @@ spec:
       # Minimize downtime during a rolling upgrade or deletion; tell Kubernetes to do a "force
       # deletion": https://kubernetes.io/docs/concepts/workloads/pods/pod/#termination-of-pods.
       terminationGracePeriodSeconds: 5
+      hostPID: true
       containers:
         # This container installs the Istio CNI binaries
         # and CNI network config file on each node.
@@ -161,6 +163,12 @@ spec:
           volumeMounts:
             - mountPath: /host/opt/cni/bin
               name: cni-bin-dir
+            - mountPath: /host/bin
+              name: cni-host-bin-dir
+            - mountPath: /host/containerd
+              name: cni-containerd
+            - mountPath: /var/run/netns
+              name: cni-netns
             - mountPath: /host/etc/cni/net.d
               name: cni-net-dir
             - mountPath: /var/run/istio-cni
@@ -188,6 +196,15 @@ spec:
         - name: cni-bin-dir
           hostPath:
             path: {{ .Values.cni.cniBinDir | default $defaultBinDir }}
+        - name: cni-host-bin-dir
+          hostPath:
+            path: /usr/local/bin
+        - name: cni-containerd
+          hostPath:
+            path: /run/containerd/containerd.sock
+        - name: cni-netns
+          hostPath:
+            path: /var/run/netns
         {{- if .Values.cni.ambient.enabled }}
         - name: cni-ambient-config-dir
           hostPath:

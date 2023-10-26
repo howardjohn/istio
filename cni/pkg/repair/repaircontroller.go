@@ -15,8 +15,13 @@
 package repair
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"istio.io/istio/cni/pkg/plugin"
+	"istio.io/istio/pkg/log"
+	"istio.io/istio/pkg/ptr"
+	"os/exec"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -79,11 +84,66 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 func (c *Controller) ReconcilePod(pod *corev1.Pod) (err error) {
 	repairLog.Debugf("Reconciling pod %s", pod.Name)
 
+	return c.repairPod(pod)
+
 	if c.cfg.DeletePods {
 		return c.deleteBrokenPod(pod)
 	} else if c.cfg.LabelPods {
 		return c.labelBrokenPod(pod)
 	}
+	return nil
+}
+
+func crictl(args ...string) (string, error) {
+	args = append([]string{"--runtime-endpoint=unix:///host/containerd"}, args...)
+
+	e := &bytes.Buffer{}
+	c := exec.Command("/host/bin/crictl", args...)
+	c.Stderr = e
+	o, err := c.Output()
+	if e.Len() != 0 {
+		log.Warnf("command %v: %v", args, e.String())
+	}
+	return strings.TrimSpace(string(o)), err
+}
+
+func (c *Controller) repairPod(pod *corev1.Pod) error {
+	log := repairLog.WithLabels("pod", pod.Namespace + "/" + pod.Name)
+	log.Infof("Repairing pod...")
+	pid, err := crictl("pods", "--name=" +pod.Name, "--namespace="+pod.Namespace, "-q", "--no-trunc")
+	if err != nil {
+		return fmt.Errorf("get pod id: %v", err)
+	}
+	log.Infof("pod id: %v", pid)
+	template := `{{- range .info.runtimeSpec.linux.namespaces }}
+{{- if eq .type "network" }}
+{{- .path }}
+{{- end }}
+{{- end }}`
+	netns, err := crictl("inspectp", "-o" , "go-template", "--template", template, pid)
+	if err != nil {
+		return fmt.Errorf("get netns: %v", err)
+	}
+	log.Infof("netns: %v", netns)
+
+	redirect, err := plugin.NewRedirect(&plugin.PodInfo{
+		Containers:        nil, // todo
+		Labels:            pod.Labels,
+		Annotations:       pod.Annotations,
+		ProxyType:         "sidecar", // TODO
+		ProxyEnvironments: nil, // TODO
+		ProxyUID:          ptr.Of(int64(1337)), // todo
+		ProxyGID:          ptr.Of(int64(1337)), // todo
+	})
+	if err != nil {
+		return fmt.Errorf("redirect: %v", err)
+	}
+	rulesMgr := plugin.IptablesInterceptRuleMgrCtor()
+	if err := rulesMgr.Program(pod.Name, netns, redirect); err != nil {
+		return err
+	}
+	log.Infof("pod repaired")
+	// TODO: make sure its never re-enqueued again
 	return nil
 }
 

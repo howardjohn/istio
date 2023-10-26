@@ -59,57 +59,61 @@ var rootCmd = &cobra.Command{
 	Long:   "istio-iptables is responsible for setting up port forwarding for Istio Sidecar.",
 	PreRun: bindFlags,
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg := constructConfig()
-		if err := cfg.Validate(); err != nil {
+		cfg := ConstructConfig()
+		RunIptables(cfg) // TODO handle errors better
+	},
+}
+
+func RunIptables(cfg *config.Config) {
+	if err := cfg.Validate(); err != nil {
+		handleErrorWithCode(err, 1)
+	}
+	var ext dep.Dependencies
+	if cfg.DryRun {
+		ext = &dep.StdoutStubDependencies{}
+	} else {
+		ipv, err := dep.DetectIptablesVersion(cfg.IPTablesVersion)
+		if err != nil {
 			handleErrorWithCode(err, 1)
 		}
-		var ext dep.Dependencies
-		if cfg.DryRun {
-			ext = &dep.StdoutStubDependencies{}
-		} else {
-			ipv, err := dep.DetectIptablesVersion(cfg.IPTablesVersion)
-			if err != nil {
-				handleErrorWithCode(err, 1)
-			}
-			ext = &dep.RealDependencies{
-				CNIMode:          cfg.CNIMode,
-				NetworkNamespace: cfg.NetworkNamespace,
-				IptablesVersion:  ipv,
-			}
+		ext = &dep.RealDependencies{
+			CNIMode:          cfg.CNIMode,
+			NetworkNamespace: cfg.NetworkNamespace,
+			IptablesVersion:  ipv,
 		}
+	}
 
-		iptConfigurator := capture.NewIptablesConfigurator(cfg, ext)
+	iptConfigurator := capture.NewIptablesConfigurator(cfg, ext)
 
-		if !cfg.SkipRuleApply {
-			iptConfigurator.Run()
-			if err := capture.ConfigureRoutes(cfg, ext); err != nil {
-				log.Errorf("failed to configure routes: ")
-				handleErrorWithCode(err, 1)
-			}
+	if !cfg.SkipRuleApply {
+		iptConfigurator.Run()
+		if err := capture.ConfigureRoutes(cfg, ext); err != nil {
+			log.Errorf("failed to configure routes: ")
+			handleErrorWithCode(err, 1)
 		}
-		if cfg.RunValidation {
-			hostIP, _, err := getLocalIP(cfg.DualStack)
-			if err != nil {
-				// Assume it is not handled by istio-cni and won't reuse the ValidationErrorCode
-				panic(err)
-			}
-			validator := validation.NewValidator(cfg, hostIP)
+	}
+	if cfg.RunValidation {
+		hostIP, _, err := getLocalIP(cfg.DualStack)
+		if err != nil {
+			// Assume it is not handled by istio-cni and won't reuse the ValidationErrorCode
+			panic(err)
+		}
+		validator := validation.NewValidator(cfg, hostIP)
 
-			if err := validator.Run(); err != nil {
-				// nolint: revive, stylecheck
-				msg := fmt.Errorf(`iptables validation failed; workload is not ready for Istio.
+		if err := validator.Run(); err != nil {
+			// nolint: revive, stylecheck
+			msg := fmt.Errorf(`iptables validation failed; workload is not ready for Istio.
 When using Istio CNI, this can occur if a pod is scheduled before the node is ready.
 
 If installed with 'cni.repair.deletePods=true', this pod should automatically be deleted and retry.
 Otherwise, this pod will need to be manually removed so that it is scheduled on a node with istio-cni running, allowing iptables rules to be established.
 `)
-				handleErrorWithCode(msg, constants.ValidationErrorCode)
-			}
+			handleErrorWithCode(msg, constants.ValidationErrorCode)
 		}
-	},
+	}
 }
 
-func constructConfig() *config.Config {
+func ConstructConfig() *config.Config {
 	cfg := &config.Config{
 		DryRun:                  viper.GetBool(constants.DryRun),
 		TraceLogging:            viper.GetBool(constants.TraceLogging),

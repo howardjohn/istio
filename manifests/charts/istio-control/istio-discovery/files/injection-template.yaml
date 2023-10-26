@@ -126,6 +126,7 @@ spec:
     - "--run-validation"
     - "--skip-rule-apply"
     {{ end -}}
+    - {{ .ObjectMeta.UID | quote }}
     {{with .Values.global.imagePullPolicy }}imagePullPolicy: "{{.}}"{{end}}
   {{- if .ProxyConfig.ProxyMetadata }}
     env:

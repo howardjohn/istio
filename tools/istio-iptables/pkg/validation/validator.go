@@ -60,6 +60,7 @@ func (validator *Validator) Run() error {
 		validator.Config,
 	}
 	sError := make(chan error, 1)
+	s.Config.ProbeTimeout = time.Hour
 	sTimer := time.NewTimer(s.Config.ProbeTimeout)
 	defer sTimer.Stop()
 	go func() {
