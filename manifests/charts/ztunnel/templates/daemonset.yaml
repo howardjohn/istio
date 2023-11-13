@@ -18,6 +18,7 @@ spec:
   template:
     metadata:
       labels:
+        redir-type: proxy
         sidecar.istio.io/inject: "false"
         app: ztunnel
 {{ with .Values.podLabels -}}{{ toYaml . | indent 8 }}{{ end }}
@@ -86,43 +87,12 @@ spec:
             PROXY_RET_MASK="0x040"
             PROXY_RET_MARK="0x040/$PROXY_RET_MASK"
 
-            INBOUND_TUN=istioin
-            OUTBOUND_TUN=istioout
-
-            # TODO: look into why link local (169.254.x.x) address didn't work
-            # they don't respond to ARP.
-            INBOUND_TUN_IP=192.168.126.1
-            ZTUNNEL_INBOUND_TUN_IP=192.168.126.2
-            OUTBOUND_TUN_IP=192.168.127.1
-            ZTUNNEL_OUTBOUND_TUN_IP=192.168.127.2
-            TUN_PREFIX=30
-
             # a route table number number we can use to send traffic to envoy (should be unused).
             INBOUND_ROUTE_TABLE=100
             INBOUND_ROUTE_TABLE2=103
             OUTBOUND_ROUTE_TABLE=101
             # needed for original src.
             PROXY_ROUTE_TABLE=102
-
-            set +e # Only for delete, we don't care if this fails
-            ip link del p$INBOUND_TUN
-            ip link del p$OUTBOUND_TUN
-            set -e
-{{- if not (.Capabilities.KubeVersion.GitVersion | contains "-eks") }}
-            HOST_IP=$(ip route | grep default | awk '{print $3}')
-{{- end }}
-
-            ip link add name p$INBOUND_TUN type geneve id 1000 remote $HOST_IP
-            ip addr add $ZTUNNEL_INBOUND_TUN_IP/$TUN_PREFIX dev p$INBOUND_TUN
-
-            ip link add name p$OUTBOUND_TUN type geneve id 1001 remote $HOST_IP
-            ip addr add $ZTUNNEL_OUTBOUND_TUN_IP/$TUN_PREFIX dev p$OUTBOUND_TUN
-
-            ip link set p$INBOUND_TUN up
-            ip link set p$OUTBOUND_TUN up
-
-            echo 0 > /proc/sys/net/ipv4/conf/p$INBOUND_TUN/rp_filter
-            echo 0 > /proc/sys/net/ipv4/conf/p$OUTBOUND_TUN/rp_filter
 
             set +e # Only for delete, we don't care if this fails
             ip rule del priority 20000
@@ -138,12 +108,6 @@ spec:
             ip rule add priority 20000 fwmark $MARK lookup 100
             ip rule add priority 20003 fwmark $ORG_SRC_RET_MARK lookup 100
             ip route add local 0.0.0.0/0 dev lo table 100
-
-            ip route add table 101 $HOST_IP dev eth0 scope link
-            ip route add table 101 0.0.0.0/0 via $OUTBOUND_TUN_IP dev p$OUTBOUND_TUN
-
-            ip route add table 102 $HOST_IP dev eth0 scope link
-            ip route add table 102 0.0.0.0/0 via $INBOUND_TUN_IP dev p$INBOUND_TUN
 
             set +e
             num_legacy_lines=$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
@@ -165,12 +129,10 @@ spec:
 
             $IPTABLES -t mangle -F PREROUTING
             $IPTABLES -t nat -F OUTPUT
+            $IPTABLES -t mangle -A PREROUTING -p tcp -m tcp --dport 80 -j TPROXY --on-port 15001 --on-ip 127.0.0.1 --tproxy-mark 0x400/0xfff
+            $IPTABLES -t mangle -A PREROUTING -p tcp -m tcp --dport 15008 -j TPROXY --on-port 15008 --on-ip 127.0.0.1 --tproxy-mark 0x400/0xfff
+            $IPTABLES -t mangle -A PREROUTING -p tcp -m tcp --dport 5678 -j TPROXY --on-port 15001 --on-ip 127.0.0.1 --tproxy-mark 0x400/0xfff
 
-            $IPTABLES -t mangle -A PREROUTING -p tcp -i p$INBOUND_TUN -m tcp --dport=$POD_INBOUND -j TPROXY --tproxy-mark $MARK --on-port $POD_INBOUND --on-ip 127.0.0.1
-            $IPTABLES -t mangle -A PREROUTING -p tcp -i p$OUTBOUND_TUN -j TPROXY --tproxy-mark $MARK --on-port $POD_OUTBOUND --on-ip 127.0.0.1
-            $IPTABLES -t mangle -A PREROUTING -p tcp -i p$INBOUND_TUN -j TPROXY --tproxy-mark $MARK --on-port $POD_INBOUND_PLAINTEXT --on-ip 127.0.0.1
-
-            $IPTABLES -t mangle -A PREROUTING -p tcp -i eth0 ! --dst $INSTANCE_IP -j MARK --set-mark $ORG_SRC_RET_MARK
             # With normal linux routing we need to disable the rp_filter
             # as we get packets from a tunnel that doesn't have default routes.
             echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
@@ -240,8 +202,14 @@ spec:
         {{- else }}
           value: istiod{{- if not (eq .Values.revision "") }}-{{ .Values.revision }}{{- end }}.{{ .Values.istioNamespace }}.svc:15012
         {{- end }}
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         - name: XDS_ADDRESS
-          value: istiod{{- if not (eq .Values.revision "") }}-{{ .Values.revision }}{{- end }}.{{ .Values.istioNamespace }}.svc:15012
+          value: "http://$(HOST_IP):15010"
+        - name: XDS_ON_DEMAND
+          value: "true"
         - name: CLUSTER_ID
           value: {{ .Values.multiCluster.clusterName | default "Kubernetes" }}
         - name: POD_NAME
