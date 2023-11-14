@@ -31,6 +31,8 @@ import (
 
 const (
 	LeaderElectionRecordAnnotationKey = "control-plane.alpha.kubernetes.io/leader"
+	// Leases do not have holderKey, so we put it in annotations
+	LeaderElectionHolderKeyAnnotationKey = "control-plane.alpha.kubernetes.io/holder-key"
 	EndpointsResourceLock             = "endpoints"
 	ConfigMapsResourceLock            = "configmaps"
 	LeasesResourceLock                = "leases"

@@ -177,11 +177,13 @@ func (l *LeaderElection) create() (*k8sleaderelection.LeaderElector, error) {
 		// to instances are both considered the leaders. As such, if this is intended to be use for mission-critical
 		// usages (rather than avoiding duplication of work), this may need to be re-evaluated.
 		ReleaseOnCancel: true,
-		// Function to use to decide whether this leader should steal the existing lock.
-		KeyComparison: func(leaderKey string) bool {
-			return LocationPrioritizedComparison(leaderKey, l)
-		},
 	}
+	//if !l.perRevision {
+		// Function to use to decide whether this leader should steal the existing lock.
+		config.KeyComparison = func(leaderKey string) bool {
+			return LocationPrioritizedComparison(leaderKey, l)
+		}
+	//}
 
 	return k8sleaderelection.NewLeaderElector(config)
 }
@@ -192,6 +194,10 @@ func LocationPrioritizedComparison(currentLeaderRevision string, l *LeaderElecti
 		currentLeaderRevision = strings.TrimPrefix(currentLeaderRevision, remoteIstiodPrefix)
 	}
 	defaultRevision := l.defaultWatcher.GetDefault()
+	log.Errorf("howardjohn: election=%v", l.electionID)
+	log.Errorf("howardjohn: l.revision=%v", l.revision)
+	log.Errorf("howardjohn: currentLeaderRevision=%v", currentLeaderRevision)
+	log.Errorf("howardjohn: defaultRevision=%v", defaultRevision)
 	if l.revision != currentLeaderRevision && defaultRevision != "" && defaultRevision == l.revision {
 		// Always steal the lock if the new one is the default revision and the current one is not
 		return true

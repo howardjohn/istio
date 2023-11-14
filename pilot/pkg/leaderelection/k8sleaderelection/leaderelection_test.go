@@ -45,7 +45,7 @@ func createLockObject(t *testing.T, objectType, namespace, name string, record *
 		Namespace: namespace,
 		Name:      name,
 	}
-	if record != nil {
+	if record != nil && objectType != "leases" {
 		recordBytes, _ := json.Marshal(record)
 		objectMeta.Annotations = map[string]string{
 			rl.LeaderElectionRecordAnnotationKey: string(recordBytes),
@@ -60,7 +60,11 @@ func createLockObject(t *testing.T, objectType, namespace, name string, record *
 		var spec coordinationv1.LeaseSpec
 		if record != nil {
 			spec = rl.LeaderElectionRecordToLeaseSpec(record)
+			objectMeta.Annotations = map[string]string{
+				rl.LeaderElectionHolderKeyAnnotationKey: record.HolderKey,
+			}
 		}
+
 		obj = &coordinationv1.Lease{ObjectMeta: objectMeta, Spec: spec}
 	default:
 		t.Fatal("unexpected objType:" + objectType)
@@ -235,28 +239,27 @@ func testTryAcquireOrRenew(t *testing.T, objectType string) {
 			expectSuccess: false,
 			outHolder:     "bing",
 		},
-		// Uncomment when https://github.com/kubernetes/kubernetes/pull/103442/files#r715818684 is resolved.
-		//{
-		//	name: "don't acquire from led, acked object with key when our key is smaller",
-		//	reactors: []Reactor{
-		//		{
-		//			verb: "get",
-		//			reaction: func(action fakeclient.Action) (handled bool, ret runtime.Object, err error) {
-		//				return true, createLockObject(t, objectType, action.GetNamespace(), action.(fakeclient.GetAction).GetName(),
-		//					&rl.LeaderElectionRecord{HolderIdentity: "bing", HolderKey: "zzzz"}), nil
-		//			},
-		//		},
-		//	},
-		//	observedTime: future,
-		//
-		//	key: "aaa",
-		//	keyComparisonFunc: func(existingKey string) bool {
-		//		return "aaa" > existingKey
-		//	},
-		//
-		//	expectSuccess: false,
-		//	outHolder:     "bing",
-		//},
+		{
+			name: "don't acquire from led, acked object with key when our key is smaller",
+			reactors: []Reactor{
+				{
+					verb: "get",
+					reaction: func(action fakeclient.Action) (handled bool, ret runtime.Object, err error) {
+						return true, createLockObject(t, objectType, action.GetNamespace(), action.(fakeclient.GetAction).GetName(),
+							&rl.LeaderElectionRecord{HolderIdentity: "bing", HolderKey: "zzzz"}), nil
+					},
+				},
+			},
+			observedTime: future,
+
+			key: "aaa",
+			keyComparisonFunc: func(existingKey string) bool {
+				return "aaa" > existingKey
+			},
+
+			expectSuccess: false,
+			outHolder:     "bing",
+		},
 		{
 			name: "steal from led object with key when our key is larger",
 			reactors: []Reactor{
@@ -439,22 +442,31 @@ func TestLeaseSpecToLeaderElectionRecordRoundTrip(t *testing.T) {
 	holderIdentity := "foo"
 	leaseDurationSeconds := int32(10)
 	leaseTransitions := int32(1)
-	oldSpec := coordinationv1.LeaseSpec{
-		HolderIdentity:       &holderIdentity,
-		LeaseDurationSeconds: &leaseDurationSeconds,
-		AcquireTime:          &metav1.MicroTime{Time: time.Now()},
-		RenewTime:            &metav1.MicroTime{Time: time.Now()},
-		LeaseTransitions:     &leaseTransitions,
+	om := metav1.ObjectMeta{
+		Annotations: map[string]string{rl.LeaderElectionHolderKeyAnnotationKey: "key"},
+	}
+	oldObj := &coordinationv1.Lease{
+		ObjectMeta: om,
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       &holderIdentity,
+			LeaseDurationSeconds: &leaseDurationSeconds,
+			AcquireTime:          &metav1.MicroTime{Time: time.Now()},
+			RenewTime:            &metav1.MicroTime{Time: time.Now()},
+			LeaseTransitions:     &leaseTransitions,
+		},
 	}
 
-	oldRecord := rl.LeaseSpecToLeaderElectionRecord(&oldSpec)
+	oldRecord := rl.LeaseSpecToLeaderElectionRecord(oldObj)
 	newSpec := rl.LeaderElectionRecordToLeaseSpec(oldRecord)
-
-	if !equality.Semantic.DeepEqual(oldSpec, newSpec) {
-		t.Errorf("diff: %v", diff.ObjectReflectDiff(oldSpec, newSpec))
+	newObj := &coordinationv1.Lease{
+		ObjectMeta: om, // Callers of LeaderElectionRecordToLeaseSpec are responsible for this part
+		Spec:       newSpec,
+	}
+	if !equality.Semantic.DeepEqual(oldObj, newObj) {
+		t.Errorf("diff: %v", diff.ObjectReflectDiff(oldObj, newObj))
 	}
 
-	newRecord := rl.LeaseSpecToLeaderElectionRecord(&newSpec)
+	newRecord := rl.LeaseSpecToLeaderElectionRecord(newObj)
 
 	if !equality.Semantic.DeepEqual(oldRecord, newRecord) {
 		t.Errorf("diff: %v", diff.ObjectReflectDiff(oldRecord, newRecord))
