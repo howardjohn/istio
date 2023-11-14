@@ -196,12 +196,10 @@ spec:
         - proxy
         - ztunnel
         env:
+        - name: CA_ROOT_CA
+          value: "./var/run/secrets/workload-spiffe-credentials/tls.crt"
         - name: CA_ADDRESS
-        {{- if .Values.caAddress }}
-          value: {{ .Values.caAddress }}
-        {{- else }}
-          value: istiod{{- if not (eq .Values.revision "") }}-{{ .Values.revision }}{{- end }}.{{ .Values.istioNamespace }}.svc:15012
-        {{- end }}
+          value: "kubernetes://clusterissuers.cert-manager.io/istio-ca"
         - name: HOST_IP
           valueFrom:
             fieldRef:
@@ -245,6 +243,8 @@ spec:
         {{- end }}
         {{- end }}
         volumeMounts:
+        - mountPath: /var/run/secrets/workload-spiffe-credentials
+          name: workload-ca-cert
         - mountPath: /var/run/secrets/istio
           name: istiod-ca-cert
         - mountPath: /var/run/secrets/tokens
@@ -264,3 +264,7 @@ spec:
       - name: istiod-ca-cert
         configMap:
           name: istio-ca-root-cert
+      - name: workload-ca-cert
+        configMap:
+          name: ztunnel-root-certificate
+          optional: true
