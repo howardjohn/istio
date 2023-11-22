@@ -7,7 +7,7 @@ replace github.com/imdario/mergo => github.com/imdario/mergo v0.3.5
 
 replace github.com/envoyproxy/go-control-plane => ../../github.com/envoyproxy/go-control-plane
 
-replace github.com/planetscale/vtprotobuf => github.com/howardjohn/vtprotobuf v0.0.0-20231122193849-0c94c025edea
+replace github.com/planetscale/vtprotobuf => github.com/howardjohn/vtprotobuf v0.0.0-20231122204620-2c43b2ab0109
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
