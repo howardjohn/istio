@@ -26,9 +26,8 @@ import (
 	"istio.io/istio/pkg/log"
 )
 
-// TODO: strict
 type vt interface {
-	MarshalVT() ([]byte, error)
+	MarshalVTStrict() ([]byte, error)
 }
 
 // MessageToAnyWithError converts from proto message to proto Any
@@ -36,7 +35,7 @@ func MessageToAnyWithError(msg proto.Message) (*anypb.Any, error) {
 	var b []byte
 	var err error
 	if v, ok := msg.(vt); ok {
-		b, err = v.MarshalVT()
+		b, err = v.MarshalVTStrict()
 	} else {
 		b, err = proto.MarshalOptions{Deterministic: true}.Marshal(msg)
 	}
