@@ -15,13 +15,25 @@ metadata:
   {{- end }}
 spec:
   gatewayClassName: istio
+  infrastructure:
+    annotations:
+      # Disable HBONE; we will sandwich
+      proxy.istio.io/config: |-
+        proxyMetadata:
+          ENABLE_HBONE: "false"
   listeners:
     # We use Name and server side apply to merge everything if Shared.
     - name: "http"
       port: 80
       protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
     - name: "{{.Name}}-https"
       protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Same
       port: 443
 #      hostname: "{{.Name}}.{{.Namespace}}.{{.Suffix}}" # This breaks `curl echo`
       tls:
