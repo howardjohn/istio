@@ -1,4 +1,21 @@
 {{$certManager := true}}
+apiVersion: networking.istio.io/v1beta1
+kind: ProxyConfig
+metadata:
+  name: {{.Shared | ternary "all-services" .Name }}
+  namespace: {{.Namespace}}
+  {{- if not .Shared }}
+  ownerReferences:
+    - apiVersion: networking.example.io/v1
+      kind: SuperService
+      name: {{.Name}}
+      uid: "{{.UID}}"
+  {{- end }}
+spec:
+  # Disable HBONE; we will sandwich
+  environmentVariables:
+    ISTIO_META_ENABLE_HBONE: "false"
+---
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: Gateway
 metadata:
@@ -15,12 +32,6 @@ metadata:
   {{- end }}
 spec:
   gatewayClassName: istio
-  infrastructure:
-    annotations:
-      # Disable HBONE; we will sandwich
-      proxy.istio.io/config: |-
-        proxyMetadata:
-          ENABLE_HBONE: "false"
   listeners:
     # We use Name and server side apply to merge everything if Shared.
     - name: "http"
