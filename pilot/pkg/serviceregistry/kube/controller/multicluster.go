@@ -141,7 +141,6 @@ func NewMulticluster(
 		if !configCluster {
 			options.DiscoveryNamespacesFilter = nil
 		}
-		options.ConfigController = configController
 		log.Infof("Initializing Kubernetes service registry %q", options.ClusterID)
 		options.ConfigCluster = configCluster
 		kubeRegistry := NewController(client, options)

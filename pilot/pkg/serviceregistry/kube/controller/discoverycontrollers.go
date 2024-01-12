@@ -16,14 +16,12 @@ package controller
 
 import (
 	"github.com/hashicorp/go-multierror"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pkg/config/mesh"
 	filter "istio.io/istio/pkg/kube/namespace"
-	"istio.io/istio/pkg/util/sets"
 )
 
 // initialize handlers for discovery selection scoping
@@ -77,46 +75,6 @@ func (c *Controller) initMeshWatcherHandler(meshWatcher mesh.Watcher, discoveryN
 	})
 }
 
-// HandleSelectedNamespace processes pods, workload entries and services for the selected namespace
-// and sends an XDS update as needed.
-//
-// NOTE: As an interface method of AmbientIndex, this locks the index.
-func (a *AmbientIndexImpl) HandleSelectedNamespace(ns string, pods []*corev1.Pod, services []*corev1.Service, c *Controller) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	updates := sets.New[model.ConfigKey]()
-
-	// Handle Pods.
-	for _, p := range pods {
-		updates = updates.Merge(a.handlePod(nil, p, model.EventAdd, c))
-	}
-
-	// Handle Services.
-	for _, s := range services {
-		updates = updates.Merge(a.handleService(s, model.EventAdd, c))
-	}
-
-	if c.configCluster {
-		// Handle WorkloadEntries.
-		allWorkloadEntries := c.getControllerWorkloadEntries(ns)
-		for _, w := range allWorkloadEntries {
-			updates = updates.Merge(a.handleWorkloadEntry(nil, w, false, c))
-		}
-		allServiceEntries := c.getControllerServiceEntries(ns)
-		for _, s := range allServiceEntries {
-			updates = updates.Merge(a.handleServiceEntry(s, model.EventUpdate, c))
-		}
-	}
-
-	if len(updates) > 0 {
-		c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{
-			ConfigsUpdated: updates,
-			Reason:         model.NewReasonStats(model.AmbientUpdate),
-		})
-	}
-}
-
 // issue create events for all services, pods, and endpoints in the newly labeled namespace
 func (c *Controller) handleSelectedNamespace(ns string) {
 	var errs *multierror.Error
@@ -131,10 +89,7 @@ func (c *Controller) handleSelectedNamespace(ns string) {
 	for _, pod := range pods {
 		errs = multierror.Append(errs, c.pods.onEvent(nil, pod, model.EventAdd))
 	}
-
-	if c.ambientIndex != nil {
-		c.ambientIndex.HandleSelectedNamespace(ns, pods, services, c)
-	}
+	// TODO: recompute ambient
 
 	errs = multierror.Append(errs, c.endpoints.initializeNamespace(ns, false))
 

@@ -33,6 +33,7 @@ import (
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pilot/pkg/serviceregistry/aggregate"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
+	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller/ambient"
 	"istio.io/istio/pilot/pkg/serviceregistry/provider"
 	labelutil "istio.io/istio/pilot/pkg/serviceregistry/util/label"
 	"istio.io/istio/pilot/pkg/serviceregistry/util/workloadinstances"
@@ -142,8 +143,7 @@ type Options struct {
 	// If meshConfig.DiscoverySelectors are specified, the DiscoveryNamespacesFilter tracks the namespaces this controller watches.
 	DiscoveryNamespacesFilter namespace.DiscoveryNamespacesFilter
 
-	ConfigController model.ConfigStoreController
-	ConfigCluster    bool
+	ConfigCluster bool
 }
 
 func (o *Options) GetFilter() namespace.DiscoveryFilter {
@@ -170,6 +170,8 @@ var (
 	_ controllerInterface      = &Controller{}
 	_ serviceregistry.Instance = &Controller{}
 )
+
+type ambientIndex = ambient.Index
 
 // Controller is a collection of synchronized resource watchers
 // Caches are thread-safe
@@ -217,15 +219,15 @@ type Controller struct {
 
 	*networkManager
 
+	ambientIndex
+
 	// initialSyncTimedout is set to true after performing an initial processing timed out.
 	initialSyncTimedout *atomic.Bool
 	meshWatcher         mesh.Watcher
 
 	podsClient kclient.Client[*v1.Pod]
 
-	ambientIndex     AmbientIndex
-	configController model.ConfigStoreController
-	configCluster    bool
+	configCluster bool
 
 	networksHandlerRegistration *mesh.WatcherHandlerRegistration
 	meshHandlerRegistration     *mesh.WatcherHandlerRegistration
@@ -294,8 +296,15 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 	registerHandlers[*v1.Pod](c, c.podsClient, "Pods", c.pods.onEvent, c.pods.labelFilter)
 
 	if features.EnableAmbientControllers {
-		c.configController = options.ConfigController
-		c.ambientIndex = c.setupIndex()
+		c.ambientIndex = ambient.New(ambient.Options{
+			Client:                    kubeClient,
+			SystemNamespace:           options.SystemNamespace,
+			DomainSuffix:              options.DomainSuffix,
+			ClusterID:                 options.ClusterID,
+			XDSUpdater:                options.XDSUpdater,
+			DiscoveryNamespacesFilter: c.opts.DiscoveryNamespacesFilter,
+			LookupNetwork:             c.Network,
+		})
 	}
 	c.exports = newServiceExportCache(c)
 	c.imports = newServiceImportCache(c)
