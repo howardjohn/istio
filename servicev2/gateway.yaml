@@ -8,15 +8,27 @@ metadata:
 spec:
   gatewayClassName: istio
   listeners:
+{{ if false }}
   {{ range $port := .Ports }}
   - name: "https-{{.}}"
     protocol: HTTPS
     allowedRoutes:
       namespaces:
         from: Same
-    port: 443
+    port: {{.}}
     tls:
       mode: Terminate
       options:
         "gateway.istio.io/tls-terminate-mode": ISTIO_MUTUAL
   {{ end }}
+{{ else }}
+  {{ range $port := .Ports }}
+- name: "http-{{.}}"
+  protocol: HTTP
+  allowedRoutes:
+    namespaces:
+      from: Same
+  port: {{.}}
+  {{ end }}
+{{ end }}
+

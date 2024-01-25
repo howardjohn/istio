@@ -5,10 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"istio.io/istio/pkg/ptr"
-	"istio.io/istio/pkg/slices"
-	"istio.io/istio/pkg/util/sets"
-	k8sv1 "sigs.k8s.io/gateway-api/apis/v1"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +13,7 @@ import (
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	k8sv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
 	"sigs.k8s.io/yaml"
 
@@ -28,14 +25,21 @@ import (
 	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/kclient"
 	"istio.io/istio/pkg/log"
+	"istio.io/istio/pkg/ptr"
+	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/test/util/tmpl"
 	"istio.io/istio/pkg/test/util/yml"
+	"istio.io/istio/pkg/util/sets"
 )
 
 //go:embed template.yaml
 var yamlTemplate string
+
 //go:embed gateway.yaml
 var gatewayTemplate string
+
+//go:embed route.yaml
+var routeTemplate string
 
 func buildTemplate(tm string) func(d any) ([]string, error) {
 	t := tmpl.MustParse(tm)
@@ -48,7 +52,10 @@ func buildTemplate(tm string) func(d any) ([]string, error) {
 	}
 }
 
-var runGateway = buildTemplate(gatewayTemplate)
+var (
+	runGateway = buildTemplate(gatewayTemplate)
+	runRoute   = buildTemplate(routeTemplate)
+)
 
 func main() {
 	// log.EnableKlogWithVerbosity(6)
@@ -85,6 +92,11 @@ type GatewayInputs struct {
 	Ports     []int32
 }
 
+type RouteInputs struct {
+	*gateway.HTTPRoute
+	Hostnames []string
+}
+
 type Inputs struct {
 	Name            string
 	UID             types.UID
@@ -100,8 +112,9 @@ type Inputs struct {
 
 const (
 	GatewayClass = "gke-l7-rilb"
-	//Suffix       = "mesh.howardjohn.net"
+	// Suffix       = "mesh.howardjohn.net"
 	Suffix = ""
+	domain = "cluster.local"
 )
 
 func (c *Controller) Reconcile(key types.NamespacedName) error {
@@ -109,7 +122,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	log := log.WithLabels("namespace", ns)
 
 	gwName := "waypoint"
-	//caCert, caKey := c.fetchCA()
+	// caCert, caKey := c.fetchCA()
 	routes := c.routesFor(ns)
 	if len(routes) == 0 {
 		log.Infof("no routes")
@@ -118,16 +131,16 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	ports := sets.New[int32]()
 	for _, r := range routes {
 		for _, pr := range r.Spec.ParentRefs {
-				if !isServiceReference(pr) {
-					continue
-				}
-				if pr.Port == nil {
-					// TODO: default it?
-					continue
-				}
-				ports.Insert(int32(*pr.Port))
+			if !isServiceReference(pr) {
+				continue
 			}
+			if pr.Port == nil {
+				// TODO: default it?
+				continue
+			}
+			ports.Insert(int32(*pr.Port))
 		}
+	}
 	gwi := GatewayInputs{
 		Name:      gwName,
 		Namespace: ns,
@@ -141,71 +154,102 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		return fmt.Errorf("gateway apply failed: %v", err)
 	}
 
+	for _, r := range routes {
+		routes, err := runRoute(routeInputs(r))
+		if err != nil {
+			return err
+		}
+		if err := c.apply(routes[0]); err != nil {
+			return fmt.Errorf("route %v apply failed: %v", r.Name, err)
+		}
+	}
+
 	/*
-	inputs := Inputs{
-		Name:      key.Name,
-		Namespace: key.Namespace,
-		UID:       ss.UID,
-		Suffix:    Suffix,
-		Port:      ss.Spec.Ports[0].Port,
-		Selector:  ss.Spec.Selector,
-		Shared:    ss.Spec.Class != nil && (*ss.Spec.Class) == "Shared",
-		CACert:    caCert,
-		CAKey:     caKey,
-	}
+		inputs := Inputs{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+			UID:       ss.UID,
+			Suffix:    Suffix,
+			Port:      ss.Spec.Ports[0].Port,
+			Selector:  ss.Spec.Selector,
+			Shared:    ss.Spec.Class != nil && (*ss.Spec.Class) == "Shared",
+			CACert:    caCert,
+			CAKey:     caKey,
+		}
 
-	gwName := key.Name
-	if inputs.Shared {
-		gwName = "all-services"
-	}
-	log.Infof("gateway name %v", gwName)
-	gw := c.gateways.Get(gwName, key.Namespace)
+		gwName := key.Name
+		if inputs.Shared {
+			gwName = "all-services"
+		}
+		log.Infof("gateway name %v", gwName)
+		gw := c.gateways.Get(gwName, key.Namespace)
 
-	if gw != nil {
-		for _, s := range gw.Status.Addresses {
-			if s.Type != nil && *s.Type == gateway.HostnameAddressType {
-				inputs.GatewayHostname = s.Value
-				break
+		if gw != nil {
+			for _, s := range gw.Status.Addresses {
+				if s.Type != nil && *s.Type == gateway.HostnameAddressType {
+					inputs.GatewayHostname = s.Value
+					break
+				}
 			}
 		}
-	}
 
-	result, err := runTemplate(inputs)
-	if err != nil {
-		return fmt.Errorf("template: %v", err)
-	}
-	for _, t := range result {
-		if err := c.apply(key, t); err != nil {
-			return fmt.Errorf("apply failed: %v", err)
+		result, err := runTemplate(inputs)
+		if err != nil {
+			return fmt.Errorf("template: %v", err)
 		}
-	}
-
-	if gw != nil {
-		ss := &examplev1.SuperService{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       gvk.SuperService.Kind,
-				APIVersion: gvk.SuperService.Group + "/" + gvk.SuperService.Version,
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      ss.Name,
-				Namespace: ss.Namespace,
-			},
-		}
-		for _, s := range gw.Status.Addresses {
-			ss.Status.Addresses = append(ss.Status.Addresses, examplev1.SuperServiceStatusAddress{
-				Type:  (*examplev1.AddressType)(s.Type),
-				Value: s.Value,
-			})
-		}
-		if len(ss.Status.Addresses) > 0 {
-			if err := c.ApplyObject(ss, "status"); err != nil {
-				return fmt.Errorf("update service status: %v", err)
+		for _, t := range result {
+			if err := c.apply(key, t); err != nil {
+				return fmt.Errorf("apply failed: %v", err)
 			}
 		}
-	}
-	log.Info("service updated")
-	 */
+
+		if gw != nil {
+			ss := &examplev1.SuperService{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       gvk.SuperService.Kind,
+					APIVersion: gvk.SuperService.Group + "/" + gvk.SuperService.Version,
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ss.Name,
+					Namespace: ss.Namespace,
+				},
+			}
+			for _, s := range gw.Status.Addresses {
+				ss.Status.Addresses = append(ss.Status.Addresses, examplev1.SuperServiceStatusAddress{
+					Type:  (*examplev1.AddressType)(s.Type),
+					Value: s.Value,
+				})
+			}
+			if len(ss.Status.Addresses) > 0 {
+				if err := c.ApplyObject(ss, "status"); err != nil {
+					return fmt.Errorf("update service status: %v", err)
+				}
+			}
+		}
+		log.Info("service updated")
+	*/
 	return nil
+}
+
+func routeInputs(r *gateway.HTTPRoute) RouteInputs {
+	hostnames := sets.New[string]()
+	for _, p := range r.Spec.ParentRefs {
+		if !isServiceReference(p) {
+			continue
+		}
+		hostnames.Insert(string(p.Name))
+		ns := string(ptr.OrDefault(p.Namespace, gateway.Namespace(r.Namespace)))
+		hostnames.InsertAll(
+			string(p.Name),
+			fmt.Sprintf("%v.%s", p.Name, ns),
+			fmt.Sprintf("%v.%s.svc", p.Name, ns),
+			fmt.Sprintf("%v.%s.svc.%s", p.Name, ns, domain),
+		)
+	}
+	return RouteInputs{
+		HTTPRoute: r,
+		Hostnames: sets.SortedList(hostnames),
+	}
 }
 
 // ApplyObject renders an object with the given input and (server-side) applies the results to the cluster.
