@@ -90,6 +90,7 @@ type GatewayInputs struct {
 	Name      string
 	Namespace string
 	Ports     []int32
+	Services  []string
 }
 
 type RouteInputs struct {
@@ -129,6 +130,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		return controllers.IgnoreNotFound(c.gateways.Delete(gwName, ns))
 	}
 	ports := sets.New[int32]()
+	svcIPs := sets.New[string]()
 	for _, r := range routes {
 		for _, pr := range r.Spec.ParentRefs {
 			if !isServiceReference(pr) {
@@ -139,12 +141,17 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 				continue
 			}
 			ports.Insert(int32(*pr.Port))
+			svc := c.services.Get(string(pr.Name), string(ptr.OrDefault(pr.Namespace, gateway.Namespace(ns))))
+			if svc != nil {
+				svcIPs.InsertAll(svc.Spec.ClusterIPs...)
+			}
 		}
 	}
 	gwi := GatewayInputs{
 		Name:      gwName,
 		Namespace: ns,
 		Ports:     sets.SortedList(ports),
+		Services:  sets.SortedList(svcIPs),
 	}
 	gws, err := runGateway(gwi)
 	if err != nil {
