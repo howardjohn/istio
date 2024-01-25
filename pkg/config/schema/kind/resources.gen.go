@@ -10,7 +10,9 @@ import (
 const (
 	Address Kind = iota
 	AuthorizationPolicy
+	Certificate
 	CertificateSigningRequest
+	ClusterIssuer
 	ConfigMap
 	CustomResourceDefinition
 	DaemonSet
@@ -60,8 +62,12 @@ func (k Kind) String() string {
 		return "Address"
 	case AuthorizationPolicy:
 		return "AuthorizationPolicy"
+	case Certificate:
+		return "Certificate"
 	case CertificateSigningRequest:
 		return "CertificateSigningRequest"
+	case ClusterIssuer:
+		return "ClusterIssuer"
 	case ConfigMap:
 		return "ConfigMap"
 	case CustomResourceDefinition:
@@ -153,8 +159,12 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 	switch g {
 	case gvk.AuthorizationPolicy:
 		return AuthorizationPolicy
+	case gvk.Certificate:
+		return Certificate
 	case gvk.CertificateSigningRequest:
 		return CertificateSigningRequest
+	case gvk.ClusterIssuer:
+		return ClusterIssuer
 	case gvk.ConfigMap:
 		return ConfigMap
 	case gvk.CustomResourceDefinition:

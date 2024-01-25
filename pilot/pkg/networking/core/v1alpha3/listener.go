@@ -153,6 +153,10 @@ func BuildListenerTLSContext(serverTLSSettings *networking.ServerTLSSettings,
 		credentialSocketExist = true
 	}
 	validateClient := ctx.RequireClientCertificate.Value || serverTLSSettings.Mode == networking.ServerTLSSettings_OPTIONAL_MUTUAL
+	// TODO: this is a total hack do not merge
+	// Basically it allows out of mesh without auth, but in mesh with auth
+	// We would want an ISTIO_MUTUAL_OPTIONAL if we want this for real
+	ctx.RequireClientCertificate = proto.BoolFalse
 
 	switch {
 	case serverTLSSettings.Mode == networking.ServerTLSSettings_ISTIO_MUTUAL:

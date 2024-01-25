@@ -18,11 +18,13 @@ import (
 func getGvk(obj any) config.GroupVersionKind {
 	switch obj.(type) {
 {{- range .Entries }}
+	{{- if not .Resource.Synthetic}}
 	case *{{ .ClientImport }}.{{ .Resource.Kind }}:
 		return gvk.{{ .Resource.Identifier }}
 	{{- if and (not (eq .ClientImport .IstioAwareClientImport)) (not .Resource.Synthetic) }}
 	case *{{ .IstioAwareClientImport }}.{{ .Resource.Kind }}:
 		return gvk.{{ .Resource.Identifier }}
+    {{- end }}
     {{- end }}
 {{- end }}
   default:

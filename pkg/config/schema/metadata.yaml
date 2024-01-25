@@ -215,6 +215,18 @@ resources:
     statusProto: "k8s.io.gateway_api.api.v1alpha1.HTTPRouteStatus"
     statusProtoPackage: "sigs.k8s.io/gateway-api/apis/v1beta1"
 
+  - kind: "ClusterIssuer"
+    plural: "clusterissuers"
+    group: "cert-manager.io"
+    version: "v1"
+    clusterScoped: true
+    synthetic: true
+  - kind: "Certificate"
+    plural: "certificates"
+    group: "cert-manager.io"
+    version: "v1"
+    synthetic: true
+
   - kind: "GRPCRoute"
     plural: "grpcroutes"
     group: "gateway.networking.k8s.io"

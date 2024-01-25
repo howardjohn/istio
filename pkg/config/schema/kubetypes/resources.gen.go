@@ -17,7 +17,6 @@ import (
 	sigsk8siogatewayapiapisv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	istioioapiextensionsv1alpha1 "istio.io/api/extensions/v1alpha1"
-	istioioapimeshv1alpha1 "istio.io/api/mesh/v1alpha1"
 	istioioapinetworkingv1alpha3 "istio.io/api/networking/v1alpha3"
 	istioioapinetworkingv1beta1 "istio.io/api/networking/v1beta1"
 	istioioapisecurityv1beta1 "istio.io/api/security/v1beta1"
@@ -77,10 +76,6 @@ func getGvk(obj any) config.GroupVersionKind {
 		return gvk.KubernetesGateway
 	case *k8sioapicoordinationv1.Lease:
 		return gvk.Lease
-	case *istioioapimeshv1alpha1.MeshConfig:
-		return gvk.MeshConfig
-	case *istioioapimeshv1alpha1.MeshNetworks:
-		return gvk.MeshNetworks
 	case *k8sioapiadmissionregistrationv1.MutatingWebhookConfiguration:
 		return gvk.MutatingWebhookConfiguration
 	case *k8sioapicorev1.Namespace:
