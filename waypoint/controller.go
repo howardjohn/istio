@@ -7,17 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	klabels "k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
-	k8sv1 "sigs.k8s.io/gateway-api/apis/v1"
-	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
-	"sigs.k8s.io/yaml"
-
 	"istio.io/istio/pkg/config/constants"
+	kubecfg "istio.io/istio/pkg/config/kube"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/kube/controllers"
@@ -28,10 +19,16 @@ import (
 	"istio.io/istio/pkg/test/util/tmpl"
 	"istio.io/istio/pkg/test/util/yml"
 	"istio.io/istio/pkg/util/sets"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	klabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	k8sv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
+	"sigs.k8s.io/yaml"
 )
-
-//go:embed template.yaml
-var yamlTemplate string
 
 //go:embed gateway.yaml
 var gatewayTemplate string
@@ -60,13 +57,15 @@ var (
 )
 
 type Controller struct {
-	client     kube.Client
-	queue      controllers.Queue
-	services   kclient.Client[*corev1.Service]
-	secrets    kclient.Client[*corev1.Secret]
-	gateways   kclient.Client[*gateway.Gateway]
-	routes     kclient.Client[*gateway.HTTPRoute]
-	namespaces kclient.Client[*corev1.Namespace]
+	client         kube.Client
+	queue          controllers.Queue
+	services       kclient.Client[*corev1.Service]
+	secrets        kclient.Client[*corev1.Secret]
+	gateways       kclient.Client[*gateway.Gateway]
+	routes         kclient.Client[*gateway.HTTPRoute]
+	namespaces     kclient.Client[*corev1.Namespace]
+	gatewayClasses kclient.Client[*gateway.GatewayClass]
+	gatewayClass   string
 
 	patcher func(gvr schema.GroupVersionResource, name string, namespace string, data []byte, subresources ...string) error
 }
@@ -91,16 +90,13 @@ type RouteInputs struct {
 }
 
 const (
-	GatewayClass = "gke-l7-rilb"
-	//GatewayClass = "istio"
-	// Suffix       = "mesh.howardjohn.net"
-	Suffix = ""
 	domain = "cluster.local"
 )
 
 func (c *Controller) Reconcile(key types.NamespacedName) error {
 	ns := key.Name
 	log := log.WithLabels("namespace", ns)
+	log.Infof("reconcile")
 
 	gwName := "waypoint"
 
@@ -112,12 +108,12 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	}
 
 	// Setup our primary waypoint gateway
-	ports := findPorts(routes)
+	ports := c.findPorts(routes)
 	gwi := GatewayInputs{
 		Name:      gwName,
-		Namespace: ns,
 		Ports:     sets.SortedList(ports),
-		Class:     GatewayClass,
+		Namespace: ns,
+		Class:     c.gatewayClass,
 	}
 	gws, err := runGateway(gwi)
 	if err != nil {
@@ -145,8 +141,19 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	gw := c.gateways.Get(gwName, ns)
 	if gw != nil && len(gw.Status.Addresses) > 0 {
 		waypointAddress = gw.Status.Addresses[0].Value
+		if *gw.Status.Addresses[0].Type == gateway.HostnameAddressType {
+			parts := strings.Split(waypointAddress, ".")
+			// Its a FQDN... maybe its a Service we can resolve.
+			// Otherwise this is not supported
+			if len(parts) == 5 && parts[3] == "cluster" && parts[4] == "local" {
+				svc := c.services.Get(parts[0], parts[1])
+				if svc != nil && svc.Spec.ClusterIP != "" {
+					waypointAddress = svc.Spec.ClusterIP
+				}
+			}
+		}
 	}
-	if ExternalWaypoint() {
+	if c.ExternalWaypoint() {
 		if gw != nil && len(gw.Status.Addresses) > 0 {
 			addr := gw.Status.Addresses[0].Value
 			ssi := ServiceShimInputs{
@@ -174,6 +181,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 
 	// For each service, mark the waypoint address it can be reached from
 	if waypointAddress != "" {
+		handled := sets.New[string]()
 		for _, r := range routes {
 			for _, p := range r.Spec.ParentRefs {
 				if !isServiceReference(p) {
@@ -181,6 +189,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 				}
 				ns := string(ptr.OrDefault(p.Namespace, gateway.Namespace(r.Namespace)))
 				svc := c.services.Get(string(p.Name), ns)
+				handled.Insert(string(p.Name))
 				if svc == nil {
 					continue
 				}
@@ -188,6 +197,18 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 					svc.Annotations = map[string]string{}
 				}
 				svc.Annotations["experimental.istio.io/waypoint"] = waypointAddress
+				// TODO move to patch
+				// TODO: remove when its not needed anymore
+				c.services.Update(svc)
+			}
+		}
+		// Cleanup
+		for _, svc := range c.services.List(ns, klabels.Everything()) {
+			if handled.Contains(svc.Name) {
+				continue
+			}
+			if _, f := svc.Annotations["experimental.istio.io/waypoint"]; f {
+				delete(svc.Annotations, "experimental.istio.io/waypoint")
 				// TODO move to patch
 				c.services.Update(svc)
 			}
@@ -197,19 +218,27 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	return nil
 }
 
-func findPorts(routes []*gateway.HTTPRoute) sets.Set[int32] {
+func (c *Controller) findPorts(routes []*gateway.HTTPRoute) sets.Set[int32] {
 	ports := sets.New[int32]()
 	for _, r := range routes {
 		for _, pr := range r.Spec.ParentRefs {
 			if !isServiceReference(pr) {
 				continue
 			}
-			//if pr.Port == nil {
-			// TODO: default it?
-			//continue
-			//}
-			// TODO default to service port instead?
-			ports.Insert(int32(ptr.OrDefault(pr.Port, 80)))
+			if pr.Port != nil {
+				ports.Insert(int32(*pr.Port))
+				continue
+			}
+			ns := string(ptr.OrDefault(pr.Namespace, gateway.Namespace(r.Namespace)))
+			svc := c.services.Get(string(pr.Name), ns)
+			if svc == nil {
+				continue
+			}
+			for _, port := range svc.Spec.Ports {
+				if kubecfg.ConvertProtocol(port.Port, port.Name, port.Protocol, port.AppProtocol).IsHTTP() {
+					ports.Insert(port.Port)
+				}
+			}
 		}
 	}
 	return ports
@@ -217,6 +246,10 @@ func findPorts(routes []*gateway.HTTPRoute) sets.Set[int32] {
 
 func routeInputs(r *gateway.HTTPRoute) RouteInputs {
 	hostnames := sets.New[string]()
+	// Insert all specified hostnames directly (to support custom domains)
+	for _, h := range r.Spec.Hostnames {
+		hostnames.Insert(string(h))
+	}
 	for _, p := range r.Spec.ParentRefs {
 		if !isServiceReference(p) {
 			continue
@@ -236,8 +269,8 @@ func routeInputs(r *gateway.HTTPRoute) RouteInputs {
 	}
 }
 
-func ExternalWaypoint() bool {
-	return strings.HasPrefix(GatewayClass, "gke-")
+func (c *Controller) ExternalWaypoint() bool {
+	return strings.HasPrefix(c.gatewayClass, "gke-")
 }
 
 func (c *Controller) Run(stop <-chan struct{}) {
@@ -249,7 +282,9 @@ func (c *Controller) Run(stop <-chan struct{}) {
 		c.secrets.HasSynced,
 		c.gateways.HasSynced,
 		c.routes.HasSynced,
+		c.gatewayClasses.HasSynced,
 	)
+	c.gatewayClass = c.detectClass()
 	c.queue.Run(stop)
 }
 
@@ -294,6 +329,17 @@ func (c *Controller) routesFor(ns string) []*gateway.HTTPRoute {
 	})
 }
 
+func (c *Controller) detectClass() string {
+	classes := sets.New[string]()
+	for _, gc := range c.gatewayClasses.List(metav1.NamespaceAll, klabels.Everything()) {
+		classes.Insert(gc.Name)
+	}
+	if classes.Contains("gke-l7-rilb") {
+		return "gke-l7-rilb"
+	}
+	return "istio"
+}
+
 func isServiceReference(p k8sv1.ParentReference) bool {
 	kind := ptr.OrDefault((*string)(p.Kind), gvk.KubernetesGateway.Kind)
 	group := ptr.OrDefault((*string)(p.Group), gvk.KubernetesGateway.Group)
@@ -332,6 +378,8 @@ func NewController(client kube.Client) *Controller {
 
 	c.gateways = kclient.New[*gateway.Gateway](client)
 	c.gateways.AddEventHandler(namespaceHandler)
+
+	c.gatewayClasses = kclient.New[*gateway.GatewayClass](client)
 
 	c.routes = kclient.New[*gateway.HTTPRoute](client)
 	c.routes.AddEventHandler(namespaceHandler)

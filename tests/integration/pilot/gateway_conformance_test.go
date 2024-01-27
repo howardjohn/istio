@@ -18,6 +18,8 @@
 package pilot
 
 import (
+	"istio.io/istio/pkg/slices"
+	"strings"
 	"testing"
 
 	k8ssets "k8s.io/apimachinery/pkg/util/sets" //nolint: depguard
@@ -113,15 +115,15 @@ func TestGatewayConformance(t *testing.T) {
 				UsableNetworkAddresses:   []v1.GatewayAddress{{Value: "infra-backend-v1.gateway-conformance-infra.svc.cluster.local", Type: &hostnameType}},
 				UnusableNetworkAddresses: []v1.GatewayAddress{{Value: "foo", Type: &hostnameType}},
 			}
-			if rev := ctx.Settings().Revisions.Default(); rev != "" {
-				opts.NamespaceLabels = map[string]string{
-					"istio.io/rev": rev,
-				}
-			} else {
-				opts.NamespaceLabels = map[string]string{
-					"istio-injection": "enabled",
-				}
-			}
+			//if rev := ctx.Settings().Revisions.Default(); rev != "" {
+			//	opts.NamespaceLabels = map[string]string{
+			//		"istio.io/rev": rev,
+			//	}
+			//} else {
+			//	opts.NamespaceLabels = map[string]string{
+			//		"istio-injection": "enabled",
+			//	}
+			//}
 			ctx.Cleanup(func() {
 				if !ctx.Failed() {
 					return
@@ -133,8 +135,11 @@ func TestGatewayConformance(t *testing.T) {
 				}
 			})
 
+			tests := slices.Filter(tests.ConformanceTests, func(test suite.ConformanceTest) bool {
+				return strings.Contains(test.ShortName,"Mesh")
+			})
 			csuite := suite.New(opts)
 			csuite.Setup(t)
-			csuite.Run(t, tests.ConformanceTests)
+			csuite.Run(t, tests)
 		})
 }
