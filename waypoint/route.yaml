@@ -4,12 +4,18 @@ metadata:
   name: {{.Name}}-mesh-internal
   namespace: {{.Namespace}}
   ownerReferences:
-    - apiVersion: "{{.APIVersion}}"
-      kind: "{{.Kind }}"
+    - apiVersion: "gateway.networking.k8s.io/v1beta1"
+      kind: "HTTPRoute"
       name: "{{.Name}}"
       uid: "{{.UID}}"
 spec:
   parentRefs:
-    - name: waypoint
+  - name: waypoint
+#  {{ range $pr := .Spec.ParentRefs }}
+#    - name: waypoint
+#    {{with $pr.Port}}
+#      port: {{.}}
+#    {{ end }}
+#  {{ end }}
   hostnames: {{.Hostnames | toJson|indent 2}}
   rules: {{.Spec.Rules | toJson | indent 2}}

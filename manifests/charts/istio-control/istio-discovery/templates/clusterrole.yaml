@@ -154,5 +154,5 @@ rules:
     resources: [ "serviceaccounts"]
   - apiGroups: [ "networking.x-k8s.io", "gateway.networking.k8s.io" ]
     resources: [ "*" ] # TODO: should be on just */status but wildcard is not supported
-    verbs: [ "update", "patch", "create" ]
+    verbs: [ "update", "patch", "create", "delete"]
 {{- end }}
