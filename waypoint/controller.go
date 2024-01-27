@@ -1,4 +1,4 @@
-package main
+package waypoint
 
 import (
 	"context"
@@ -17,8 +17,6 @@ import (
 	gateway "sigs.k8s.io/gateway-api/apis/v1beta1"
 	"sigs.k8s.io/yaml"
 
-	"istio.io/istio/pkg/cmd"
-	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/kube"
@@ -38,6 +36,9 @@ var yamlTemplate string
 //go:embed gateway.yaml
 var gatewayTemplate string
 
+//go:embed service-shim.yaml
+var serviceShimTemplate string
+
 //go:embed route.yaml
 var routeTemplate string
 
@@ -53,26 +54,10 @@ func buildTemplate(tm string) func(d any) ([]string, error) {
 }
 
 var (
-	runGateway = buildTemplate(gatewayTemplate)
-	runRoute   = buildTemplate(routeTemplate)
+	runGateway     = buildTemplate(gatewayTemplate)
+	runServiceShim = buildTemplate(serviceShimTemplate)
+	runRoute       = buildTemplate(routeTemplate)
 )
-
-func main() {
-	// log.EnableKlogWithVerbosity(6)
-	c, err := kube.NewDefaultClient()
-	fatal(err)
-	stop := make(chan struct{})
-	ctl := NewController(c)
-	go ctl.Run(stop)
-	go c.RunAndWait(stop)
-	cmd.WaitSignal(stop)
-}
-
-func fatal(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
 
 type Controller struct {
 	client     kube.Client
@@ -86,11 +71,18 @@ type Controller struct {
 	patcher func(gvr schema.GroupVersionResource, name string, namespace string, data []byte, subresources ...string) error
 }
 
+type ServiceShimInputs struct {
+	Name      string
+	Namespace string
+	Ports     []int32
+	Address   string
+}
+
 type GatewayInputs struct {
 	Name      string
 	Namespace string
 	Ports     []int32
-	Services  []string
+	Class     string
 }
 
 type RouteInputs struct {
@@ -98,21 +90,9 @@ type RouteInputs struct {
 	Hostnames []string
 }
 
-type Inputs struct {
-	Name            string
-	UID             types.UID
-	Namespace       string
-	Suffix          string
-	GatewayHostname string
-	Port            uint32
-	Selector        map[string]string
-	Shared          bool
-
-	CACert, CAKey string
-}
-
 const (
 	GatewayClass = "gke-l7-rilb"
+	//GatewayClass = "istio"
 	// Suffix       = "mesh.howardjohn.net"
 	Suffix = ""
 	domain = "cluster.local"
@@ -123,35 +103,21 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	log := log.WithLabels("namespace", ns)
 
 	gwName := "waypoint"
-	// caCert, caKey := c.fetchCA()
+
+	// Find all routes. If there are no routes, there is no waypoint
 	routes := c.routesFor(ns)
 	if len(routes) == 0 {
 		log.Infof("no routes")
 		return controllers.IgnoreNotFound(c.gateways.Delete(gwName, ns))
 	}
-	ports := sets.New[int32]()
-	svcIPs := sets.New[string]()
-	for _, r := range routes {
-		for _, pr := range r.Spec.ParentRefs {
-			if !isServiceReference(pr) {
-				continue
-			}
-			if pr.Port == nil {
-				// TODO: default it?
-				continue
-			}
-			ports.Insert(int32(*pr.Port))
-			svc := c.services.Get(string(pr.Name), string(ptr.OrDefault(pr.Namespace, gateway.Namespace(ns))))
-			if svc != nil {
-				svcIPs.InsertAll(svc.Spec.ClusterIPs...)
-			}
-		}
-	}
+
+	// Setup our primary waypoint gateway
+	ports := findPorts(routes)
 	gwi := GatewayInputs{
 		Name:      gwName,
 		Namespace: ns,
 		Ports:     sets.SortedList(ports),
-		Services:  sets.SortedList(svcIPs),
+		Class:     GatewayClass,
 	}
 	gws, err := runGateway(gwi)
 	if err != nil {
@@ -161,6 +127,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		return fmt.Errorf("gateway apply failed: %v", err)
 	}
 
+	// For each route, we need to make a mirror route that has the appropriate hostname matches and points to our Gateway.
 	for _, r := range routes {
 		routes, err := runRoute(routeInputs(r))
 		if err != nil {
@@ -171,71 +138,81 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		}
 	}
 
-	/*
-		inputs := Inputs{
-			Name:      key.Name,
-			Namespace: key.Namespace,
-			UID:       ss.UID,
-			Suffix:    Suffix,
-			Port:      ss.Spec.Ports[0].Port,
-			Selector:  ss.Spec.Selector,
-			Shared:    ss.Spec.Class != nil && (*ss.Spec.Class) == "Shared",
-			CACert:    caCert,
-			CAKey:     caKey,
+	// Our cilium redirection translates the target Service IP to another Service IP.
+	// For external, the IP would be just an opaque IP to Cilium. We could probably make this work there, but for now workaround it.
+	// Create a new Service for the waypoint and point it to the gateway address.
+	var waypointAddress string
+	gw := c.gateways.Get(gwName, ns)
+	if gw != nil && len(gw.Status.Addresses) > 0 {
+		waypointAddress = gw.Status.Addresses[0].Value
+	}
+	if ExternalWaypoint() {
+		if gw != nil && len(gw.Status.Addresses) > 0 {
+			addr := gw.Status.Addresses[0].Value
+			ssi := ServiceShimInputs{
+				Name:      gwName,
+				Namespace: ns,
+				Ports:     sets.SortedList(ports),
+				Address:   addr,
+			}
+			svcEp, err := runServiceShim(ssi)
+			if err != nil {
+				return err
+			}
+			if err := c.apply(svcEp[0]); err != nil {
+				return fmt.Errorf("service apply failed: %v", err)
+			}
+			if err := c.apply(svcEp[1]); err != nil {
+				return fmt.Errorf("endpoint apply failed: %v", err)
+			}
 		}
-
-		gwName := key.Name
-		if inputs.Shared {
-			gwName = "all-services"
+		svc := c.services.Get(gwName, ns)
+		if svc != nil && svc.Spec.ClusterIP != "" {
+			waypointAddress = svc.Spec.ClusterIP
 		}
-		log.Infof("gateway name %v", gwName)
-		gw := c.gateways.Get(gwName, key.Namespace)
+	}
 
-		if gw != nil {
-			for _, s := range gw.Status.Addresses {
-				if s.Type != nil && *s.Type == gateway.HostnameAddressType {
-					inputs.GatewayHostname = s.Value
-					break
+	// For each service, mark the waypoint address it can be reached from
+	if waypointAddress != "" {
+		for _, r := range routes {
+			for _, p := range r.Spec.ParentRefs {
+				if !isServiceReference(p) {
+					continue
 				}
-			}
-		}
-
-		result, err := runTemplate(inputs)
-		if err != nil {
-			return fmt.Errorf("template: %v", err)
-		}
-		for _, t := range result {
-			if err := c.apply(key, t); err != nil {
-				return fmt.Errorf("apply failed: %v", err)
-			}
-		}
-
-		if gw != nil {
-			ss := &examplev1.SuperService{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       gvk.SuperService.Kind,
-					APIVersion: gvk.SuperService.Group + "/" + gvk.SuperService.Version,
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      ss.Name,
-					Namespace: ss.Namespace,
-				},
-			}
-			for _, s := range gw.Status.Addresses {
-				ss.Status.Addresses = append(ss.Status.Addresses, examplev1.SuperServiceStatusAddress{
-					Type:  (*examplev1.AddressType)(s.Type),
-					Value: s.Value,
-				})
-			}
-			if len(ss.Status.Addresses) > 0 {
-				if err := c.ApplyObject(ss, "status"); err != nil {
-					return fmt.Errorf("update service status: %v", err)
+				ns := string(ptr.OrDefault(p.Namespace, gateway.Namespace(r.Namespace)))
+				svc := c.services.Get(string(p.Name), ns)
+				if svc == nil {
+					continue
 				}
+				if svc.Annotations == nil {
+					svc.Annotations = map[string]string{}
+				}
+				svc.Annotations["experimental.istio.io/waypoint"] = waypointAddress
+				// TODO move to patch
+				c.services.Update(svc)
 			}
 		}
-		log.Info("service updated")
-	*/
+	}
+
 	return nil
+}
+
+func findPorts(routes []*gateway.HTTPRoute) sets.Set[int32] {
+	ports := sets.New[int32]()
+	for _, r := range routes {
+		for _, pr := range r.Spec.ParentRefs {
+			if !isServiceReference(pr) {
+				continue
+			}
+			//if pr.Port == nil {
+			// TODO: default it?
+			//continue
+			//}
+			// TODO default to service port instead?
+			ports.Insert(int32(ptr.OrDefault(pr.Port, 80)))
+		}
+	}
+	return ports
 }
 
 func routeInputs(r *gateway.HTTPRoute) RouteInputs {
@@ -259,27 +236,8 @@ func routeInputs(r *gateway.HTTPRoute) RouteInputs {
 	}
 }
 
-// ApplyObject renders an object with the given input and (server-side) applies the results to the cluster.
-func (c *Controller) ApplyObject(obj controllers.Object, subresources ...string) error {
-	j, err := config.ToJSON(obj)
-	if err != nil {
-		return err
-	}
-	m := map[string]any{}
-	json.Unmarshal(j, &m)
-	delete(m["metadata"].(map[string]any), "creationTimestamp")
-	if len(subresources) == 1 && subresources[0] == "status" {
-		delete(m, "spec")
-	}
-	j, _ = json.Marshal(m)
-
-	gvr, err := controllers.ObjectToGVR(obj)
-	if err != nil {
-		return err
-	}
-	log.Debugf("applying %v", string(j))
-
-	return c.patcher(gvr, obj.GetName(), obj.GetNamespace(), j, subresources...)
+func ExternalWaypoint() bool {
+	return strings.HasPrefix(GatewayClass, "gke-")
 }
 
 func (c *Controller) Run(stop <-chan struct{}) {
@@ -324,14 +282,6 @@ func (c *Controller) apply(yml string) error {
 	return nil
 }
 
-func (c *Controller) fetchCA() (string, string) {
-	s := c.secrets.Get("cacerts", "istio-system")
-	if s == nil {
-		return "", ""
-	}
-	return string(s.Data["ca-cert.pem"]), string(s.Data["ca-key.pem"])
-}
-
 func (c *Controller) routesFor(ns string) []*gateway.HTTPRoute {
 	routes := c.routes.List(ns, klabels.Everything())
 	return slices.FilterInPlace(routes, func(route *gateway.HTTPRoute) bool {
@@ -367,7 +317,7 @@ func NewController(client kube.Client) *Controller {
 			return err
 		},
 	}
-	c.queue = controllers.NewQueue("sevice controller",
+	c.queue = controllers.NewQueue("waypoint controller",
 		controllers.WithReconciler(c.Reconcile),
 		controllers.WithMaxAttempts(5))
 

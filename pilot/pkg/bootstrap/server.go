@@ -76,6 +76,7 @@ import (
 	caserver "istio.io/istio/security/pkg/server/ca"
 	"istio.io/istio/security/pkg/server/ca/authenticate"
 	"istio.io/istio/security/pkg/server/ca/authenticate/kubeauth"
+	"istio.io/istio/waypoint"
 )
 
 const (
@@ -337,6 +338,8 @@ func NewServer(args *PilotArgs, initFuncs ...func(*Server)) (*Server, error) {
 	s.initRegistryEventHandlers()
 
 	s.initDiscoveryService()
+
+	s.initWaypointController()
 
 	// Notice that the order of authenticators matters, since at runtime
 	// authenticators are activated sequentially and the first successful attempt
@@ -1342,4 +1345,12 @@ func (s *Server) initReadinessProbes() {
 	for name, probe := range probes {
 		s.addReadinessProbe(name, probe)
 	}
+}
+
+func (s *Server) initWaypointController() {
+	s.addStartFunc("waypoint", func(stop <-chan struct{}) error {
+		ctl := waypoint.NewController(s.kubeClient)
+		go ctl.Run(stop)
+		return nil
+	})
 }
