@@ -6,10 +6,7 @@ metadata:
   annotations:
     networking.istio.io/service-type: "ClusterIP"
 spec:
-  infrastructure:
-    annotations:
-      experimental.istio.io/waypoint-for: {{.Services|toJson|quote}}
-  gatewayClassName: istio
+  gatewayClassName: {{.Class}}
   listeners:
 {{ if false }}
   {{ range $port := .Ports }}
