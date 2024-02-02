@@ -10,7 +10,7 @@ metadata:
       uid: "{{.UID}}"
 spec:
   parentRefs:
-  - name: waypoint
+  - name: {{.Waypoint.Name}}
 #  {{ range $pr := .Spec.ParentRefs }}
 #    - name: waypoint
 #    {{with $pr.Port}}

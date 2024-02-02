@@ -89,6 +89,7 @@ type GatewayInputs struct {
 
 type RouteInputs struct {
 	*gateway.HTTPRoute
+	Waypoint *networkingv1alpha3.Waypoint
 	Hostnames []string
 }
 
@@ -128,7 +129,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	// For each route, we need to make a mirror route that has the appropriate hostname matches and points to our Gateway.
 	for _, r := range routes {
 		log.Infof("applying route %v", config.NamespacedName(r))
-		routes, err := runRoute(routeInputs(r))
+		routes, err := runRoute(routeInputs(waypoint, r))
 		if err != nil {
 			return err
 		}
@@ -261,7 +262,7 @@ func (c *Controller) findPorts(routes []*gateway.HTTPRoute) sets.Set[int32] {
 	return ports
 }
 
-func routeInputs(r *gateway.HTTPRoute) RouteInputs {
+func routeInputs(waypoint *networkingv1alpha3.Waypoint, r *gateway.HTTPRoute) RouteInputs {
 	hostnames := sets.New[string]()
 	// Insert all specified hostnames directly (to support custom domains)
 	for _, h := range r.Spec.Hostnames {
@@ -282,6 +283,7 @@ func routeInputs(r *gateway.HTTPRoute) RouteInputs {
 	}
 	return RouteInputs{
 		HTTPRoute: r,
+		Waypoint: waypoint,
 		Hostnames: sets.SortedList(hostnames),
 	}
 }

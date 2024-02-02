@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shell
+spec:
+  selector:
+    matchLabels:
+      app: shell
+  template:
+    metadata:
+      labels:
+        app: shell
+    spec:
+      terminationGracePeriodSeconds: 0
+      containers:
+      - name: shell
+        image: howardjohn/shell
+        imagePullPolicy: IfNotPresent
+        args:
+          - /bin/sleep
+          - infinity
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 500M

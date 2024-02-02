@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo
+spec:
+  selector:
+    matchLabels:
+      app: echo
+  template:
+    metadata:
+      labels:
+        app: echo
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: "0"
+      containers:
+      - name: echo
+        image: gcr.io/istio-testing/app:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --tcp=9090
+        - --tcp=9091
+        - --server-first=9091
+        - --port=80
+        - --grpc=7070
+        - --port=443
+        - --tls=443
+        - --crt=/cert.crt
+        - --key=/cert.key
+        env:
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo
+spec:
+  selector:
+    app: echo
+  ports:
+  - name: http
+    port: 80
+  - name: https
+    port: 443
+  - name: tcp
+    port: 9090
+  - name: tcp-sf
+    port: 9091
+  - name: grpc
+    port: 7070
+
