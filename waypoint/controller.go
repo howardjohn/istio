@@ -68,9 +68,9 @@ type Controller struct {
 	routes         kclient.Client[*gateway.HTTPRoute]
 	namespaces     kclient.Client[*corev1.Namespace]
 	gatewayClasses kclient.Client[*gateway.GatewayClass]
-	gatewayClass   string
+	defaultGatewayClass string
 
-	patcher func(gvr schema.GroupVersionResource, name string, namespace string, data []byte, subresources ...string) error
+	patcher             func(gvr schema.GroupVersionResource, name string, namespace string, data []byte, subresources ...string) error
 }
 
 type ServiceShimInputs struct {
@@ -78,13 +78,13 @@ type ServiceShimInputs struct {
 	Namespace string
 	Ports     []int32
 	Address   string
+	Waypoint  *networkingv1alpha3.Waypoint
 }
 
 type GatewayInputs struct {
-	Name      string
-	Namespace string
-	Ports     []int32
-	Class     string
+	Waypoint *networkingv1alpha3.Waypoint
+	Class    string
+	Ports    []int32
 }
 
 type RouteInputs struct {
@@ -97,27 +97,26 @@ const (
 )
 
 func (c *Controller) Reconcile(key types.NamespacedName) error {
-	ns := key.Name
-	log := log.WithLabels("namespace", ns)
+	log := log.WithLabels("waypoint", key.Name, "namespace", key.Namespace)
 	log.Infof("reconcile")
 
-	gwName := "waypoint"
-
-	// Find all routes. If there are no routes, there is no waypoint
-	routes := c.routesFor(ns)
-	if len(routes) == 0 {
-		log.Infof("no routes")
-		return controllers.IgnoreNotFound(c.gateways.Delete(gwName, ns))
+	waypoint := c.waypoints.Get(key.Name, key.Namespace)
+	if waypoint == nil {
+		log.Infof("waypoint is now removed")
+		return nil
 	}
+
+	// Find all routes
+	routes := c.routesFor(key.Namespace)
 
 	// Setup our primary waypoint gateway
 	ports := c.findPorts(routes)
 	gwi := GatewayInputs{
-		Name:      gwName,
+		Waypoint:     waypoint,
+		Class: ptr.NonEmptyOrDefault(waypoint.Spec.Class, c.defaultGatewayClass),
 		Ports:     sets.SortedList(ports),
-		Namespace: ns,
-		Class:     c.gatewayClass,
 	}
+	log.Infof("applying gateway")
 	gws, err := runGateway(gwi)
 	if err != nil {
 		return err
@@ -128,6 +127,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 
 	// For each route, we need to make a mirror route that has the appropriate hostname matches and points to our Gateway.
 	for _, r := range routes {
+		log.Infof("applying route %v", config.NamespacedName(r))
 		routes, err := runRoute(routeInputs(r))
 		if err != nil {
 			return err
@@ -137,11 +137,16 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		}
 	}
 
+	// Now we have the object configured. Next we need to program the data plane.
+	// This could be done in the data plane itself, but for now we will do it all here.
+	// Dataplane will react to experimental.istio.io/waypoint=IP on a service
+	// Users sets istio.io/use-waypoint=[ns/]name on namespace or per service, so we need to translate
+
 	// Our cilium redirection translates the target Service IP to another Service IP.
 	// For external, the IP would be just an opaque IP to Cilium. We could probably make this work there, but for now workaround it.
 	// Create a new Service for the waypoint and point it to the gateway address.
 	var waypointAddress string
-	gw := c.gateways.Get(gwName, ns)
+	gw := c.gateways.Get(key.Name, key.Namespace)
 	if gw != nil && len(gw.Status.Addresses) > 0 {
 		waypointAddress = gw.Status.Addresses[0].Value
 		if *gw.Status.Addresses[0].Type == gateway.HostnameAddressType {
@@ -156,12 +161,13 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 			}
 		}
 	}
-	if c.ExternalWaypoint() {
+	if externalWaypoint(gwi.Class) {
 		if gw != nil && len(gw.Status.Addresses) > 0 {
 			addr := gw.Status.Addresses[0].Value
 			ssi := ServiceShimInputs{
-				Name:      gwName,
-				Namespace: ns,
+				Name:      key.Name,
+				Namespace: key.Namespace,
+				Waypoint:  waypoint,
 				Ports:     sets.SortedList(ports),
 				Address:   addr,
 			}
@@ -175,16 +181,19 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 			if err := c.apply(svcEp[1]); err != nil {
 				return fmt.Errorf("endpoint apply failed: %v", err)
 			}
-		}
-		svc := c.services.Get(gwName, ns)
-		if svc != nil && svc.Spec.ClusterIP != "" {
-			waypointAddress = svc.Spec.ClusterIP
+			svc := c.services.Get(ssi.Name, ssi.Namespace)
+			if svc != nil && svc.Spec.ClusterIP != "" {
+				waypointAddress = svc.Spec.ClusterIP
+			}
 		}
 	}
 
+	log.Infof("got waypoint address %q", waypointAddress)
 	// For each service, mark the waypoint address it can be reached from
 	if waypointAddress != "" {
-		handled := sets.New[string]()
+		// TODO: support ns/name format
+		namespaceEnabled := c.namespaces.Get(key.Namespace, "").Annotations["istio.io/use-waypoint"] == key.Name
+		shouldHaveAnnotation := sets.New[string]()
 		for _, r := range routes {
 			for _, p := range r.Spec.ParentRefs {
 				if !isServiceReference(p) {
@@ -192,13 +201,18 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 				}
 				ns := string(ptr.OrDefault(p.Namespace, gateway.Namespace(r.Namespace)))
 				svc := c.services.Get(string(p.Name), ns)
-				handled.Insert(string(p.Name))
 				if svc == nil {
 					continue
 				}
+				serviceEnabled := svc.Annotations["istio.io/use-waypoint"] == key.Name
+				if !(serviceEnabled || namespaceEnabled) {
+					continue
+				}
+				shouldHaveAnnotation.Insert(string(p.Name))
 				if svc.Annotations == nil {
 					svc.Annotations = map[string]string{}
 				}
+				log.Infof("apply waypoint annotation to Service %v", config.NamespacedName(svc))
 				svc.Annotations["experimental.istio.io/waypoint"] = waypointAddress
 				// TODO move to patch
 				// TODO: remove when its not needed anymore
@@ -206,8 +220,8 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 			}
 		}
 		// Cleanup
-		for _, svc := range c.services.List(ns, klabels.Everything()) {
-			if handled.Contains(svc.Name) {
+		for _, svc := range c.services.List(key.Namespace, klabels.Everything()) {
+			if shouldHaveAnnotation.Contains(svc.Name) {
 				continue
 			}
 			if _, f := svc.Annotations["experimental.istio.io/waypoint"]; f {
@@ -272,8 +286,8 @@ func routeInputs(r *gateway.HTTPRoute) RouteInputs {
 	}
 }
 
-func (c *Controller) ExternalWaypoint() bool {
-	return strings.HasPrefix(c.gatewayClass, "gke-")
+func externalWaypoint(class string) bool {
+	return strings.HasPrefix(class, "gke-")
 }
 
 func (c *Controller) Run(stop <-chan struct{}) {
@@ -282,12 +296,13 @@ func (c *Controller) Run(stop <-chan struct{}) {
 		stop,
 		c.namespaces.HasSynced,
 		c.services.HasSynced,
+		c.waypoints.HasSynced,
 		c.secrets.HasSynced,
 		c.gateways.HasSynced,
 		c.routes.HasSynced,
 		c.gatewayClasses.HasSynced,
 	)
-	c.gatewayClass = c.detectClass()
+	c.defaultGatewayClass = c.detectClass()
 	c.queue.Run(stop)
 }
 

@@ -1,10 +1,15 @@
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: Gateway
 metadata:
-  name: {{.Name}}
-  namespace: {{.Namespace}}
+  name: {{.Waypoint.Name}}
+  namespace: {{.Waypoint.Namespace}}
   annotations:
     networking.istio.io/service-type: "ClusterIP"
+  ownerReferences:
+    - apiVersion: "networking.istio.io/v1alpha3"
+      kind: "Waypoint"
+      name: "{{.Waypoint.Name}}"
+      uid: "{{.Waypoint.UID}}"
 spec:
   gatewayClassName: {{.Class}}
   listeners:

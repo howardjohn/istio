@@ -3,6 +3,11 @@ kind: Service
 metadata:
   name: {{.Name}}
   namespace: {{.Namespace}}
+  ownerReferences:
+    - apiVersion: "networking.istio.io/v1alpha3"
+      kind: "Waypoint"
+      name: "{{.Waypoint.Name}}"
+      uid: "{{.Waypoint.UID}}"
 spec:
   ports:
   {{ range $port := .Ports }}
@@ -15,6 +20,11 @@ kind: Endpoints
 metadata:
   name: {{.Name}}
   namespace: {{.Namespace}}
+  ownerReferences:
+    - apiVersion: "networking.istio.io/v1alpha3"
+      kind: "Waypoint"
+      name: "{{.Waypoint.Name}}"
+      uid: "{{.Waypoint.UID}}"
 subsets:
   - addresses:
       - ip: {{.Address}}
