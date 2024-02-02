@@ -215,18 +215,6 @@ resources:
     statusProto: "k8s.io.gateway_api.api.v1alpha1.HTTPRouteStatus"
     statusProtoPackage: "sigs.k8s.io/gateway-api/apis/v1beta1"
 
-  - kind: "ClusterIssuer"
-    plural: "clusterissuers"
-    group: "cert-manager.io"
-    version: "v1"
-    clusterScoped: true
-    synthetic: true
-  - kind: "Certificate"
-    plural: "certificates"
-    group: "cert-manager.io"
-    version: "v1"
-    synthetic: true
-
   - kind: "GRPCRoute"
     plural: "grpcroutes"
     group: "gateway.networking.k8s.io"
@@ -335,6 +323,15 @@ resources:
     versionAliases:
       - "v1beta1"
     proto: "istio.networking.v1alpha3.DestinationRule"
+    protoPackage: "istio.io/api/networking/v1alpha3"
+    statusProto: "istio.meta.v1alpha1.IstioStatus"
+    statusProtoPackage: "istio.io/api/meta/v1alpha1"
+
+  - kind: Waypoint
+    plural: "waypoints"
+    group: "networking.istio.io"
+    version: "v1alpha3"
+    proto: "istio.networking.v1alpha3.Waypoint"
     protoPackage: "istio.io/api/networking/v1alpha3"
     statusProto: "istio.meta.v1alpha1.IstioStatus"
     statusProtoPackage: "istio.io/api/meta/v1alpha1"

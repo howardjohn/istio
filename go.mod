@@ -106,7 +106,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.13.3
-	istio.io/api v1.19.0-alpha.1.0.20240125073502-1d011e75bca9
+	istio.io/api v1.19.0-alpha.1.0.20240202165641-d7d5d27b5fbd
 	istio.io/client-go v1.19.0-alpha.1.0.20240125073903-575b2152c23d
 	k8s.io/api v0.29.0
 	k8s.io/apiextensions-apiserver v0.29.0
@@ -251,3 +251,7 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.16.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
+
+replace istio.io/api => ../api
+
+replace istio.io/client-go => ../client-go

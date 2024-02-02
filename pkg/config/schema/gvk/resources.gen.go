@@ -12,9 +12,7 @@ import (
 var (
 	AuthorizationPolicy            = config.GroupVersionKind{Group: "security.istio.io", Version: "v1beta1", Kind: "AuthorizationPolicy"}
 	AuthorizationPolicy_v1         = config.GroupVersionKind{Group: "security.istio.io", Version: "v1", Kind: "AuthorizationPolicy"}
-	Certificate                    = config.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}
 	CertificateSigningRequest      = config.GroupVersionKind{Group: "certificates.k8s.io", Version: "v1", Kind: "CertificateSigningRequest"}
-	ClusterIssuer                  = config.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "ClusterIssuer"}
 	ConfigMap                      = config.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
 	CustomResourceDefinition       = config.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"}
 	DaemonSet                      = config.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}
@@ -67,6 +65,7 @@ var (
 	VirtualService                 = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "VirtualService"}
 	VirtualService_v1beta1         = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1beta1", Kind: "VirtualService"}
 	WasmPlugin                     = config.GroupVersionKind{Group: "extensions.istio.io", Version: "v1alpha1", Kind: "WasmPlugin"}
+	Waypoint                       = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "Waypoint"}
 	WorkloadEntry                  = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "WorkloadEntry"}
 	WorkloadEntry_v1beta1          = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1beta1", Kind: "WorkloadEntry"}
 	WorkloadGroup                  = config.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "WorkloadGroup"}
@@ -80,12 +79,8 @@ func ToGVR(g config.GroupVersionKind) (schema.GroupVersionResource, bool) {
 		return gvr.AuthorizationPolicy, true
 	case AuthorizationPolicy_v1:
 		return gvr.AuthorizationPolicy_v1, true
-	case Certificate:
-		return gvr.Certificate, true
 	case CertificateSigningRequest:
 		return gvr.CertificateSigningRequest, true
-	case ClusterIssuer:
-		return gvr.ClusterIssuer, true
 	case ConfigMap:
 		return gvr.ConfigMap, true
 	case CustomResourceDefinition:
@@ -190,6 +185,8 @@ func ToGVR(g config.GroupVersionKind) (schema.GroupVersionResource, bool) {
 		return gvr.VirtualService_v1beta1, true
 	case WasmPlugin:
 		return gvr.WasmPlugin, true
+	case Waypoint:
+		return gvr.Waypoint, true
 	case WorkloadEntry:
 		return gvr.WorkloadEntry, true
 	case WorkloadEntry_v1beta1:
@@ -218,12 +215,8 @@ func FromGVR(g schema.GroupVersionResource) (config.GroupVersionKind, bool) {
 	switch g {
 	case gvr.AuthorizationPolicy:
 		return AuthorizationPolicy, true
-	case gvr.Certificate:
-		return Certificate, true
 	case gvr.CertificateSigningRequest:
 		return CertificateSigningRequest, true
-	case gvr.ClusterIssuer:
-		return ClusterIssuer, true
 	case gvr.ConfigMap:
 		return ConfigMap, true
 	case gvr.CustomResourceDefinition:
@@ -302,6 +295,8 @@ func FromGVR(g schema.GroupVersionResource) (config.GroupVersionKind, bool) {
 		return VirtualService, true
 	case gvr.WasmPlugin:
 		return WasmPlugin, true
+	case gvr.Waypoint:
+		return Waypoint, true
 	case gvr.WorkloadEntry:
 		return WorkloadEntry, true
 	case gvr.WorkloadGroup:

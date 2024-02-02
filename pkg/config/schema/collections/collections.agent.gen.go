@@ -252,6 +252,21 @@ var (
 		ValidateProto: validation.ValidateWasmPlugin,
 	}.MustBuild()
 
+	Waypoint = resource.Builder{
+		Identifier: "Waypoint",
+		Group:      "networking.istio.io",
+		Kind:       "Waypoint",
+		Plural:     "waypoints",
+		Version:    "v1alpha3",
+		Proto:      "istio.networking.v1alpha3.Waypoint", StatusProto: "istio.meta.v1alpha1.IstioStatus",
+		ReflectType: reflect.TypeOf(&istioioapinetworkingv1alpha3.Waypoint{}).Elem(), StatusType: reflect.TypeOf(&istioioapimetav1alpha1.IstioStatus{}).Elem(),
+		ProtoPackage: "istio.io/api/networking/v1alpha3", StatusPackage: "istio.io/api/meta/v1alpha1",
+		ClusterScoped: false,
+		Synthetic:     false,
+		Builtin:       false,
+		ValidateProto: validation.EmptyValidate,
+	}.MustBuild()
+
 	WorkloadEntry = resource.Builder{
 		Identifier: "WorkloadEntry",
 		Group:      "networking.istio.io",
@@ -304,6 +319,7 @@ var (
 		MustAdd(Telemetry).
 		MustAdd(VirtualService).
 		MustAdd(WasmPlugin).
+		MustAdd(Waypoint).
 		MustAdd(WorkloadEntry).
 		MustAdd(WorkloadGroup).
 		Build()
@@ -326,6 +342,7 @@ var (
 		MustAdd(Telemetry).
 		MustAdd(VirtualService).
 		MustAdd(WasmPlugin).
+		MustAdd(Waypoint).
 		MustAdd(WorkloadEntry).
 		MustAdd(WorkloadGroup).
 		Build()
@@ -344,6 +361,7 @@ var (
 			MustAdd(Telemetry).
 			MustAdd(VirtualService).
 			MustAdd(WasmPlugin).
+			MustAdd(Waypoint).
 			MustAdd(WorkloadEntry).
 			MustAdd(WorkloadGroup).
 			Build()
@@ -362,6 +380,7 @@ var (
 				MustAdd(Telemetry).
 				MustAdd(VirtualService).
 				MustAdd(WasmPlugin).
+				MustAdd(Waypoint).
 				MustAdd(WorkloadEntry).
 				MustAdd(WorkloadGroup).
 				Build()

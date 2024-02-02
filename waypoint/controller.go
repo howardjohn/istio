@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	networkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
+	"istio.io/istio/pkg/config"
 	"strings"
 
 	"istio.io/istio/pkg/config/constants"
@@ -62,6 +64,7 @@ type Controller struct {
 	services       kclient.Client[*corev1.Service]
 	secrets        kclient.Client[*corev1.Secret]
 	gateways       kclient.Client[*gateway.Gateway]
+	waypoints      kclient.Client[*networkingv1alpha3.Waypoint]
 	routes         kclient.Client[*gateway.HTTPRoute]
 	namespaces     kclient.Client[*corev1.Namespace]
 	gatewayClasses kclient.Client[*gateway.GatewayClass]
@@ -367,8 +370,14 @@ func NewController(client kube.Client) *Controller {
 		controllers.WithReconciler(c.Reconcile),
 		controllers.WithMaxAttempts(5))
 
+	c.waypoints = kclient.New[*networkingv1alpha3.Waypoint](client)
+	c.waypoints.AddEventHandler(controllers.ObjectHandler(c.queue.AddObject))
+
+	// Re-enqueue all waypoints in a namespace
 	namespaceHandler := controllers.ObjectHandler(func(o controllers.Object) {
-		c.queue.Add(types.NamespacedName{Name: o.GetNamespace()})
+		for _, waypoint := range c.waypoints.List(o.GetNamespace(), klabels.Everything()) {
+			c.queue.Add(config.NamespacedName(waypoint))
+		}
 	})
 
 	c.services = kclient.New[*corev1.Service](client)
@@ -377,7 +386,7 @@ func NewController(client kube.Client) *Controller {
 	c.secrets.AddEventHandler(namespaceHandler)
 
 	c.gateways = kclient.New[*gateway.Gateway](client)
-	c.gateways.AddEventHandler(namespaceHandler)
+	c.gateways.AddEventHandler(controllers.ObjectHandler(controllers.EnqueueForParentHandler(c.queue, gvk.Waypoint)))
 
 	c.gatewayClasses = kclient.New[*gateway.GatewayClass](client)
 
@@ -386,7 +395,9 @@ func NewController(client kube.Client) *Controller {
 
 	c.namespaces = kclient.New[*corev1.Namespace](client)
 	c.namespaces.AddEventHandler(controllers.ObjectHandler(func(o controllers.Object) {
-		c.queue.Add(types.NamespacedName{Name: o.GetName()})
+		for _, waypoint := range c.waypoints.List(o.GetName(), klabels.Everything()) {
+			c.queue.Add(config.NamespacedName(waypoint))
+		}
 	}))
 
 	return c

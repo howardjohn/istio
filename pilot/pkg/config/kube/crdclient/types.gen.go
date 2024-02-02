@@ -140,6 +140,11 @@ func create(c kube.Client, cfg config.Config, objMeta metav1.ObjectMeta) (metav1
 			ObjectMeta: objMeta,
 			Spec:       *(cfg.Spec.(*istioioapiextensionsv1alpha1.WasmPlugin)),
 		}, metav1.CreateOptions{})
+	case gvk.Waypoint:
+		return c.Istio().NetworkingV1alpha3().Waypoints(cfg.Namespace).Create(context.TODO(), &apiistioioapinetworkingv1alpha3.Waypoint{
+			ObjectMeta: objMeta,
+			Spec:       *(cfg.Spec.(*istioioapinetworkingv1alpha3.Waypoint)),
+		}, metav1.CreateOptions{})
 	case gvk.WorkloadEntry:
 		return c.Istio().NetworkingV1alpha3().WorkloadEntries(cfg.Namespace).Create(context.TODO(), &apiistioioapinetworkingv1alpha3.WorkloadEntry{
 			ObjectMeta: objMeta,
@@ -257,6 +262,11 @@ func update(c kube.Client, cfg config.Config, objMeta metav1.ObjectMeta) (metav1
 			ObjectMeta: objMeta,
 			Spec:       *(cfg.Spec.(*istioioapiextensionsv1alpha1.WasmPlugin)),
 		}, metav1.UpdateOptions{})
+	case gvk.Waypoint:
+		return c.Istio().NetworkingV1alpha3().Waypoints(cfg.Namespace).Update(context.TODO(), &apiistioioapinetworkingv1alpha3.Waypoint{
+			ObjectMeta: objMeta,
+			Spec:       *(cfg.Spec.(*istioioapinetworkingv1alpha3.Waypoint)),
+		}, metav1.UpdateOptions{})
 	case gvk.WorkloadEntry:
 		return c.Istio().NetworkingV1alpha3().WorkloadEntries(cfg.Namespace).Update(context.TODO(), &apiistioioapinetworkingv1alpha3.WorkloadEntry{
 			ObjectMeta: objMeta,
@@ -366,6 +376,11 @@ func updateStatus(c kube.Client, cfg config.Config, objMeta metav1.ObjectMeta) (
 		}, metav1.UpdateOptions{})
 	case gvk.WasmPlugin:
 		return c.Istio().ExtensionsV1alpha1().WasmPlugins(cfg.Namespace).UpdateStatus(context.TODO(), &apiistioioapiextensionsv1alpha1.WasmPlugin{
+			ObjectMeta: objMeta,
+			Status:     *(cfg.Status.(*istioioapimetav1alpha1.IstioStatus)),
+		}, metav1.UpdateOptions{})
+	case gvk.Waypoint:
+		return c.Istio().NetworkingV1alpha3().Waypoints(cfg.Namespace).UpdateStatus(context.TODO(), &apiistioioapinetworkingv1alpha3.Waypoint{
 			ObjectMeta: objMeta,
 			Status:     *(cfg.Status.(*istioioapimetav1alpha1.IstioStatus)),
 		}, metav1.UpdateOptions{})
@@ -689,6 +704,21 @@ func patch(c kube.Client, orig config.Config, origMeta metav1.ObjectMeta, mod co
 		}
 		return c.Istio().ExtensionsV1alpha1().WasmPlugins(orig.Namespace).
 			Patch(context.TODO(), orig.Name, typ, patchBytes, metav1.PatchOptions{FieldManager: "pilot-discovery"})
+	case gvk.Waypoint:
+		oldRes := &apiistioioapinetworkingv1alpha3.Waypoint{
+			ObjectMeta: origMeta,
+			Spec:       *(orig.Spec.(*istioioapinetworkingv1alpha3.Waypoint)),
+		}
+		modRes := &apiistioioapinetworkingv1alpha3.Waypoint{
+			ObjectMeta: modMeta,
+			Spec:       *(mod.Spec.(*istioioapinetworkingv1alpha3.Waypoint)),
+		}
+		patchBytes, err := genPatchBytes(oldRes, modRes, typ)
+		if err != nil {
+			return nil, err
+		}
+		return c.Istio().NetworkingV1alpha3().Waypoints(orig.Namespace).
+			Patch(context.TODO(), orig.Name, typ, patchBytes, metav1.PatchOptions{FieldManager: "pilot-discovery"})
 	case gvk.WorkloadEntry:
 		oldRes := &apiistioioapinetworkingv1alpha3.WorkloadEntry{
 			ObjectMeta: origMeta,
@@ -770,6 +800,8 @@ func delete(c kube.Client, typ config.GroupVersionKind, name, namespace string, 
 		return c.Istio().NetworkingV1alpha3().VirtualServices(namespace).Delete(context.TODO(), name, deleteOptions)
 	case gvk.WasmPlugin:
 		return c.Istio().ExtensionsV1alpha1().WasmPlugins(namespace).Delete(context.TODO(), name, deleteOptions)
+	case gvk.Waypoint:
+		return c.Istio().NetworkingV1alpha3().Waypoints(namespace).Delete(context.TODO(), name, deleteOptions)
 	case gvk.WorkloadEntry:
 		return c.Istio().NetworkingV1alpha3().WorkloadEntries(namespace).Delete(context.TODO(), name, deleteOptions)
 	case gvk.WorkloadGroup:
@@ -1489,6 +1521,25 @@ var translationMap = map[config.GroupVersionKind]func(r runtime.Object) config.C
 		return config.Config{
 			Meta: config.Meta{
 				GroupVersionKind:  gvk.WasmPlugin,
+				Name:              obj.Name,
+				Namespace:         obj.Namespace,
+				Labels:            obj.Labels,
+				Annotations:       obj.Annotations,
+				ResourceVersion:   obj.ResourceVersion,
+				CreationTimestamp: obj.CreationTimestamp.Time,
+				OwnerReferences:   obj.OwnerReferences,
+				UID:               string(obj.UID),
+				Generation:        obj.Generation,
+			},
+			Spec:   &obj.Spec,
+			Status: &obj.Status,
+		}
+	},
+	gvk.Waypoint: func(r runtime.Object) config.Config {
+		obj := r.(*apiistioioapinetworkingv1alpha3.Waypoint)
+		return config.Config{
+			Meta: config.Meta{
+				GroupVersionKind:  gvk.Waypoint,
 				Name:              obj.Name,
 				Namespace:         obj.Namespace,
 				Labels:            obj.Labels,

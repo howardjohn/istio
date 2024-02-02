@@ -50,20 +50,6 @@ var (
 		ValidateProto: validation.ValidateAuthorizationPolicy,
 	}.MustBuild()
 
-	Certificate = resource.Builder{
-		Identifier:    "Certificate",
-		Group:         "cert-manager.io",
-		Kind:          "Certificate",
-		Plural:        "certificates",
-		Version:       "v1",
-		Proto:         "",
-		ProtoPackage:  "",
-		ClusterScoped: false,
-		Synthetic:     true,
-		Builtin:       false,
-		ValidateProto: validation.EmptyValidate,
-	}.MustBuild()
-
 	CertificateSigningRequest = resource.Builder{
 		Identifier: "CertificateSigningRequest",
 		Group:      "certificates.k8s.io",
@@ -76,20 +62,6 @@ var (
 		ClusterScoped: true,
 		Synthetic:     false,
 		Builtin:       true,
-		ValidateProto: validation.EmptyValidate,
-	}.MustBuild()
-
-	ClusterIssuer = resource.Builder{
-		Identifier:    "ClusterIssuer",
-		Group:         "cert-manager.io",
-		Kind:          "ClusterIssuer",
-		Plural:        "clusterissuers",
-		Version:       "v1",
-		Proto:         "",
-		ProtoPackage:  "",
-		ClusterScoped: true,
-		Synthetic:     true,
-		Builtin:       false,
 		ValidateProto: validation.EmptyValidate,
 	}.MustBuild()
 
@@ -711,6 +683,21 @@ var (
 		ValidateProto: validation.ValidateWasmPlugin,
 	}.MustBuild()
 
+	Waypoint = resource.Builder{
+		Identifier: "Waypoint",
+		Group:      "networking.istio.io",
+		Kind:       "Waypoint",
+		Plural:     "waypoints",
+		Version:    "v1alpha3",
+		Proto:      "istio.networking.v1alpha3.Waypoint", StatusProto: "istio.meta.v1alpha1.IstioStatus",
+		ReflectType: reflect.TypeOf(&istioioapinetworkingv1alpha3.Waypoint{}).Elem(), StatusType: reflect.TypeOf(&istioioapimetav1alpha1.IstioStatus{}).Elem(),
+		ProtoPackage: "istio.io/api/networking/v1alpha3", StatusPackage: "istio.io/api/meta/v1alpha1",
+		ClusterScoped: false,
+		Synthetic:     false,
+		Builtin:       false,
+		ValidateProto: validation.EmptyValidate,
+	}.MustBuild()
+
 	WorkloadEntry = resource.Builder{
 		Identifier: "WorkloadEntry",
 		Group:      "networking.istio.io",
@@ -750,9 +737,7 @@ var (
 	// All contains all collections in the system.
 	All = collection.NewSchemasBuilder().
 		MustAdd(AuthorizationPolicy).
-		MustAdd(Certificate).
 		MustAdd(CertificateSigningRequest).
-		MustAdd(ClusterIssuer).
 		MustAdd(ConfigMap).
 		MustAdd(CustomResourceDefinition).
 		MustAdd(DaemonSet).
@@ -792,6 +777,7 @@ var (
 		MustAdd(ValidatingWebhookConfiguration).
 		MustAdd(VirtualService).
 		MustAdd(WasmPlugin).
+		MustAdd(Waypoint).
 		MustAdd(WorkloadEntry).
 		MustAdd(WorkloadGroup).
 		Build()
@@ -841,6 +827,7 @@ var (
 		MustAdd(Telemetry).
 		MustAdd(VirtualService).
 		MustAdd(WasmPlugin).
+		MustAdd(Waypoint).
 		MustAdd(WorkloadEntry).
 		MustAdd(WorkloadGroup).
 		Build()
@@ -867,6 +854,7 @@ var (
 			MustAdd(UDPRoute).
 			MustAdd(VirtualService).
 			MustAdd(WasmPlugin).
+			MustAdd(Waypoint).
 			MustAdd(WorkloadEntry).
 			MustAdd(WorkloadGroup).
 			Build()
@@ -889,6 +877,7 @@ var (
 				MustAdd(Telemetry).
 				MustAdd(VirtualService).
 				MustAdd(WasmPlugin).
+				MustAdd(Waypoint).
 				MustAdd(WorkloadEntry).
 				MustAdd(WorkloadGroup).
 				Build()

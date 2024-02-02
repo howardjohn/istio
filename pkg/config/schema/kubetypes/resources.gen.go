@@ -134,6 +134,10 @@ func getGvk(obj any) config.GroupVersionKind {
 		return gvk.WasmPlugin
 	case *apiistioioapiextensionsv1alpha1.WasmPlugin:
 		return gvk.WasmPlugin
+	case *istioioapinetworkingv1alpha3.Waypoint:
+		return gvk.Waypoint
+	case *apiistioioapinetworkingv1alpha3.Waypoint:
+		return gvk.Waypoint
 	case *istioioapinetworkingv1alpha3.WorkloadEntry:
 		return gvk.WorkloadEntry
 	case *apiistioioapinetworkingv1alpha3.WorkloadEntry:

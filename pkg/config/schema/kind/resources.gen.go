@@ -10,9 +10,7 @@ import (
 const (
 	Address Kind = iota
 	AuthorizationPolicy
-	Certificate
 	CertificateSigningRequest
-	ClusterIssuer
 	ConfigMap
 	CustomResourceDefinition
 	DaemonSet
@@ -52,6 +50,7 @@ const (
 	ValidatingWebhookConfiguration
 	VirtualService
 	WasmPlugin
+	Waypoint
 	WorkloadEntry
 	WorkloadGroup
 )
@@ -62,12 +61,8 @@ func (k Kind) String() string {
 		return "Address"
 	case AuthorizationPolicy:
 		return "AuthorizationPolicy"
-	case Certificate:
-		return "Certificate"
 	case CertificateSigningRequest:
 		return "CertificateSigningRequest"
-	case ClusterIssuer:
-		return "ClusterIssuer"
 	case ConfigMap:
 		return "ConfigMap"
 	case CustomResourceDefinition:
@@ -146,6 +141,8 @@ func (k Kind) String() string {
 		return "VirtualService"
 	case WasmPlugin:
 		return "WasmPlugin"
+	case Waypoint:
+		return "Waypoint"
 	case WorkloadEntry:
 		return "WorkloadEntry"
 	case WorkloadGroup:
@@ -159,12 +156,8 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 	switch g {
 	case gvk.AuthorizationPolicy:
 		return AuthorizationPolicy
-	case gvk.Certificate:
-		return Certificate
 	case gvk.CertificateSigningRequest:
 		return CertificateSigningRequest
-	case gvk.ClusterIssuer:
-		return ClusterIssuer
 	case gvk.ConfigMap:
 		return ConfigMap
 	case gvk.CustomResourceDefinition:
@@ -243,6 +236,8 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 		return VirtualService
 	case gvk.WasmPlugin:
 		return WasmPlugin
+	case gvk.Waypoint:
+		return Waypoint
 	case gvk.WorkloadEntry:
 		return WorkloadEntry
 	case gvk.WorkloadGroup:

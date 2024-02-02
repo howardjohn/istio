@@ -113,6 +113,8 @@ func GetWriteClient[T runtime.Object](c ClientGetter, namespace string) ktypes.W
 		return c.Istio().NetworkingV1alpha3().VirtualServices(namespace).(ktypes.WriteAPI[T])
 	case *apiistioioapiextensionsv1alpha1.WasmPlugin:
 		return c.Istio().ExtensionsV1alpha1().WasmPlugins(namespace).(ktypes.WriteAPI[T])
+	case *apiistioioapinetworkingv1alpha3.Waypoint:
+		return c.Istio().NetworkingV1alpha3().Waypoints(namespace).(ktypes.WriteAPI[T])
 	case *apiistioioapinetworkingv1alpha3.WorkloadEntry:
 		return c.Istio().NetworkingV1alpha3().WorkloadEntries(namespace).(ktypes.WriteAPI[T])
 	case *apiistioioapinetworkingv1alpha3.WorkloadGroup:
@@ -202,6 +204,8 @@ func GetClient[T, TL runtime.Object](c ClientGetter, namespace string) ktypes.Re
 		return c.Istio().NetworkingV1alpha3().VirtualServices(namespace).(ktypes.ReadWriteAPI[T, TL])
 	case *apiistioioapiextensionsv1alpha1.WasmPlugin:
 		return c.Istio().ExtensionsV1alpha1().WasmPlugins(namespace).(ktypes.ReadWriteAPI[T, TL])
+	case *apiistioioapinetworkingv1alpha3.Waypoint:
+		return c.Istio().NetworkingV1alpha3().Waypoints(namespace).(ktypes.ReadWriteAPI[T, TL])
 	case *apiistioioapinetworkingv1alpha3.WorkloadEntry:
 		return c.Istio().NetworkingV1alpha3().WorkloadEntries(namespace).(ktypes.ReadWriteAPI[T, TL])
 	case *apiistioioapinetworkingv1alpha3.WorkloadGroup:
@@ -291,6 +295,8 @@ func gvrToObject(g schema.GroupVersionResource) runtime.Object {
 		return &apiistioioapinetworkingv1alpha3.VirtualService{}
 	case gvr.WasmPlugin:
 		return &apiistioioapiextensionsv1alpha1.WasmPlugin{}
+	case gvr.Waypoint:
+		return &apiistioioapinetworkingv1alpha3.Waypoint{}
 	case gvr.WorkloadEntry:
 		return &apiistioioapinetworkingv1alpha3.WorkloadEntry{}
 	case gvr.WorkloadGroup:
@@ -577,6 +583,13 @@ func getInformerFiltered(c ClientGetter, opts ktypes.InformerOptions, g schema.G
 		}
 		w = func(options metav1.ListOptions) (watch.Interface, error) {
 			return c.Istio().ExtensionsV1alpha1().WasmPlugins(opts.Namespace).Watch(context.Background(), options)
+		}
+	case gvr.Waypoint:
+		l = func(options metav1.ListOptions) (runtime.Object, error) {
+			return c.Istio().NetworkingV1alpha3().Waypoints(opts.Namespace).List(context.Background(), options)
+		}
+		w = func(options metav1.ListOptions) (watch.Interface, error) {
+			return c.Istio().NetworkingV1alpha3().Waypoints(opts.Namespace).Watch(context.Background(), options)
 		}
 	case gvr.WorkloadEntry:
 		l = func(options metav1.ListOptions) (runtime.Object, error) {
