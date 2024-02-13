@@ -1290,6 +1290,92 @@ spec:
 
 
                 properties:
+                  allowedChildren:
+                    description: |-
+                      AllowedChildren allows child objects to attach to this Gateway.
+                      A common scenario is to allow other objects to add listeners to this Gateway.
+                    properties:
+                      namespaces:
+                        default:
+                          from: Same
+                        description: |-
+                          Namespaces indicates namespaces from which children may be attached to this
+                          Gateway. This is restricted to the namespace of this Gateway by default.
+
+
+                          Support: Core
+                        properties:
+                          from:
+                            default: Same
+                            description: |-
+                              From indicates where Children will be selected for this Gateway. Possible
+                              values are:
+
+
+                              * All: Children in all namespaces may be used by this Gateway.
+                              * Selector: Children in namespaces selected by the selector may be used by
+                                this Gateway.
+                              * Same: Only Children in the same namespace may be used by this Gateway.
+
+
+                              Support: Core
+                            enum:
+                            - All
+                            - Selector
+                            - Same
+                            type: string
+                          selector:
+                            description: |-
+                              Selector must be specified when From is set to "Selector". In that case,
+                              only Children in Namespaces matching this Selector will be selected by this
+                              Gateway. This field is ignored for other values of "From".
+
+
+                              Support: Core
+                            properties:
+                              matchExpressions:
+                                description: matchExpressions is a list of label selector
+                                  requirements. The requirements are ANDed.
+                                items:
+                                  description: |-
+                                    A label selector requirement is a selector that contains values, a key, and an operator that
+                                    relates the key and values.
+                                  properties:
+                                    key:
+                                      description: key is the label key that the selector
+                                        applies to.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        operator represents a key's relationship to a set of values.
+                                        Valid operators are In, NotIn, Exists and DoesNotExist.
+                                      type: string
+                                    values:
+                                      description: |-
+                                        values is an array of string values. If the operator is In or NotIn,
+                                        the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                        the values array must be empty. This array is replaced during a strategic
+                                        merge patch.
+                                      items:
+                                        type: string
+                                      type: array
+                                  required:
+                                  - key
+                                  - operator
+                                  type: object
+                                type: array
+                              matchLabels:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                  map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                  operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                type: object
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                    type: object
                   annotations:
                     additionalProperties:
                       description: |-
@@ -1313,6 +1399,46 @@ spec:
 
                       Support: Extended
                     maxProperties: 8
+                    type: object
+                  attachTo:
+                    description: |-
+                      AttachTo allows the Gateway to associate itself with another resource.
+                      A common scenario is to reference another Gateway which marks
+                      this Gateway a child of another.
+                    properties:
+                      group:
+                        default: ""
+                        description: |-
+                          Group is the group of the referent. For example, "gateway.networking.k8s.io".
+                          When unspecified or empty string, core API group is inferred.
+                        maxLength: 253
+                        pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                      kind:
+                        default: Gateway
+                        description: Kind is kind of the referent. For example "Gateway".
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                        type: string
+                      name:
+                        description: Name is the name of the referent.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace is the namespace of the referenced object. When unspecified, the local
+                          namespace is inferred.
+
+
+                          Support: Core
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                    required:
+                    - name
                     type: object
                   labels:
                     additionalProperties:
@@ -2381,6 +2507,92 @@ spec:
 
 
                 properties:
+                  allowedChildren:
+                    description: |-
+                      AllowedChildren allows child objects to attach to this Gateway.
+                      A common scenario is to allow other objects to add listeners to this Gateway.
+                    properties:
+                      namespaces:
+                        default:
+                          from: Same
+                        description: |-
+                          Namespaces indicates namespaces from which children may be attached to this
+                          Gateway. This is restricted to the namespace of this Gateway by default.
+
+
+                          Support: Core
+                        properties:
+                          from:
+                            default: Same
+                            description: |-
+                              From indicates where Children will be selected for this Gateway. Possible
+                              values are:
+
+
+                              * All: Children in all namespaces may be used by this Gateway.
+                              * Selector: Children in namespaces selected by the selector may be used by
+                                this Gateway.
+                              * Same: Only Children in the same namespace may be used by this Gateway.
+
+
+                              Support: Core
+                            enum:
+                            - All
+                            - Selector
+                            - Same
+                            type: string
+                          selector:
+                            description: |-
+                              Selector must be specified when From is set to "Selector". In that case,
+                              only Children in Namespaces matching this Selector will be selected by this
+                              Gateway. This field is ignored for other values of "From".
+
+
+                              Support: Core
+                            properties:
+                              matchExpressions:
+                                description: matchExpressions is a list of label selector
+                                  requirements. The requirements are ANDed.
+                                items:
+                                  description: |-
+                                    A label selector requirement is a selector that contains values, a key, and an operator that
+                                    relates the key and values.
+                                  properties:
+                                    key:
+                                      description: key is the label key that the selector
+                                        applies to.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        operator represents a key's relationship to a set of values.
+                                        Valid operators are In, NotIn, Exists and DoesNotExist.
+                                      type: string
+                                    values:
+                                      description: |-
+                                        values is an array of string values. If the operator is In or NotIn,
+                                        the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                        the values array must be empty. This array is replaced during a strategic
+                                        merge patch.
+                                      items:
+                                        type: string
+                                      type: array
+                                  required:
+                                  - key
+                                  - operator
+                                  type: object
+                                type: array
+                              matchLabels:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                  map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                  operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                type: object
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                    type: object
                   annotations:
                     additionalProperties:
                       description: |-
@@ -2404,6 +2616,46 @@ spec:
 
                       Support: Extended
                     maxProperties: 8
+                    type: object
+                  attachTo:
+                    description: |-
+                      AttachTo allows the Gateway to associate itself with another resource.
+                      A common scenario is to reference another Gateway which marks
+                      this Gateway a child of another.
+                    properties:
+                      group:
+                        default: ""
+                        description: |-
+                          Group is the group of the referent. For example, "gateway.networking.k8s.io".
+                          When unspecified or empty string, core API group is inferred.
+                        maxLength: 253
+                        pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                      kind:
+                        default: Gateway
+                        description: Kind is kind of the referent. For example "Gateway".
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                        type: string
+                      name:
+                        description: Name is the name of the referent.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace is the namespace of the referenced object. When unspecified, the local
+                          namespace is inferred.
+
+
+                          Support: Core
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                    required:
+                    - name
                     type: object
                   labels:
                     additionalProperties:

@@ -1,0 +1,55 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: GatewayClass
+metadata:
+  name: istio
+spec:
+  controllerName: istio.io/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: Gateway
+metadata:
+  name: parent
+  namespace: istio-system
+spec:
+  addresses:
+  - value: istio-ingressgateway
+    type: Hostname
+  gatewayClassName: istio
+  infrastructure:
+    allowedChildren: {}
+  listeners:
+  - name: default
+    hostname: "parent.example.com"
+    port: 80
+    protocol: HTTP
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: Gateway
+metadata:
+  name: child1
+  namespace: istio-system
+spec:
+  gatewayClassName: istio
+  infrastructure:
+    attachTo:
+      name: parent
+  listeners:
+  - name: child1
+    hostname: "child.example.com"
+    port: 80
+    protocol: HTTP
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: http
+  namespace: istio-system
+spec:
+  parentRefs:
+  - name: child1
+    namespace: istio-system
+  hostnames: ["child.example.com", "parent.example.com"]
+  rules:
+  - backendRefs:
+    - name: httpbin
+      port: 80

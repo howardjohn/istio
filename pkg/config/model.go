@@ -423,7 +423,7 @@ type Namer interface {
 	GetNamespace() string
 }
 
-func NamespacedName(o metav1.Object) kubetypes.NamespacedName {
+func NamespacedName(o Namer) kubetypes.NamespacedName {
 	return kubetypes.NamespacedName{
 		Namespace: o.GetNamespace(),
 		Name:      o.GetName(),

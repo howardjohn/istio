@@ -12,11 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+
+* name listener uniqueness
+
+
+ */
+
 package gateway
 
 import (
 	"crypto/tls"
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"net"
 	"net/netip"
 	"sort"
@@ -1974,9 +1982,37 @@ func convertGateways(r configContext) ([]config.Config, map[parentKey][]*parentI
 	// used to ensure we handle namespace updates for those keys.
 	namespaceLabelReferences := sets.New[string]()
 	classes := getGatewayClasses(r.GatewayResources, gatewaySupportedFeatures)
+
+	// Parent name -> children
+	children := map[types.NamespacedName][]config.Config{}
+
 	for _, obj := range r.Gateway {
 		obj := obj
 		kgw := obj.Spec.(*k8s.GatewaySpec)
+		if kgw.Infrastructure != nil && kgw.Infrastructure.AttachTo != nil {
+			attach := kgw.Infrastructure.AttachTo
+			kind := ptr.OrDefault((*string)(attach.Kind), gvk.KubernetesGateway.Kind)
+			group := ptr.OrDefault((*string)(attach.Group), gvk.KubernetesGateway.Group)
+			// Currently, we only support GW
+			// Currently supported types are Gateway, Service, and ServiceEntry
+			if !(kind == gvk.KubernetesGateway.Kind && group == gvk.KubernetesGateway.Group) {
+				// TODO: report invalid attachment
+				continue
+			}
+			ns := ptr.OrDefault((*string)(attach.Namespace), obj.Namespace)
+			nn := types.NamespacedName{Namespace: ns, Name: string(attach.Name)}
+			children[nn] = append(children[nn], obj)
+		}
+	}
+
+	for _, obj := range r.Gateway {
+		obj := obj
+		kgw := obj.Spec.(*k8s.GatewaySpec)
+		if kgw.Infrastructure != nil && kgw.Infrastructure.AttachTo != nil {
+			// We will only handle parents here, not children
+			// TODO: we need to report status, though
+			continue
+		}
 		controllerName, f := classes[string(kgw.GatewayClassName)]
 		if !f {
 			// No gateway class found, this may be meant for another controller; should be skipped.
@@ -2000,7 +2036,11 @@ func convertGateways(r configContext) ([]config.Config, map[parentKey][]*parentI
 			reportGatewayStatus(r, obj, classInfo, gatewayServices, servers, err)
 			continue
 		}
-		for i, l := range kgw.Listeners {
+		listeners := slices.Clone(kgw.Listeners)
+		for _, child := range children[config.NamespacedName(obj)] {
+			listeners = append(listeners, child.Spec.(*k8s.GatewaySpec).Listeners...)
+		}
+		for i, l := range listeners {
 			i := i
 			namespaceLabelReferences.InsertAll(getNamespaceLabelReferences(l.AllowedRoutes)...)
 			server, programmed := buildListener(r, obj, l, i, controllerName)
