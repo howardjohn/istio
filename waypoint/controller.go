@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"istio.io/istio/pkg/config"
 	"strings"
 
 	"istio.io/istio/pkg/config/constants"
@@ -39,6 +40,9 @@ var serviceShimTemplate string
 //go:embed route.yaml
 var routeTemplate string
 
+//go:embed route-default.yaml
+var routeDefaultTemplate string
+
 func buildTemplate(tm string) func(d any) ([]string, error) {
 	t := tmpl.MustParse(tm)
 	return func(d any) ([]string, error) {
@@ -51,9 +55,10 @@ func buildTemplate(tm string) func(d any) ([]string, error) {
 }
 
 var (
-	runGateway     = buildTemplate(gatewayTemplate)
-	runServiceShim = buildTemplate(serviceShimTemplate)
-	runRoute       = buildTemplate(routeTemplate)
+	runGateway      = buildTemplate(gatewayTemplate)
+	runServiceShim  = buildTemplate(serviceShimTemplate)
+	runRoute        = buildTemplate(routeTemplate)
+	runRouteDefault = buildTemplate(routeDefaultTemplate)
 )
 
 type Controller struct {
@@ -78,62 +83,112 @@ type ServiceShimInputs struct {
 }
 
 type GatewayInputs struct {
-	Name      string
-	Namespace string
-	Ports     []int32
-	Class     string
+	// Service name
+	types.NamespacedName
+	Ports []int
+	Class string
 }
 
-type RouteInputs struct {
+type RouteDefaultInputs struct {
+	// Service name
+	types.NamespacedName
+	Gateway *gateway.Gateway
+	//Hostnames []string
+	Ports []int
+}
+
+type RouteMirrorInputs struct {
 	*gateway.HTTPRoute
-	Hostnames []string
+	//Hostnames []string
+	ServicePorts []int
 }
 
 const (
-	domain = "cluster.local"
+	domain      = "cluster.local"
+	useWaypoint = "istio.io/use-waypoint"
 )
 
 func (c *Controller) Reconcile(key types.NamespacedName) error {
-	ns := key.Name
-	log := log.WithLabels("namespace", ns)
+	ns := key.Namespace
+	name := key.Name
+	log := log.WithLabels("namespace", ns, "service", name)
 	log.Infof("reconcile")
 
-	gwName := "waypoint"
-
-	// Find all routes. If there are no routes, there is no waypoint
-	routes := c.routesFor(ns)
-	if len(routes) == 0 {
-		log.Infof("no routes")
-		return controllers.IgnoreNotFound(c.gateways.Delete(gwName, ns))
+	svc := c.services.Get(name, ns)
+	if svc == nil {
+		log.Infof("service removed")
+		return nil
 	}
 
-	// Setup our primary waypoint gateway
-	ports := c.findPorts(routes)
+	nsObj := c.namespaces.Get(ns, "")
+	if nsObj == nil {
+		log.Infof("namespace does not exist")
+		return nil
+	}
+
+	needsWaypoint := svc.Annotations[useWaypoint] != "" || nsObj.Annotations[useWaypoint] != ""
+	if !needsWaypoint {
+		log.Infof("service does not need waypoint, cleanup...")
+		// TODO: cleanup
+		return nil
+	}
+
 	gwi := GatewayInputs{
-		Name:      gwName,
-		Ports:     sets.SortedList(ports),
-		Namespace: ns,
-		Class:     c.gatewayClass,
+		NamespacedName: key,
+		Ports:          extractServicePorts(svc),
+		Class:          c.gatewayClass,
 	}
-	gws, err := runGateway(gwi)
-	if err != nil {
+	if err := c.runAndApply(runGateway, gwi); err != nil {
 		return err
 	}
-	if err := c.apply(gws[0]); err != nil {
-		return fmt.Errorf("gateway apply failed: %v", err)
+
+	gwName := key.Name + "-waypoint"
+	waypoint := c.gateways.Get(gwName, ns)
+	if waypoint == nil {
+		log.Infof("waypoint not yet found, maybe will be later")
+		return nil
 	}
 
-	// For each route, we need to make a mirror route that has the appropriate hostname matches and points to our Gateway.
-	for _, r := range routes {
-		routes, err := runRoute(routeInputs(r))
-		if err != nil {
+	// Find all routes. If there are no routes, we will setup a default one
+	routes := c.routesFor(key)
+	if len(routes) == 0 {
+		log.Infof("no routes for service, set up default")
+		if err := c.runAndApply(runRouteDefault, routeDefaultInputs(waypoint, svc)); err != nil {
 			return err
 		}
-		if err := c.apply(routes[0]); err != nil {
-			return fmt.Errorf("route %v apply failed: %v", r.Name, err)
+		return nil
+	} else {
+		grouped := slices.Group(routes, func(h *gateway.HTTPRoute) string {
+			// TODO annotation, etc
+			if strings.Contains(h.Name, "-waypoint-default-") {
+				return "default"
+			}
+			if strings.Contains(h.Name, "-waypoint-mirror") {
+				return "mirror"
+			}
+			return "user"
+		})
+		defaultRoutes := grouped["default"]
+		userRoutes := grouped["user"]
+		//mirrorRoutes := grouped["mirror"]
+		if len(userRoutes) > 0 {
+			for _, dr := range defaultRoutes {
+				log.Infof("delete default route %v", dr.Name)
+				if err := c.routes.Delete(dr.Name, dr.Namespace); err != nil {
+					return err
+				}
+			}
 		}
+		// We do not need to prune mirrorRoutes as they use ownerReferences
+		for _, r := range userRoutes {
+			if err := c.runAndApply(runRoute, routeMirrorInputs(r)); err != nil {
+				return err
+			}
+		}
+
 	}
 
+	return nil
 	// Our cilium redirection translates the target Service IP to another Service IP.
 	// For external, the IP would be just an opaque IP to Cilium. We could probably make this work there, but for now workaround it.
 	// Create a new Service for the waypoint and point it to the gateway address.
@@ -159,7 +214,7 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 			ssi := ServiceShimInputs{
 				Name:      gwName,
 				Namespace: ns,
-				Ports:     sets.SortedList(ports),
+				//Ports:     sets.SortedList(ports),
 				Address:   addr,
 			}
 			svcEp, err := runServiceShim(ssi)
@@ -218,6 +273,19 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	return nil
 }
 
+func (c *Controller) runAndApply(tmpl func(d any) ([]string, error), input any) error {
+	objs, err := tmpl(input)
+	if err != nil {
+		return fmt.Errorf("template %T failed: %v", input, err)
+	}
+	for _, obj := range objs {
+		if err := c.apply(obj); err != nil {
+			return fmt.Errorf("apply %T failed: %v", input, err)
+		}
+	}
+	return nil
+}
+
 func (c *Controller) findPorts(routes []*gateway.HTTPRoute) sets.Set[int32] {
 	ports := sets.New[int32]()
 	for _, r := range routes {
@@ -244,16 +312,34 @@ func (c *Controller) findPorts(routes []*gateway.HTTPRoute) sets.Set[int32] {
 	return ports
 }
 
-func routeInputs(r *gateway.HTTPRoute) RouteInputs {
+func routeDefaultInputs(gw *gateway.Gateway, svc *corev1.Service) RouteDefaultInputs {
+	return RouteDefaultInputs{
+		NamespacedName: config.NamespacedName(svc),
+		Gateway:        gw,
+		Ports:          extractServicePorts(svc),
+	}
+}
+
+func extractServicePorts(svc *corev1.Service) []int {
+	ports := slices.Map(svc.Spec.Ports, func(e corev1.ServicePort) int {
+		return int(e.Port)
+	})
+	// todo: dedupe ports? filter to only HTTP?
+	return ports
+}
+
+func routeMirrorInputs(r *gateway.HTTPRoute) RouteMirrorInputs {
 	hostnames := sets.New[string]()
 	// Insert all specified hostnames directly (to support custom domains)
 	for _, h := range r.Spec.Hostnames {
 		hostnames.Insert(string(h))
 	}
+	ports := sets.New[int]()
 	for _, p := range r.Spec.ParentRefs {
 		if !isServiceReference(p) {
 			continue
 		}
+		ports.Insert(int(ptr.OrDefault(p.Port, 0)))
 		hostnames.Insert(string(p.Name))
 		ns := string(ptr.OrDefault(p.Namespace, gateway.Namespace(r.Namespace)))
 		hostnames.InsertAll(
@@ -263,9 +349,9 @@ func routeInputs(r *gateway.HTTPRoute) RouteInputs {
 			fmt.Sprintf("%v.%s.svc.%s", p.Name, ns, domain),
 		)
 	}
-	return RouteInputs{
-		HTTPRoute: r,
-		Hostnames: sets.SortedList(hostnames),
+	return RouteMirrorInputs{
+		HTTPRoute:    r,
+		ServicePorts: sets.SortedList(ports),
 	}
 }
 
@@ -317,13 +403,21 @@ func (c *Controller) apply(yml string) error {
 	return nil
 }
 
-func (c *Controller) routesFor(ns string) []*gateway.HTTPRoute {
-	routes := c.routes.List(ns, klabels.Everything())
+func (c *Controller) routesFor(key types.NamespacedName) []*gateway.HTTPRoute {
+	routes := c.routes.List(key.Namespace, klabels.Everything())
 	return slices.FilterInPlace(routes, func(route *gateway.HTTPRoute) bool {
 		for _, p := range route.Spec.ParentRefs {
-			if isServiceReference(p) {
-				return true
+			if !isServiceReference(p) {
+				return false
 			}
+			if string(p.Name) != key.Name {
+				return false
+			}
+			if p.Namespace != nil && string(*p.Namespace) != key.Namespace {
+				return false
+			}
+			// It has a binding to this service.
+			return true
 		}
 		return false
 	})
@@ -367,26 +461,31 @@ func NewController(client kube.Client) *Controller {
 		controllers.WithReconciler(c.Reconcile),
 		controllers.WithMaxAttempts(5))
 
-	namespaceHandler := controllers.ObjectHandler(func(o controllers.Object) {
-		c.queue.Add(types.NamespacedName{Name: o.GetNamespace()})
-	})
-
 	c.services = kclient.New[*corev1.Service](client)
-	c.services.AddEventHandler(namespaceHandler)
-	c.secrets = kclient.New[*corev1.Secret](client)
-	c.secrets.AddEventHandler(namespaceHandler)
+	c.services.AddEventHandler(controllers.ObjectHandler(c.queue.AddObject))
 
+	c.secrets = kclient.New[*corev1.Secret](client)
+	//c.secrets.AddEventHandler(namespaceHandler)
+
+	reconcileNamespace := controllers.ObjectHandler(func(o controllers.Object) {
+		// TODO: this is very inefficient
+		for _, svc := range c.services.List(o.GetNamespace(), klabels.Everything()) {
+			c.queue.AddObject(svc)
+		}
+	})
 	c.gateways = kclient.New[*gateway.Gateway](client)
-	c.gateways.AddEventHandler(namespaceHandler)
+	c.gateways.AddEventHandler(reconcileNamespace)
 
 	c.gatewayClasses = kclient.New[*gateway.GatewayClass](client)
 
 	c.routes = kclient.New[*gateway.HTTPRoute](client)
-	c.routes.AddEventHandler(namespaceHandler)
+	c.routes.AddEventHandler(reconcileNamespace)
 
 	c.namespaces = kclient.New[*corev1.Namespace](client)
 	c.namespaces.AddEventHandler(controllers.ObjectHandler(func(o controllers.Object) {
-		c.queue.Add(types.NamespacedName{Name: o.GetName()})
+		for _, svc := range c.services.List(o.GetName(), klabels.Everything()) {
+			c.queue.AddObject(svc)
+		}
 	}))
 
 	return c

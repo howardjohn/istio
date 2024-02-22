@@ -1,7 +1,7 @@
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: Gateway
 metadata:
-  name: {{.Name}}
+  name: {{.Name}}-waypoint
   namespace: {{.Namespace}}
   annotations:
     networking.istio.io/service-type: "ClusterIP"
@@ -10,7 +10,7 @@ spec:
   listeners:
 {{ if false }}
   {{ range $port := .Ports }}
-  - name: "https-{{.}}"
+  - name: "port-{{.}}"
     protocol: HTTPS
     allowedRoutes:
       namespaces:
@@ -23,7 +23,7 @@ spec:
   {{ end }}
 {{ else }}
   {{ range $port := .Ports }}
-  - name: "http-{{.}}"
+  - name: "port-{{.}}"
     protocol: HTTP
     allowedRoutes:
       namespaces:
