@@ -6,7 +6,7 @@ metadata:
 spec:
   ports:
   {{ range $port := .Ports }}
-  - name: "http-{{.}}"
+  - name: "port-{{.}}"
     port: {{.}}
   {{ end }}
 ---
@@ -20,6 +20,6 @@ subsets:
       - ip: {{.Address}}
     ports:
     {{ range $port := .Ports }}
-    - name: "http-{{.}}"
+    - name: "port-{{.}}"
       port: {{.}}
     {{ end }}

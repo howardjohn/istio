@@ -78,7 +78,7 @@ type Controller struct {
 type ServiceShimInputs struct {
 	Name      string
 	Namespace string
-	Ports     []int32
+	Ports     []int
 	Address   string
 }
 
@@ -156,7 +156,6 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		if err := c.runAndApply(runRouteDefault, routeDefaultInputs(waypoint, svc)); err != nil {
 			return err
 		}
-		return nil
 	} else {
 		grouped := slices.Group(routes, func(h *gateway.HTTPRoute) string {
 			// TODO annotation, etc
@@ -181,14 +180,13 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 		}
 		// We do not need to prune mirrorRoutes as they use ownerReferences
 		for _, r := range userRoutes {
+			log.Infof("mirroring route %v", r.Name)
 			if err := c.runAndApply(runRoute, routeMirrorInputs(r)); err != nil {
 				return err
 			}
 		}
-
 	}
 
-	return nil
 	// Our cilium redirection translates the target Service IP to another Service IP.
 	// For external, the IP would be just an opaque IP to Cilium. We could probably make this work there, but for now workaround it.
 	// Create a new Service for the waypoint and point it to the gateway address.
@@ -214,18 +212,13 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 			ssi := ServiceShimInputs{
 				Name:      gwName,
 				Namespace: ns,
-				//Ports:     sets.SortedList(ports),
+				Ports:     extractServicePorts(svc),
 				Address:   addr,
 			}
-			svcEp, err := runServiceShim(ssi)
-			if err != nil {
+
+			log.Infof("apply service shim")
+			if err := c.runAndApply(runServiceShim, ssi); err != nil {
 				return err
-			}
-			if err := c.apply(svcEp[0]); err != nil {
-				return fmt.Errorf("service apply failed: %v", err)
-			}
-			if err := c.apply(svcEp[1]); err != nil {
-				return fmt.Errorf("endpoint apply failed: %v", err)
 			}
 		}
 		svc := c.services.Get(gwName, ns)
@@ -235,39 +228,13 @@ func (c *Controller) Reconcile(key types.NamespacedName) error {
 	}
 
 	// For each service, mark the waypoint address it can be reached from
-	if waypointAddress != "" {
-		handled := sets.New[string]()
-		for _, r := range routes {
-			for _, p := range r.Spec.ParentRefs {
-				if !isServiceReference(p) {
-					continue
-				}
-				ns := string(ptr.OrDefault(p.Namespace, gateway.Namespace(r.Namespace)))
-				svc := c.services.Get(string(p.Name), ns)
-				handled.Insert(string(p.Name))
-				if svc == nil {
-					continue
-				}
-				if svc.Annotations == nil {
-					svc.Annotations = map[string]string{}
-				}
-				svc.Annotations["experimental.istio.io/waypoint"] = waypointAddress
-				// TODO move to patch
-				// TODO: remove when its not needed anymore
-				c.services.Update(svc)
-			}
-		}
-		// Cleanup
-		for _, svc := range c.services.List(ns, klabels.Everything()) {
-			if handled.Contains(svc.Name) {
-				continue
-			}
-			if _, f := svc.Annotations["experimental.istio.io/waypoint"]; f {
-				delete(svc.Annotations, "experimental.istio.io/waypoint")
-				// TODO move to patch
-				c.services.Update(svc)
-			}
-		}
+	patchBytes := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, "experimental.istio.io/waypoint", waypointAddress)
+	if waypointAddress == "" {
+		patchBytes = fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, "experimental.istio.io/waypoint")
+	}
+	log.Infof("waypoint address is %q", waypointAddress)
+	if _, err := c.services.Patch(name, ns, types.MergePatchType, []byte(patchBytes)); err != nil {
+		return err
 	}
 
 	return nil
