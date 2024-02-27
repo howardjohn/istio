@@ -195,7 +195,7 @@ func (s *tcpInstance) getResponseFields(conn net.Conn) string {
 	if AmbientRedirectionEnabled {
 		cm, _ := istiometadata.FetchFromServerConnection(conn)
 		if cm != nil {
-			respFields[echo.IdentityField] = cm.Identity
+			echo.IdentityField.Write(out, cm.Identity)
 		}
 	}
 
