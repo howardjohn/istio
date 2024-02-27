@@ -143,6 +143,9 @@ type Options struct {
 	// If meshConfig.DiscoverySelectors are specified, the DiscoveryNamespacesFilter tracks the namespaces this controller watches.
 	DiscoveryNamespacesFilter namespace.DiscoveryNamespacesFilter
 
+	// Revision of this Istiod instance
+	Revision string
+
 	ConfigCluster bool
 }
 
@@ -301,6 +304,7 @@ func NewController(kubeClient kubelib.Client, options Options) *Controller {
 			SystemNamespace:           options.SystemNamespace,
 			DomainSuffix:              options.DomainSuffix,
 			ClusterID:                 options.ClusterID,
+			Revision:                  options.Revision,
 			XDSUpdater:                options.XDSUpdater,
 			DiscoveryNamespacesFilter: c.opts.DiscoveryNamespacesFilter,
 			LookupNetwork:             c.Network,
