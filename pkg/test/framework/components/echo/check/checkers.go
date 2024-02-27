@@ -331,6 +331,15 @@ func SourceIPv6() echo.Checker {
 	})
 }
 
+func Identity(expected string) echo.Checker {
+	return Each(func(r echoClient.Response) error {
+		if r.Identity != expected {
+			return fmt.Errorf("expected identity %s, received %s", expected, r.Identity)
+		}
+		return nil
+	})
+}
+
 func isHTTPProtocol(r echoClient.Response) bool {
 	return strings.HasPrefix(r.RequestURL, "http://") ||
 		strings.HasPrefix(r.RequestURL, "grpc://") ||

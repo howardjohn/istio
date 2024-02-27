@@ -31,6 +31,7 @@ import (
 	"istio.io/istio/pkg/test/echo"
 	"istio.io/istio/pkg/test/echo/common"
 	"istio.io/istio/pkg/test/util/retry"
+	istiometadata "istio.io/ztunnel/go-metadata"
 )
 
 var _ Instance = &tcpInstance{}
@@ -199,6 +200,12 @@ func (s *tcpInstance) getResponseFields(conn net.Conn) string {
 
 	if p, ok := conn.(*proxyproto.Conn); ok && p.ProxyHeader() != nil {
 		echo.ProxyProtocolField.Write(out, fmt.Sprint(p.ProxyHeader().Version))
+	}
+	if AmbientRedirectionEnabled {
+		cm, _ := istiometadata.FetchFromServerConnection(conn)
+		if cm != nil {
+			echo.IdentityField.Write(out, cm.PeerIdentity)
+		}
 	}
 	if hostname, err := os.Hostname(); err == nil {
 		echo.HostnameField.Write(out, hostname)

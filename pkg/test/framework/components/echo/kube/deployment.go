@@ -393,6 +393,7 @@ func deploymentParams(ctx resource.Context, cfg echo.Config, settings *resource.
 		"Compatibility":           settings.Compatibility,
 		"WorkloadClass":           cfg.WorkloadClass(),
 		"OverlayIstioProxy":       canCreateIstioProxy(settings.Revisions.Minimum()) && !settings.Ambient,
+		"IsCaptured":              settings.Ambient && cfg.IsCaptured(),
 		"Ambient":                 settings.Ambient,
 		"BindFamily":              cfg.BindFamily,
 	}
