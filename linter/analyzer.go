@@ -26,6 +26,28 @@ func NewAnalyzer() *analysis.Analyzer {
 	}
 }
 
+type visit struct {
+	t    *types.Info
+	pass *analysis.Pass
+}
+
+func (v visit) Visit(n ast.Node) (w ast.Visitor) {
+	switch n := n.(type) {
+	case *ast.CallExpr:
+		check := func(id *ast.Ident) bool {
+			obj := v.t.ObjectOf(id)
+			return (obj.Name() == "Fetch" || obj.Name() == "FetchOne") && obj.Pkg().Path() == "istio.io/istio/pkg/kube/krt"
+		}
+		switch f := n.Fun.(type) {
+		case *ast.SelectorExpr:
+			if check(f.Sel) {
+				v.pass.Report(analysis.Diagnostic{Pos: n.Pos(), End: n.End(), Message: fmt.Sprintf("fetch %T %+v, %T", f.X, f.Sel, n.Args[1])})
+			}
+		}
+	}
+	return v
+}
+
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
@@ -66,13 +88,16 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			switch f := n.Fun.(type) {
 			case *ast.SelectorExpr:
 				if check(f.Sel) {
-					pass.Report(analysis.Diagnostic{Pos: n.Pos(), End: n.End(), Message: fmt.Sprintf("call %T %+v, %T", f.X, f.Sel, n.Args[1]),
-					})
+					pass.Report(analysis.Diagnostic{Pos: n.Pos(), End: n.End(), Message: fmt.Sprintf("call %T %+v, %T", f.X, f.Sel, n.Args[1])})
 					switch xfm := n.Args[1].(type) {
 					case *ast.FuncLit:
-						forEachStmt(xfm.Body.List, func(last ast.Stmt) {
-							pass.Report(analysis.Diagnostic{Pos: last.Pos(), Message: fmt.Sprintf("var %T ", last),})
-						})
+						ast.Walk(visit{
+							t:    info,
+							pass: pass,
+						}, xfm)
+						//forEachStmt(xfm.Body.List, func(last ast.Stmt) {
+						//	pass.Report(analysis.Diagnostic{Pos: last.Pos(), Message: fmt.Sprintf("var %T ", last)})
+						//})
 					}
 				}
 			case *ast.Ident:
