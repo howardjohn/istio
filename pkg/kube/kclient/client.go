@@ -40,7 +40,7 @@ import (
 	"istio.io/istio/pkg/util/sets"
 )
 
-type fullClient[T controllers.Object] struct {
+type fullClient[T controllers.ComparableObject] struct {
 	writeClient[T]
 	Informer[T]
 }
@@ -218,6 +218,53 @@ func NewFiltered[T controllers.ComparableObject](c kube.Client, filter Filter) C
 	}
 }
 
+func NewSwapper[T controllers.ComparableObject](c kube.Client, filter Filter) Client[T] {
+	gvr := gvk.MustToGVR(types.GetGVK[T]())
+	inf := kubeclient.GetInformerFiltered[T](c, ToOpts(c, gvr, filter))
+	return &fullClient[T]{
+		writeClient: writeClient[T]{client: c},
+		Informer:    newInformerClient[T](inf, filter),
+	}
+}
+
+func (f fullClient[T]) Swap(c kube.Client) {
+	gvr := gvk.MustToGVR(types.GetGVK[T]())
+	inf := kubeclient.GetInformerFiltered[T](c, ToOpts(c, gvr, Filter{}))
+	f.writeClient = writeClient[T]{client: c}
+	old := f.Informer.(*informerClient[T])
+
+	f.Informer = newInformerClient[T](inf, Filter{})
+	f.Informer.Start(make(chan struct{})) // todo stop
+	kube.WaitForCacheSync("swap", make(chan struct{}), f.Informer.HasSynced)
+	// Let it fully sync so we get all items
+	for _, h := range old.registeredHandlers {
+		log.Errorf("howardjohn: register handler...")
+		f.Informer.AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+			AddFunc: func(obj interface{}, isInInitialList bool) {
+				if !isInInitialList {
+					h.handler.OnAdd(obj, isInInitialList)
+					return
+				}
+				t := obj.(T)
+				o := old.Get(t.GetName(), t.GetNamespace())
+				if controllers.IsNil(o) {
+					h.handler.OnAdd(obj, isInInitialList)
+					return
+				}
+				h.handler.OnUpdate(o, obj)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				h.handler.OnUpdate(oldObj, newObj)
+			},
+			DeleteFunc: func(obj interface{}) {
+				h.handler.OnDelete(obj)
+			},
+		})
+	}
+	// TODO: doing dletes seems impossible
+	log.Errorf("howardjohn: %v", f.Informer.List("", klabels.Everything()))
+}
+
 // NewDelayedInformer returns a "delayed" client for the given GVR. This is read-only.
 // A delayed client is used for CRD watches when the CRD may or may not exist. When the CRD is not present, the client will return
 // empty results for all operations and watch for the CRD creation. Once created, watchers will be started and read operations will
@@ -307,8 +354,11 @@ func newDelayedInformer[T controllers.ComparableObject](
 
 func newInformerClient[T controllers.ComparableObject](inf informerfactory.StartableInformer, filter Filter) Informer[T] {
 	ic := &informerClient[T]{
-		informer:      inf.Informer,
-		startInformer: inf.Start,
+		informer: inf.Informer,
+		startInformer: func(stopCh <-chan struct{}) {
+			log.Errorf("howardjohn: start %p", inf)
+			inf.Start(stopCh)
+		},
 	}
 	applyDynamicFilter(filter, ic)
 	return ic

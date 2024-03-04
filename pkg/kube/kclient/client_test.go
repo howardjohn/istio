@@ -403,3 +403,68 @@ func TestFilter(t *testing.T) {
 	tracker.WaitOrdered("delete/1")
 	assert.Equal(t, len(tester.List("", klabels.Everything())), 1)
 }
+
+func TestSwap(t *testing.T) {
+	tracker := assert.NewTracker[string](t)
+	client1 := kube.NewFakeClient()
+	deployments := kclient.NewSwapper[*appsv1.Deployment](client1, kclient.Filter{ObjectFilter: kubetypes.NewStaticObjectFilter(func(t any) bool {
+		return t.(*appsv1.Deployment).Spec.MinReadySeconds < 100
+	})})
+	deployments.AddEventHandler(clienttest.TrackerHandler(tracker))
+	tester1 := clienttest.Wrap(t, deployments)
+
+	client1.RunAndWait(test.NewStop(t))
+	obj1 := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "1", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{MinReadySeconds: 1},
+	}
+	obj2 := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "2", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{MinReadySeconds: 10},
+	}
+	obj3 := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "3", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{MinReadySeconds: 100},
+	}
+
+	// Create object, make sure we can see it
+	tester1.Create(obj1)
+	// Client is cached, so its only eventually consistent
+	tracker.WaitOrdered("add/1")
+	assert.Equal(t, tester1.Get(obj1.Name, obj1.Namespace), obj1)
+	assert.Equal(t, tester1.List("", klabels.Everything()), []*appsv1.Deployment{obj1})
+	assert.Equal(t, tester1.List(obj1.Namespace, klabels.Everything()), []*appsv1.Deployment{obj1})
+
+
+	// Update object, should see the update...
+	obj1.Spec.MinReadySeconds = 2
+	tester1.Update(obj1)
+	tracker.WaitOrdered("update/1")
+	assert.Equal(t, tester1.Get(obj1.Name, obj1.Namespace), obj1)
+
+	// Create some more objects
+	tester1.Create(obj3)
+	tester1.Create(obj2)
+	tracker.WaitOrdered("add/2")
+	assert.Equal(t, tester1.Get(obj2.Name, obj2.Namespace), obj2)
+
+	// We should not see obj3, it is filtered
+	deploys := tester1.List(obj1.Namespace, klabels.Everything())
+	slices.SortBy(deploys, func(a *appsv1.Deployment) string {
+		return a.Name
+	})
+	assert.Equal(t, deploys, []*appsv1.Deployment{obj1, obj2})
+	assert.Equal(t, tester1.Get(obj3.Name, obj3.Namespace), nil)
+
+	client2 := kube.NewFakeClient()
+	tester2 := clienttest.NewWriter[*appsv1.Deployment](t, client2)
+	tester2.Create(obj1)
+	deployments.Swap(client2)
+	deployments.Start(test.NewStop(t))
+	client2.RunAndWait(test.NewStop(t))
+
+	time.Sleep(time.Millisecond*10)
+
+	tracker.WaitOrdered("delete/2")
+
+}

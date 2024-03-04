@@ -15,6 +15,7 @@
 package kclient
 
 import (
+	"istio.io/istio/pkg/kube"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
@@ -80,4 +81,6 @@ type Client[T controllers.Object] interface {
 	Reader[T]
 	Writer[T]
 	Informer[T]
+
+	Swap(c kube.Client)
 }
