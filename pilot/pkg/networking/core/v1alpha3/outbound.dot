@@ -1,0 +1,55 @@
+digraph {
+    "IP?" [shape=diamond,color=purple]
+    "IP?" -> "Known VIP"
+        # Known VIP. Need to check ports first
+        "vipport?" [shape=diamond,color=purple,label="Port?"]
+            "Known VIP" -> "vipport?"
+            # This is a known port on a known VIP. Send to the cluster for this VIP+Port.
+            "vipknownport" [label="Known Port\nForward",style=filled,fillcolor="springgreen2"]
+            "vipport?" -> "vipknownport"
+
+            # Know VIP, unknown port. Reject
+            "vipdone" [label="Unknown Port\nReject",style=filled,fillcolor="tomato"]
+            "vipport?" -> "vipdone" [color="red"]
+    "IP?" -> "Known Pod IP"
+        # Known Pod IP: Forward to pod directly. We do not do HTTP processing
+        # TODO: headless service special cases
+        "Known Pod IP" [label="Known Pod IP\nForward",style=filled,fillcolor="springgreen2"]
+
+    "IP?" -> "SNI?" [color=red]
+
+
+    "SNI?" [shape=diamond,color=purple]
+    "SNI?" -> "Known SNI"
+        "sniport?" [shape=diamond,color=purple,label="Port?"]
+            "Known SNI" -> "sniport?"
+            # This is a known port on a known VIP. Send to the cluster for this VIP+Port.
+            "sniknownport" [label="Known Port\nForward",style=filled,fillcolor="springgreen2"]
+            "sniport?" -> "sniknownport"
+
+            # Know VIP, unknown port. Reject
+            "snidone" [label="Unknown Port\nReject",style=filled,fillcolor="tomato"]
+            "sniport?" -> "snidone" [color="red"]
+    "SNI?" -> "Protocol?" [color=red]
+
+
+    "Protocol?"  [shape=diamond,color=purple]
+    "Protocol?" -> TCP
+        "tcpport?" [shape=diamond,color=purple,label="Port?"]
+        TCP -> "tcpport?"
+        # This is a known port on TCP. Note we already filterd out known VIP/pods; so this is a ServiceEntry with no VIP
+        "tcpknownport" [label="Known Port\nForward",style=filled,fillcolor="springgreen2"]
+        "tcpport?" -> "tcpknownport"
+
+        # Know tcp, unknown port. Reject
+        "tcpdone" [label="Unknown Port\nPassthrough",style=filled,fillcolor="skyblue1"]
+        "tcpport?" -> "tcpdone" [color="red"]
+
+    "Protocol?" -> HTTP
+    HTTP -> "httpport?"
+        "httpport?" [shape=diamond,color=purple,label="Port?"]
+        "httpport?" -> "httpknown"
+        "httpknown" [label="Known Port\nRoute for Port",style=filled,fillcolor="springgreen2"]
+        "httpport?" -> "httpunknown" [color=red]
+        "httpunknown" [label="Unknown Port\nRoute for AllPort",style=filled,fillcolor="springgreen2"]
+}

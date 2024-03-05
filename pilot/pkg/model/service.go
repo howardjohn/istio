@@ -855,6 +855,33 @@ type ServiceDiscovery interface {
 	// Kubernetes Multi-Cluster Services (MCS) ServiceExport API. Only applies to services in
 	// Kubernetes clusters.
 	MCSServices() []MCSServiceInfo
+	WorkloadInformation() []WorkloadInfo
+	AmbientIndexes
+}
+
+type Protocol int32
+
+const (
+	Protocol_DIRECT Protocol = 0
+	Protocol_MTLS   Protocol = 1
+)
+
+type WorkloadInfo struct {
+	Name      string
+	Namespace string
+	// Address represents the IPv4/IPv6 address for the workload.
+	// This should be globally unique.
+	// This should not have a port number.
+	// TODO: Add network as discriminator
+	Address string
+	// The SPIFFE identity of the workload.
+	Identity string
+	// The protocol that should be used to connect to this workload.
+	Protocol string
+	// Node the workload runs on
+	Node string
+	// Labels for the workload
+	Labels labels.Instance
 	AmbientIndexes
 }
 

@@ -697,8 +697,9 @@ func buildInboundPassthroughChains(lb *ListenerBuilder) []*listener.FilterChain 
 	}
 	// Setup enough slots for common max size (permissive mode is 5 filter chains). This is not
 	// exact, just best effort optimization
-	filterChains := make([]*listener.FilterChain, 0, 1+5*len(ipVersions))
+	filterChains := make([]*listener.FilterChain, 0, 2+5*len(ipVersions))
 	filterChains = append(filterChains, buildInboundBlackhole(lb))
+	filterChains = append(filterChains, buildInboundOutboundBlackhole(lb))
 
 	for _, clusterName := range ipVersions {
 		mtlsOptions := lb.authnBuilder.ForPassthrough()
@@ -745,6 +746,29 @@ func buildInboundBlackhole(lb *ListenerBuilder) *listener.FilterChain {
 		Name: model.VirtualInboundBlackholeFilterChainName,
 		FilterChainMatch: &listener.FilterChainMatch{
 			DestinationPort: &wrappers.UInt32Value{Value: uint32(lb.push.Mesh.ProxyInboundListenPort)},
+		},
+		Filters: filters,
+	}
+}
+
+// buildInboundOutboundBlackhole builds a special filter chain for the virtual inbound matching traffic to the port the listener is actually on.
+// This avoids a possible loop where traffic sent to this port would continually call itself indefinitely.
+// TODO: this is a hack for outbound calls on 15001. It would be better to just avoid those in iptables ideally, or in outbound as second measure.
+func buildInboundOutboundBlackhole(lb *ListenerBuilder) *listener.FilterChain {
+	var filters []*listener.Filter
+	filters = append(filters, buildMetadataExchangeNetworkFilters(istionetworking.ListenerClassSidecarInbound)...)
+	filters = append(filters, buildMetricsNetworkFilters(lb.push, lb.node, istionetworking.ListenerClassSidecarInbound)...)
+	filters = append(filters, &listener.Filter{
+		Name: wellknown.TCPProxy,
+		ConfigType: &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(&tcp.TcpProxy{
+			StatPrefix:       util.BlackHoleCluster,
+			ClusterSpecifier: &tcp.TcpProxy_Cluster{Cluster: util.BlackHoleCluster},
+		})},
+	})
+	return &listener.FilterChain{
+		Name: model.VirtualInboundBlackholeFilterChainName,
+		FilterChainMatch: &listener.FilterChainMatch{
+			DestinationPort: &wrappers.UInt32Value{Value: uint32(lb.push.Mesh.ProxyListenPort)},
 		},
 		Filters: filters,
 	}

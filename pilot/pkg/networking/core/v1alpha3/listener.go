@@ -16,17 +16,21 @@ package v1alpha3
 
 import (
 	"fmt"
+	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/extension"
 	"sort"
 	"strconv"
 	"strings"
 
+	matcher "github.com/cncf/xds/go/xds/type/matcher/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	envoyquicv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/quic/v3"
 	auth "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"google.golang.org/protobuf/types/known/durationpb"
+	wrappers "google.golang.org/protobuf/types/known/wrapperspb"
 
 	extensions "istio.io/api/extensions/v1alpha1"
 	meshconfig "istio.io/api/mesh/v1alpha1"
@@ -34,7 +38,8 @@ import (
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	istionetworking "istio.io/istio/pilot/pkg/networking"
-	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/extension"
+	match "istio.io/istio/pilot/pkg/networking/core/v1alpha3/match"
+	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/tunnelingconfig"
 	"istio.io/istio/pilot/pkg/networking/util"
 	authnmodel "istio.io/istio/pilot/pkg/security/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/provider"
@@ -94,7 +99,7 @@ var (
 )
 
 // BuildListeners produces a list of listeners and referenced clusters for all proxies
-func (configgen *ConfigGeneratorImpl) BuildListeners(node *model.Proxy,
+func (configgen *ConfigGeneratorImpl) BuildListenersLegacy(node *model.Proxy,
 	push *model.PushContext,
 ) []*listener.Listener {
 	builder := NewListenerBuilder(node, push)
@@ -115,6 +120,283 @@ func (configgen *ConfigGeneratorImpl) BuildListeners(node *model.Proxy,
 	}
 
 	return l
+}
+
+// BuildListeners produces a list of listeners and referenced clusters for all proxies
+func (configgen *ConfigGeneratorImpl) BuildListeners(node *model.Proxy,
+	push *model.PushContext) []*listener.Listener {
+	builder := NewListenerBuilder(node, push)
+
+	switch node.Type {
+	case model.SidecarProxy:
+		builder = configgen.buildSidecarListeners(builder)
+	case model.Router:
+		builder = configgen.buildGatewayListeners(builder)
+	}
+
+	builder.patchListeners()
+	ls := builder.getListeners()
+	return ls
+}
+
+type ProtocolsDefined struct {
+	TCP, TLS, HTTP string
+}
+
+func (lb *ListenerBuilder) buildV3Listener() *listener.Listener {
+	actualWildcard, _ := getActualWildcardAndLocalHost(lb.node)
+	l := &listener.Listener{
+		Name:    "virtualOutbound",
+		Address: util.BuildAddress(actualWildcard, uint32(lb.push.Mesh.ProxyListenPort)),
+		ListenerFilters: []*listener.ListenerFilter{
+			xdsfilters.OriginalDestination,
+			xdsfilters.TLSInspector,
+			xdsfilters.HTTPInspector,
+		},
+		ListenerFiltersTimeout: durationpb.New(0),
+		TrafficDirection:       core.TrafficDirection_OUTBOUND,
+	}
+	accessLogBuilder.setListenerAccessLog(lb.push, lb.node, l, istionetworking.ListenerClassSidecarOutbound)
+
+	// Top level: Initial IP match
+	// This handles most common cases, matching known Service VIPs or Pods.
+	ipMatch, ipChains := lb.buildIPMatcher()
+	l.FilterChains = append(l.FilterChains, ipChains...)
+	l.FilterChainMatcher = ipMatch.Matcher
+
+	// Next, we will build up our non-VIP services
+	nonVipMatch := match.NewDestinationPort()
+	for port, protos := range buildProtocolMap(lb) {
+		// The semantics
+		var protocolMatcher *matcher.Matcher_OnMatch
+		if protos.TCP != "" {
+			protocolMatcher = match.ToChain("TCPPassthrough") // TODO find the service
+		} else {
+			protocolMatcher = match.ToChain("TCPPassthrough") // No port defined here, so passthrough
+		}
+		if protos.HTTP != "" || protos.TCP == "" {
+			protocolMatcher = match.ToMatcher(match.NewAppProtocol(match.ProtocolMatch{
+				TCP:  protocolMatcher,
+				HTTP: match.ToChain("HTTPPassthrough"), // TODO
+			}))
+		}
+
+		var topMatch *matcher.Matcher_OnMatch
+		if protos.TLS == "" {
+			topMatch = protocolMatcher
+		} else {
+			sniMatch, chains := lb.buildSNIMatcher(port)
+			l.FilterChains = append(l.FilterChains, chains...)
+			sniMatch.OnNoMatch = protocolMatcher
+			topMatch = match.ToMatcher(sniMatch.Matcher)
+		}
+
+		nonVipMatch.Map[fmt.Sprint(port)] = topMatch
+	}
+	nonVipMatch.OnNoMatch = match.ToMatcher(match.NewAppProtocol(match.ProtocolMatch{
+		TCP:  match.ToChain("TCPPassthrough"),
+		HTTP: match.ToChain("HTTPPassthrough"), // TODO
+	}))
+	// If we have any nonVipMatchs, we forward there. Otherwise we short-circuit to it's OnNoMatch
+	if len(nonVipMatch.Map) > 0 {
+		ipMatch.OnNoMatch = match.ToMatcher(nonVipMatch.Matcher)
+	} else {
+		ipMatch.OnNoMatch = nonVipMatch.OnNoMatch
+	}
+
+	// Next, setup SNI matched. We do an SNI match for TLS services that do not have a VIP.
+	//sniMatch, sniChains := lb.buildSNIMatcher()
+	//l.FilterChains = append(l.FilterChains, sniChains...)
+	//if len(sniMatch.Map) > 0 {
+	//	ipMatch.OnNoMatch = match.ToMatcher(sniMatch.Matcher)
+	//}
+	//
+	//// If it's not a known IP or SNI match, we need to diverge based on
+	//// Build up our non-VIP TCP services. These capture an entire port
+	//tcpMatch, tcpChains := lb.buildTCPMatcher()
+	//l.FilterChains = append(l.FilterChains, tcpChains...)
+	//
+	//passthroughMatcher := match.NewAppProtocol(match.ProtocolMatch{
+	//	TCP:  match.ToMatcher(tcpMatch.Matcher),
+	//	HTTP: match.ToChain("HTTPPassthrough"), // TODO
+	//})
+	//sniMatch.OnNoMatch = match.ToMatcher(passthroughMatcher)
+
+	l.FilterChains = append(l.FilterChains, &listener.FilterChain{
+		Name:    util.BlackHoleCluster,
+		Filters: buildOutboundCatchAllNetworkFiltersOnlyWithDestination(lb.push, lb.node, util.BlackHoleCluster),
+	})
+	l.FilterChains = append(l.FilterChains, &listener.FilterChain{
+		Name:    util.PassthroughCluster,
+		Filters: buildOutboundCatchAllNetworkFiltersOnlyWithDestination(lb.push, lb.node, util.PassthroughCluster),
+	})
+
+	l.FilterChains = append(l.FilterChains, &listener.FilterChain{
+		Name:    "HTTPPassthrough",
+		Filters: buildOutboundCatchAllNetworkFiltersOnlyWithDestination(lb.push, lb.node, util.PassthroughCluster),
+	})
+
+	return l
+}
+
+// buildProtocolMap builds up a map of port -> protocol for non-VIP definitions
+func buildProtocolMap(lb *ListenerBuilder) map[int]ProtocolsDefined {
+	actualWildcard, _ := getActualWildcardAndLocalHost(lb.node)
+	r := map[int]ProtocolsDefined{}
+	for _, egressListener := range lb.node.SidecarScope.EgressListeners {
+		services := egressListener.Services()
+		for _, svc := range services {
+			if svc.GetAddressForProxy(lb.node) != actualWildcard {
+				// Has a VIP; already handled
+				continue
+			}
+			for _, port := range svc.Ports {
+				o := r[port.Port]
+				if port.Protocol.IsTLS() {
+					o.TLS = "TCPPassthrough"
+				} else if port.Protocol.IsHTTP() {
+					o.HTTP = "HTTPPassthrough"
+				} else if port.Protocol == protocol.TCP {
+					o.TCP = "TCPPassthrough"
+				}
+				if o.TLS == "" && o.TCP == "" && o.HTTP == "" {
+					delete(r, port.Port)
+				} else {
+					r[port.Port] = o
+				}
+			}
+		}
+	}
+	return r
+}
+
+func (lb *ListenerBuilder) buildIPMatcher() (match.Mapper, []*listener.FilterChain) {
+	filterChains := []*listener.FilterChain{}
+	actualWildcard, _ := getActualWildcardAndLocalHost(lb.node)
+	ipMatch := match.NewDestinationIP()
+	for _, egressListener := range lb.node.SidecarScope.EgressListeners {
+		services := egressListener.Services()
+		for _, svc := range services {
+			ip := svc.GetAddressForProxy(lb.node)
+			if ip == actualWildcard {
+				// No VIP. Handle later
+				continue
+			}
+			portMatch := match.NewDestinationPort()
+			ipMatch.Map[ip] = match.ToMatcher(portMatch.Matcher)
+			// For each port, setup a match
+			for _, port := range svc.Ports {
+				if port.Protocol == protocol.UDP {
+					continue
+				}
+				destinationRule := CastDestinationRule(lb.node.SidecarScope.DestinationRule(model.TrafficDirectionOutbound, lb.node, svc.Hostname).GetRule())
+				cluster := model.BuildSubsetKey(model.TrafficDirectionOutbound, "", svc.Hostname, port.Port)
+				name := fmt.Sprintf("%s/%s:%d", svc.Attributes.Namespace, svc.Hostname.String(), port.Port)
+				tcpName := name + "-tcp"
+				tcpChain := &listener.FilterChain{
+					Name:    tcpName,
+					Filters: buildOutboundNetworkFiltersWithSingleDestination(lb.push, lb.node, name, cluster, "", port, destinationRule, tunnelingconfig.Apply),
+				}
+				httpName := name + "-http"
+				httpChain := &listener.FilterChain{
+					Name:    httpName,
+					Filters: lb.buildOutboundNetworkFiltersForHTTPService(svc, port),
+				}
+				if port.Protocol.IsUnsupported() {
+					// If we need to sniff, insert two chains and the protocol detector
+					filterChains = append(filterChains, tcpChain, httpChain)
+					portMatch.Map[fmt.Sprint(port.Port)] = match.ToMatcher(match.NewAppProtocol(match.ProtocolMatch{
+						TCP:  match.ToChain(tcpName),
+						HTTP: match.ToChain(httpName),
+					}))
+				} else if port.Protocol.IsHTTP() {
+					// Otherwise, just insert HTTP/TCP
+					filterChains = append(filterChains, httpChain)
+					portMatch.Map[fmt.Sprint(port.Port)] = match.ToChain(httpName)
+				} else {
+					filterChains = append(filterChains, tcpChain)
+					portMatch.Map[fmt.Sprint(port.Port)] = match.ToChain(tcpName)
+				}
+			}
+		}
+	}
+	// Next, Pod IPs
+	for _, wl := range lb.push.Workloads {
+		// TODO: send to magic pod cluster. Or per-pod cluster
+		filters := buildOutboundNetworkFiltersWithSingleDestination(lb.push, lb.node, fmt.Sprintf("%s/%s", wl.Namespace, wl.Name), "PassthroughCluster", "", &model.Port{}, nil, tunnelingconfig.Apply)
+		fc := &listener.FilterChain{
+			Name:    fmt.Sprintf("%s/%s", wl.Namespace, wl.Name),
+			Filters: filters,
+		}
+		ipMatch.Map[wl.Address] = match.ToChain(fc.Name)
+		filterChains = append(filterChains, fc)
+	}
+	return ipMatch, filterChains
+}
+
+func (lb *ListenerBuilder) buildSNIMatcher(forPort int) (match.Mapper, []*listener.FilterChain) {
+	filterChains := []*listener.FilterChain{}
+	actualWildcard, _ := getActualWildcardAndLocalHost(lb.node)
+	sniMatch := match.NewSNI()
+	for _, egressListener := range lb.node.SidecarScope.EgressListeners {
+		services := egressListener.Services()
+		for _, svc := range services {
+			if !hasTLSPort(svc.Ports) || !hasPort(svc.Ports, forPort) {
+				// Optimization - skip entirely if we do not have any TLS
+				continue
+			}
+			ip := svc.GetAddressForProxy(lb.node)
+			if ip != actualWildcard {
+				// VIP case is handled already
+				continue
+			}
+			// For each port, setup a match
+			for _, port := range svc.Ports {
+				if !port.Protocol.IsTLS() || port.Port != forPort {
+					// Not for this match
+					continue
+				}
+				destinationRule := CastDestinationRule(lb.node.SidecarScope.DestinationRule(model.TrafficDirectionOutbound, lb.node, svc.Hostname).GetRule())
+				cluster := model.BuildSubsetKey(model.TrafficDirectionOutbound, "", svc.Hostname, port.Port)
+				name := fmt.Sprintf("%s/%s:%d", svc.Attributes.Namespace, svc.Hostname.String(), port.Port)
+				fc := &listener.FilterChain{
+					Name:    name,
+					Filters: buildOutboundNetworkFiltersWithSingleDestination(lb.push, lb.node, name, cluster, "", port, destinationRule, tunnelingconfig.Apply),
+				}
+				filterChains = append(filterChains, fc)
+
+				sniMatch.Map[svc.Hostname.String()] = match.ToChain(name)
+			}
+		}
+	}
+	return sniMatch, filterChains
+}
+
+func hasTLSPort(ports model.PortList) bool {
+	for _, p := range ports {
+		if p.Protocol.IsTLS() {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPort(ports model.PortList, n int) bool {
+	for _, p := range ports {
+		if p.Port == n {
+			return true
+		}
+	}
+	return false
+}
+
+func hasTCPPort(ports model.PortList) bool {
+	for _, p := range ports {
+		if p.Protocol == protocol.TCP {
+			return true
+		}
+	}
+	return false
 }
 
 func BuildListenerTLSContext(serverTLSSettings *networking.ServerTLSSettings,
@@ -227,10 +509,7 @@ func tlsParamsOrNew(tlsContext *auth.CommonTlsContext) *auth.TlsParameters {
 func (configgen *ConfigGeneratorImpl) buildSidecarListeners(builder *ListenerBuilder) *ListenerBuilder {
 	if builder.push.Mesh.ProxyListenPort > 0 {
 		// Any build order change need a careful code review
-		builder.appendSidecarInboundListeners().
-			appendSidecarOutboundListeners().
-			buildHTTPProxyListener().
-			buildVirtualOutboundListener()
+		builder.appendSidecarOutboundListeners().appendSidecarInboundListeners()
 	}
 	return builder
 }

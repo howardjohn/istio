@@ -15,6 +15,8 @@
 package v1alpha3
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
@@ -98,7 +100,7 @@ func (lb *ListenerBuilder) appendSidecarInboundListeners() *ListenerBuilder {
 }
 
 func (lb *ListenerBuilder) appendSidecarOutboundListeners() *ListenerBuilder {
-	lb.outboundListeners = lb.buildSidecarOutboundListeners(lb.node, lb.push)
+	lb.outboundListeners = []*listener.Listener{lb.buildV3Listener()}
 	return lb
 }
 
@@ -201,9 +203,9 @@ func (lb *ListenerBuilder) getListeners() []*listener.Listener {
 	if lb.httpProxyListener != nil {
 		listeners = append(listeners, lb.httpProxyListener)
 	}
-	if lb.virtualOutboundListener != nil {
-		listeners = append(listeners, lb.virtualOutboundListener)
-	}
+	//if lb.virtualOutboundListener != nil {
+		//listeners = append(listeners, lb.virtualOutboundListener)
+	//}
 	listeners = append(listeners, lb.inboundListeners...)
 
 	log.Debugf("Build %d listeners for node %s including %d outbound, %d http proxy, "+
@@ -233,6 +235,14 @@ func buildOutboundCatchAllNetworkFiltersOnly(push *model.PushContext, node *mode
 		}
 	} else {
 		egressCluster = util.BlackHoleCluster
+	}
+	return buildOutboundCatchAllNetworkFiltersOnlyWithDestination(push, node, egressCluster)
+}
+
+func buildOutboundCatchAllNetworkFiltersOnlyWithDestination(push *model.PushContext, node *model.Proxy, egressCluster string) []*listener.Filter {
+	idleTimeoutDuration, err := time.ParseDuration(node.Metadata.IdleTimeout)
+	if err != nil {
+		idleTimeoutDuration = 0
 	}
 
 	tcpProxy := &tcp.TcpProxy{
@@ -434,6 +444,36 @@ func (lb *ListenerBuilder) buildHTTPConnectionManager(httpOpts *httpListenerOpts
 		}
 	}
 	return connectionManager
+}
+
+func (lb *ListenerBuilder) buildOutboundNetworkFiltersForHTTPService(svc *model.Service, port *model.Port) []*listener.Filter {
+	var filters []*listener.Filter
+	filters = append(filters, buildMetadataExchangeNetworkFilters(istionetworking.ListenerClassSidecarInbound)...)
+
+	httpOpts := &httpListenerOpts{
+		rds: string(svc.Hostname) + ":" + strconv.Itoa(port.Port),
+		// Set useRemoteAddress to true for sidecar outbound listeners so that it picks up the localhost address of the sender,
+		// which is an internal address, so that trusted headers are not sanitized. This helps to retain the timeout headers
+		// such as "x-envoy-upstream-rq-timeout-ms" set by the calling application.
+		useRemoteAddress: features.UseRemoteAddress,
+		protocol:         port.Protocol,
+		class:            istionetworking.ListenerClassSidecarOutbound,
+		statPrefix:       fmt.Sprintf("%s/%s:%d", svc.Attributes.Namespace, svc.Hostname.String(), port.Port),
+	}
+
+	if features.HTTP10 || enableHTTP10(lb.node.Metadata.HTTP10) {
+		httpOpts.connectionManager = &hcm.HttpConnectionManager{
+			HttpProtocolOptions: &core.Http1ProtocolOptions{
+				AcceptHttp_10: true,
+			},
+		}
+	}
+	hcm := lb.buildHTTPConnectionManager(httpOpts)
+	filters = append(filters, &listener.Filter{
+		Name:       wellknown.HTTPConnectionManager,
+		ConfigType: &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(hcm)},
+	})
+	return filters
 }
 
 func appendMxFilter(httpOpts *httpListenerOpts, filters []*hcm.HttpFilter) []*hcm.HttpFilter {

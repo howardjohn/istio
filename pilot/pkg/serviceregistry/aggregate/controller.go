@@ -424,3 +424,11 @@ func (c *Controller) UnRegisterHandlersForCluster(id cluster.ID) {
 	defer c.storeLock.Unlock()
 	delete(c.handlersByCluster, id)
 }
+
+func (c *Controller) WorkloadInformation() []model.WorkloadInfo {
+	i := []model.WorkloadInfo{}
+	for _, p := range c.registries {
+		i = append(i, p.WorkloadInformation()...)
+	}
+	return i
+}

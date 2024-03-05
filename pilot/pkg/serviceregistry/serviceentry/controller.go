@@ -120,6 +120,11 @@ type Controller struct {
 	model.NetworkGatewaysHandler
 }
 
+func (s *Controller) WorkloadInformation() []model.WorkloadInfo {
+	// TODO workload entry
+	return nil
+}
+
 type Option func(*Controller)
 
 func WithClusterID(clusterID cluster.ID) Option {

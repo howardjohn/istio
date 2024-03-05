@@ -208,6 +208,7 @@ type PushContext struct {
 
 	// ServiceIndex is the index of services by various fields.
 	ServiceIndex serviceIndex
+	Workloads    []WorkloadInfo
 
 	// serviceAccounts contains a map of hostname and port to service accounts.
 	serviceAccounts map[serviceAccountKey][]string
@@ -1268,7 +1269,10 @@ func (ps *PushContext) InitContext(env *Environment, oldPushContext *PushContext
 }
 
 func (ps *PushContext) createNewContext(env *Environment) error {
-	ps.initServiceRegistry(env, nil)
+	if err := ps.initServiceRegistry(env); err != nil {
+		return err
+	}
+	ps.Workloads = env.WorkloadInformation()
 
 	if err := ps.initKubernetesGateways(env); err != nil {
 		return err
@@ -1421,6 +1425,8 @@ func (ps *PushContext) updateContext(
 		ps.sidecarIndex = oldPushContext.sidecarIndex
 		oldPushContext.sidecarIndex.derivedSidecarMutex.RUnlock()
 	}
+
+	ps.Workloads = env.WorkloadInformation()
 
 	return nil
 }

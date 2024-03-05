@@ -178,6 +178,8 @@ func (pc *PodCache) onEvent(_, pod *v1.Pod, ev model.Event) error {
 		}
 	}
 	pc.notifyWorkloadHandlers(pod, ev)
+	// Horrible hack to get WorkloadInfo updated. DO NOT MERGE!
+	pc.c.opts.XDSUpdater.ConfigUpdate(&model.PushRequest{Full: true})
 	return nil
 }
 
