@@ -273,6 +273,14 @@ func (lb *ListenerBuilder) buildIPMatcher() (match.Mapper, []*listener.FilterCha
 	filterChains := []*listener.FilterChain{}
 	actualWildcard, _ := getActualWildcardAndLocalHost(lb.node)
 	ipMatch := match.NewDestinationIP()
+	httpFilterChain := "http"
+
+	httpChain := &listener.FilterChain{
+		Name:    httpFilterChain,
+		Filters: lb.buildScopedHTTP(),
+	}
+	filterChains = append(filterChains, httpChain)
+
 	for _, egressListener := range lb.node.SidecarScope.EgressListeners {
 		services := egressListener.Services()
 		for _, svc := range services {
@@ -296,22 +304,16 @@ func (lb *ListenerBuilder) buildIPMatcher() (match.Mapper, []*listener.FilterCha
 					Name:    tcpName,
 					Filters: lb.buildOutboundNetworkFiltersWithSingleDestination(name, cluster, "", port, destinationRule, tunnelingconfig.Apply, true),
 				}
-				httpName := name + "-http"
-				httpChain := &listener.FilterChain{
-					Name:    httpName,
-					Filters: lb.buildOutboundNetworkFiltersForHTTPService(svc, port),
-				}
 				if port.Protocol.IsUnsupported() {
 					// If we need to sniff, insert two chains and the protocol detector
-					filterChains = append(filterChains, tcpChain, httpChain)
+					filterChains = append(filterChains, tcpChain)
 					portMatch.Map[fmt.Sprint(port.Port)] = match.ToMatcher(match.NewAppProtocol(match.ProtocolMatch{
 						TCP:  match.ToChain(tcpName),
-						HTTP: match.ToChain(httpName),
+						HTTP: match.ToChain(httpFilterChain),
 					}))
 				} else if port.Protocol.IsHTTP() {
 					// Otherwise, just insert HTTP/TCP
-					filterChains = append(filterChains, httpChain)
-					portMatch.Map[fmt.Sprint(port.Port)] = match.ToChain(httpName)
+					portMatch.Map[fmt.Sprint(port.Port)] = match.ToChain(httpFilterChain)
 				} else {
 					filterChains = append(filterChains, tcpChain)
 					portMatch.Map[fmt.Sprint(port.Port)] = match.ToChain(tcpName)

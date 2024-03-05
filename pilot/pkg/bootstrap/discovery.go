@@ -39,6 +39,7 @@ func InitGenerators(
 	generators[v3.ClusterType] = &xds.CdsGenerator{ConfigGenerator: cg}
 	generators[v3.ListenerType] = &xds.LdsGenerator{ConfigGenerator: cg}
 	generators[v3.RouteType] = &xds.RdsGenerator{ConfigGenerator: cg}
+	generators[v3.ScopedRouteType] = &xds.SrdsGenerator{ConfigGenerator: cg}
 	generators[v3.EndpointType] = edsGen
 	ecdsGen := &xds.EcdsGenerator{ConfigGenerator: cg}
 	if env.CredentialsController != nil {

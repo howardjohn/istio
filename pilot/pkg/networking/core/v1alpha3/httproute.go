@@ -74,7 +74,7 @@ func (configgen *ConfigGeneratorImpl) BuildHTTPRoutes(
 			networking.EnvoyFilter_HTTP_ROUTE,
 		)
 		for _, routeName := range routeNames {
-			rc, cached := configgen.buildSidecarOutboundHTTPRouteConfig(node, req, routeName, vHostCache, efw, envoyfilterKeys)
+			rc, cached := configgen.buildSidecarOutboundHTTPRouteConfig(node, req, routeName, vHostCache, efw, envoyfilterKeys, false)
 			if cached && !features.EnableUnsafeAssertions {
 				hit++
 			} else {
@@ -89,6 +89,79 @@ func (configgen *ConfigGeneratorImpl) BuildHTTPRoutes(
 				rc = &discovery.Resource{
 					Name:     routeName,
 					Resource: protoconv.MessageToAny(emptyRoute),
+				}
+			}
+			routeConfigurations = append(routeConfigurations, rc)
+		}
+	case model.Router:
+		for _, routeName := range routeNames {
+			rc := configgen.buildGatewayHTTPRouteConfig(node, req.Push, routeName)
+			if rc != nil {
+				rc = envoyfilter.ApplyRouteConfigurationPatches(networking.EnvoyFilter_GATEWAY, node, efw, rc)
+				resource := &discovery.Resource{
+					Name:     routeName,
+					Resource: protoconv.MessageToAny(rc),
+				}
+				routeConfigurations = append(routeConfigurations, resource)
+			}
+		}
+	}
+	if !features.EnableRDSCaching {
+		return routeConfigurations, model.DefaultXdsLogDetails
+	}
+	return routeConfigurations, model.XdsLogDetails{AdditionalInfo: fmt.Sprintf("cached:%v/%v", hit, hit+miss)}
+}
+
+func toScoped(r *route.RouteConfiguration, ip string) *route.ScopedRouteConfiguration {
+	return &route.ScopedRouteConfiguration{
+		Name:                   r.Name,
+		RouteConfigurationName: r.Name,
+		RouteConfiguration:     r,
+		Key: &route.ScopedRouteConfiguration_Key{
+			Fragments: []*route.ScopedRouteConfiguration_Key_Fragment{{
+				Type: &route.ScopedRouteConfiguration_Key_Fragment_StringKey{
+					StringKey: ip, // TODO avoid hardcoding
+				},
+			}},
+		},
+	}
+}
+
+// BuildHTTPRoutes produces a list of routes for the proxy
+func (configgen *ConfigGeneratorImpl) BuildHTTPSRoutes(
+	node *model.Proxy,
+	req *model.PushRequest,
+	routeNames []string,
+) ([]*discovery.Resource, model.XdsLogDetails) {
+	var routeConfigurations model.Resources
+
+	efw := req.Push.EnvoyFilters(node)
+	hit, miss := 0, 0
+	switch node.Type {
+	case model.SidecarProxy, model.Waypoint:
+		vHostCache := make(map[int][]*route.VirtualHost)
+		// dependent envoyfilters' key, calculate in front once to prevent calc for each route.
+		envoyfilterKeys := efw.KeysApplyingTo(
+			networking.EnvoyFilter_ROUTE_CONFIGURATION,
+			networking.EnvoyFilter_VIRTUAL_HOST,
+			networking.EnvoyFilter_HTTP_ROUTE,
+		)
+		for _, routeName := range routeNames {
+			rc, cached := configgen.buildSidecarOutboundHTTPRouteConfig(node, req, routeName, vHostCache, efw, envoyfilterKeys, true)
+			if cached && !features.EnableUnsafeAssertions {
+				hit++
+			} else {
+				miss++
+			}
+			if rc == nil {
+				emptyRoute := &route.RouteConfiguration{
+					Name:             routeName,
+					VirtualHosts:     []*route.VirtualHost{},
+					ValidateClusters: proto.BoolFalse,
+				}
+				rc = &discovery.Resource{
+					Name:     routeName,
+					Resource: protoconv.MessageToAny(toScoped(emptyRoute, "1.2.3.4:1234")),
 				}
 			}
 			routeConfigurations = append(routeConfigurations, rc)
@@ -143,6 +216,7 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundHTTPRouteConfig(
 	vHostCache map[int][]*route.VirtualHost,
 	efw *model.EnvoyFilterWrapper,
 	efKeys []string,
+	scoped bool,
 ) (*discovery.Resource, bool) {
 	listenerPort, useSniffing, err := extractListenerPort(routeName)
 	if err != nil && routeName != model.RDSHttpProxy && !strings.HasPrefix(routeName, model.UnixAddressPrefix) {
@@ -204,8 +278,24 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundHTTPRouteConfig(
 	out = envoyfilter.ApplyRouteConfigurationPatches(networking.EnvoyFilter_SIDECAR_OUTBOUND, node, efw, out)
 
 	resource = &discovery.Resource{
-		Name:     out.Name,
-		Resource: protoconv.MessageToAny(out),
+		Name: out.Name,
+	}
+	if scoped {
+		svcname, port, _ := strings.Cut(routeName, ":")
+		var ip string
+		for _, egressListener := range node.SidecarScope.EgressListeners {
+			services := egressListener.Services()
+			for _, svc := range services {
+				if svc.Hostname != host.Name(svcname) {
+					continue
+				}
+				ip = svc.GetAddressForProxy(node)
+				break
+			}
+		}
+		resource.Resource = protoconv.MessageToAny(toScoped(out, ip+":"+port))
+	} else {
+		resource.Resource = protoconv.MessageToAny(out)
 	}
 
 	if features.EnableRDSCaching && routeCache != nil {

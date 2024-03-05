@@ -69,7 +69,7 @@ var (
 
 	// EnableRDSCaching determines if RDS caching is enabled. This is explicitly split out of ENABLE_XDS_CACHE,
 	// so that in case there are issues with the RDS cache we can just disable the RDS cache.
-	EnableRDSCaching = env.Register("PILOT_ENABLE_RDS_CACHE", true,
+	EnableRDSCaching = env.Register("PILOT_ENABLE_RDS_CACHE", false,
 		"If true, Pilot will cache RDS responses. Note: this depends on PILOT_ENABLE_XDS_CACHE.").Get()
 
 	EnableXDSCacheMetrics = env.Register("PILOT_XDS_CACHE_STATS", false,

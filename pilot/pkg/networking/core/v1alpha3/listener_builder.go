@@ -22,6 +22,7 @@ import (
 	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	luav3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/lua/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	tcp "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/tcp_proxy/v3"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -204,7 +205,7 @@ func (lb *ListenerBuilder) getListeners() []*listener.Listener {
 		listeners = append(listeners, lb.httpProxyListener)
 	}
 	//if lb.virtualOutboundListener != nil {
-		//listeners = append(listeners, lb.virtualOutboundListener)
+	//listeners = append(listeners, lb.virtualOutboundListener)
 	//}
 	listeners = append(listeners, lb.inboundListeners...)
 
@@ -439,6 +440,80 @@ func (lb *ListenerBuilder) buildHTTPConnectionManager(httpOpts *httpListenerOpts
 		}
 	}
 	return connectionManager
+}
+
+func (lb *ListenerBuilder) buildScopedHTTP() []*listener.Filter {
+	var filters []*listener.Filter
+	filters = append(filters, buildMetadataExchangeNetworkFilters()...)
+
+	httpOpts := &httpListenerOpts{
+		// rds: string(svc.Hostname) + ":" + strconv.Itoa(port.Port),
+		// Set useRemoteAddress to true for sidecar outbound listeners so that it picks up the localhost address of the sender,
+		// which is an internal address, so that trusted headers are not sanitized. This helps to retain the timeout headers
+		// such as "x-envoy-upstream-rq-timeout-ms" set by the calling application.
+		useRemoteAddress: features.UseRemoteAddress,
+		protocol:         protocol.GRPC,
+		class:            istionetworking.ListenerClassSidecarOutbound,
+		statPrefix:       "http",
+	}
+
+	if features.HTTP10 || enableHTTP10(lb.node.Metadata.HTTP10) {
+		httpOpts.connectionManager = &hcm.HttpConnectionManager{
+			HttpProtocolOptions: &core.Http1ProtocolOptions{
+				AcceptHttp_10: true,
+			},
+		}
+	}
+	lua := &hcm.HttpFilter{
+		Name: "lua",
+		ConfigType: &hcm.HttpFilter_TypedConfig{
+			// TODO: avoid hardcoding
+			TypedConfig: protoconv.MessageToAny(&luav3.Lua{
+				InlineCode: `
+function envoy_on_request(request_handle)
+	request_handle:headers():add("destination", request_handle:streamInfo():downstreamLocalAddress())
+end
+`,
+			}),
+		},
+	}
+	cfgSource := &core.ConfigSource{
+		ConfigSourceSpecifier: &core.ConfigSource_Ads{
+			Ads: &core.AggregatedConfigSource{},
+		},
+		InitialFetchTimeout: durationpb.New(0),
+		ResourceApiVersion:  core.ApiVersion_V3,
+	}
+	h := lb.buildHTTPConnectionManager(httpOpts)
+	h.RouteSpecifier = &hcm.HttpConnectionManager_ScopedRoutes{
+		ScopedRoutes: &hcm.ScopedRoutes{
+			Name: "global",
+			ScopeKeyBuilder: &hcm.ScopedRoutes_ScopeKeyBuilder{
+				Fragments: []*hcm.ScopedRoutes_ScopeKeyBuilder_FragmentBuilder{{
+					Type: &hcm.ScopedRoutes_ScopeKeyBuilder_FragmentBuilder_HeaderValueExtractor_{
+						HeaderValueExtractor: &hcm.ScopedRoutes_ScopeKeyBuilder_FragmentBuilder_HeaderValueExtractor{
+							Name: "destination",
+							// ElementSeparator: "",
+							ExtractType: &hcm.ScopedRoutes_ScopeKeyBuilder_FragmentBuilder_HeaderValueExtractor_Index{},
+						},
+					},
+				}},
+			},
+			RdsConfigSource: cfgSource,
+			ConfigSpecifier: &hcm.ScopedRoutes_ScopedRds{
+				ScopedRds: &hcm.ScopedRds{
+					ScopedRdsConfigSource: cfgSource,
+					SrdsResourcesLocator:  "",
+				},
+			}, //?
+		},
+	}
+	h.HttpFilters = append([]*hcm.HttpFilter{lua}, h.HttpFilters...)
+	filters = append(filters, &listener.Filter{
+		Name:       wellknown.HTTPConnectionManager,
+		ConfigType: &listener.Filter_TypedConfig{TypedConfig: protoconv.MessageToAny(h)},
+	})
+	return filters
 }
 
 func (lb *ListenerBuilder) buildOutboundNetworkFiltersForHTTPService(svc *model.Service, port *model.Port) []*listener.Filter {

@@ -27,6 +27,7 @@ const (
 	EndpointType               = resource.EndpointType
 	ListenerType               = resource.ListenerType
 	RouteType                  = resource.RouteType
+	ScopedRouteType            = resource.ScopedRouteType
 	SecretType                 = resource.SecretType
 	ExtensionConfigurationType = resource.ExtensionConfigType
 

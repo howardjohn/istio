@@ -15,13 +15,20 @@
 package xds
 
 import (
+	"strconv"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/core"
+	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/config/schema/kind"
 	"istio.io/istio/pkg/util/sets"
 )
 
 type RdsGenerator struct {
+	ConfigGenerator core.ConfigGenerator
+}
+
+type SrdsGenerator struct {
 	ConfigGenerator core.ConfigGenerator
 }
 
@@ -66,5 +73,27 @@ func (c RdsGenerator) Generate(proxy *model.Proxy, w *model.WatchedResource, req
 		return nil, model.DefaultXdsLogDetails, nil
 	}
 	resources, logDetails := c.ConfigGenerator.BuildHTTPRoutes(proxy, req, w.ResourceNames)
+	return resources, logDetails, nil
+}
+
+func (c SrdsGenerator) Generate(proxy *model.Proxy, w *model.WatchedResource, req *model.PushRequest) (model.Resources, model.XdsLogDetails, error) {
+	if !rdsNeedsPush(req) {
+		return nil, model.DefaultXdsLogDetails, nil
+	}
+	rns := sets.New[string]()
+	for _, egressListener := range proxy.SidecarScope.EgressListeners {
+		services := egressListener.Services()
+		for _, svc := range services {
+			for _, port := range svc.Ports {
+				if port.Protocol == protocol.UDP {
+					continue
+				}
+				if port.Protocol.IsUnsupported() || port.Protocol.IsHTTP() {
+					rns.Insert(string(svc.Hostname) + ":" + strconv.Itoa(port.Port))
+				}
+			}
+		}
+	}
+	resources, logDetails := c.ConfigGenerator.BuildHTTPSRoutes(proxy, req, sets.SortedList(rns))
 	return resources, logDetails, nil
 }
