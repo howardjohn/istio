@@ -16,7 +16,6 @@ package v1alpha3
 
 import (
 	"fmt"
-	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/extension"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,9 +27,7 @@ import (
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	envoyquicv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/quic/v3"
 	auth "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
-	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"google.golang.org/protobuf/types/known/durationpb"
-	wrappers "google.golang.org/protobuf/types/known/wrapperspb"
 
 	extensions "istio.io/api/extensions/v1alpha1"
 	meshconfig "istio.io/api/mesh/v1alpha1"
@@ -38,6 +35,7 @@ import (
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	istionetworking "istio.io/istio/pilot/pkg/networking"
+	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/extension"
 	match "istio.io/istio/pilot/pkg/networking/core/v1alpha3/match"
 	"istio.io/istio/pilot/pkg/networking/core/v1alpha3/tunnelingconfig"
 	"istio.io/istio/pilot/pkg/networking/util"
@@ -124,7 +122,8 @@ func (configgen *ConfigGeneratorImpl) BuildListenersLegacy(node *model.Proxy,
 
 // BuildListeners produces a list of listeners and referenced clusters for all proxies
 func (configgen *ConfigGeneratorImpl) BuildListeners(node *model.Proxy,
-	push *model.PushContext) []*listener.Listener {
+	push *model.PushContext,
+) []*listener.Listener {
 	builder := NewListenerBuilder(node, push)
 
 	switch node.Type {
@@ -295,7 +294,7 @@ func (lb *ListenerBuilder) buildIPMatcher() (match.Mapper, []*listener.FilterCha
 				tcpName := name + "-tcp"
 				tcpChain := &listener.FilterChain{
 					Name:    tcpName,
-					Filters: buildOutboundNetworkFiltersWithSingleDestination(lb.push, lb.node, name, cluster, "", port, destinationRule, tunnelingconfig.Apply),
+					Filters: lb.buildOutboundNetworkFiltersWithSingleDestination(name, cluster, "", port, destinationRule, tunnelingconfig.Apply, true),
 				}
 				httpName := name + "-http"
 				httpChain := &listener.FilterChain{
@@ -319,17 +318,6 @@ func (lb *ListenerBuilder) buildIPMatcher() (match.Mapper, []*listener.FilterCha
 				}
 			}
 		}
-	}
-	// Next, Pod IPs
-	for _, wl := range lb.push.Workloads {
-		// TODO: send to magic pod cluster. Or per-pod cluster
-		filters := buildOutboundNetworkFiltersWithSingleDestination(lb.push, lb.node, fmt.Sprintf("%s/%s", wl.Namespace, wl.Name), "PassthroughCluster", "", &model.Port{}, nil, tunnelingconfig.Apply)
-		fc := &listener.FilterChain{
-			Name:    fmt.Sprintf("%s/%s", wl.Namespace, wl.Name),
-			Filters: filters,
-		}
-		ipMatch.Map[wl.Address] = match.ToChain(fc.Name)
-		filterChains = append(filterChains, fc)
 	}
 	return ipMatch, filterChains
 }
@@ -361,7 +349,7 @@ func (lb *ListenerBuilder) buildSNIMatcher(forPort int) (match.Mapper, []*listen
 				name := fmt.Sprintf("%s/%s:%d", svc.Attributes.Namespace, svc.Hostname.String(), port.Port)
 				fc := &listener.FilterChain{
 					Name:    name,
-					Filters: buildOutboundNetworkFiltersWithSingleDestination(lb.push, lb.node, name, cluster, "", port, destinationRule, tunnelingconfig.Apply),
+					Filters: lb.buildOutboundNetworkFiltersWithSingleDestination(name, cluster, "", port, destinationRule, tunnelingconfig.Apply, true),
 				}
 				filterChains = append(filterChains, fc)
 

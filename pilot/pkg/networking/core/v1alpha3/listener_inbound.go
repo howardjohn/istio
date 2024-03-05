@@ -756,11 +756,11 @@ func buildInboundBlackhole(lb *ListenerBuilder) *listener.FilterChain {
 // TODO: this is a hack for outbound calls on 15001. It would be better to just avoid those in iptables ideally, or in outbound as second measure.
 func buildInboundOutboundBlackhole(lb *ListenerBuilder) *listener.FilterChain {
 	var filters []*listener.Filter
-	filters = append(filters, buildMetadataExchangeNetworkFilters(istionetworking.ListenerClassSidecarInbound)...)
+	filters = append(filters, buildMetadataExchangeNetworkFilters()...)
 	filters = append(filters, buildMetricsNetworkFilters(lb.push, lb.node, istionetworking.ListenerClassSidecarInbound)...)
 	filters = append(filters, &listener.Filter{
 		Name: wellknown.TCPProxy,
-		ConfigType: &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(&tcp.TcpProxy{
+		ConfigType: &listener.Filter_TypedConfig{TypedConfig: protoconv.MessageToAny(&tcp.TcpProxy{
 			StatPrefix:       util.BlackHoleCluster,
 			ClusterSpecifier: &tcp.TcpProxy_Cluster{Cluster: util.BlackHoleCluster},
 		})},

@@ -3101,10 +3101,6 @@ type localServiceDiscovery struct {
 	NetworkGatewaysHandler
 }
 
-func (l *localServiceDiscovery) WorkloadInformation() []WorkloadInfo {
-	return nil
-}
-
 var _ ServiceDiscovery = &localServiceDiscovery{}
 
 func (l *localServiceDiscovery) Services() []*Service {

@@ -65,10 +65,6 @@ type ServiceDiscovery struct {
 	mutex sync.Mutex
 }
 
-func (sd *ServiceDiscovery) WorkloadInformation() []model.WorkloadInfo {
-	return nil
-}
-
 var (
 	_ model.Controller       = &ServiceDiscovery{}
 	_ model.ServiceDiscovery = &ServiceDiscovery{}

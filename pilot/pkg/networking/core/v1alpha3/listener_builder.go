@@ -240,11 +240,6 @@ func buildOutboundCatchAllNetworkFiltersOnly(push *model.PushContext, node *mode
 }
 
 func buildOutboundCatchAllNetworkFiltersOnlyWithDestination(push *model.PushContext, node *model.Proxy, egressCluster string) []*listener.Filter {
-	idleTimeoutDuration, err := time.ParseDuration(node.Metadata.IdleTimeout)
-	if err != nil {
-		idleTimeoutDuration = 0
-	}
-
 	tcpProxy := &tcp.TcpProxy{
 		StatPrefix:       egressCluster,
 		ClusterSpecifier: &tcp.TcpProxy_Cluster{Cluster: egressCluster},
@@ -448,7 +443,7 @@ func (lb *ListenerBuilder) buildHTTPConnectionManager(httpOpts *httpListenerOpts
 
 func (lb *ListenerBuilder) buildOutboundNetworkFiltersForHTTPService(svc *model.Service, port *model.Port) []*listener.Filter {
 	var filters []*listener.Filter
-	filters = append(filters, buildMetadataExchangeNetworkFilters(istionetworking.ListenerClassSidecarInbound)...)
+	filters = append(filters, buildMetadataExchangeNetworkFilters()...)
 
 	httpOpts := &httpListenerOpts{
 		rds: string(svc.Hostname) + ":" + strconv.Itoa(port.Port),
@@ -471,7 +466,7 @@ func (lb *ListenerBuilder) buildOutboundNetworkFiltersForHTTPService(svc *model.
 	hcm := lb.buildHTTPConnectionManager(httpOpts)
 	filters = append(filters, &listener.Filter{
 		Name:       wellknown.HTTPConnectionManager,
-		ConfigType: &listener.Filter_TypedConfig{TypedConfig: util.MessageToAny(hcm)},
+		ConfigType: &listener.Filter_TypedConfig{TypedConfig: protoconv.MessageToAny(hcm)},
 	})
 	return filters
 }
