@@ -16,6 +16,7 @@ package v1alpha3
 
 import (
 	"fmt"
+	"istio.io/istio/pkg/log"
 	"net"
 	"sort"
 	"strconv"
@@ -153,18 +154,18 @@ func (configgen *ConfigGeneratorImpl) BuildHTTPSRoutes(
 			} else {
 				miss++
 			}
-			if rc == nil {
-				emptyRoute := &route.RouteConfiguration{
-					Name:             routeName,
-					VirtualHosts:     []*route.VirtualHost{},
-					ValidateClusters: proto.BoolFalse,
-				}
-				rc = &discovery.Resource{
-					Name:     routeName,
-					Resource: protoconv.MessageToAny(toScoped(emptyRoute, "1.2.3.4:1234")),
-				}
-			}
+			if rc != nil {
+				//emptyRoute := &route.RouteConfiguration{
+				//	Name:             routeName,
+				//	VirtualHosts:     []*route.VirtualHost{},
+				//	ValidateClusters: proto.BoolFalse,
+				//}
+				//rc = &discovery.Resource{
+				//	Name:     routeName,
+				//	Resource: protoconv.MessageToAny(toScoped(emptyRoute, "1.2.3.4:1234")),
+				//}
 			routeConfigurations = append(routeConfigurations, rc)
+			}
 		}
 	case model.Router:
 		for _, routeName := range routeNames {
@@ -293,6 +294,10 @@ func (configgen *ConfigGeneratorImpl) buildSidecarOutboundHTTPRouteConfig(
 				break
 			}
 		}
+		if ip == "0.0.0.0" {
+			return nil, false
+		}
+		log.Errorf("howardjohn: %v -> %v", svcname, ip)
 		resource.Resource = protoconv.MessageToAny(toScoped(out, ip+":"+port))
 	} else {
 		resource.Resource = protoconv.MessageToAny(out)
