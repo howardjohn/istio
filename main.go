@@ -53,14 +53,17 @@ func main() {
 	inf := kind.Informers().InformerFor(gvr.Namespace, kubetypes.InformerOptions{}, func() cache.SharedIndexInformer {
 		listClient := ""
 		l := func(options metav1.ListOptions) (runtime.Object, error) {
+			options.AllowWatchBookmarks = false
+			options.ResourceVersion = ""
 			l := *current.Load()
 			listClient = fmt.Sprintf("%p", l)
-			log.Infof("building list with %p", l)
+			log.Infof("building list with %p, %v", l, options.ResourceVersion)
 			return l.Kube().CoreV1().Namespaces().List(context.Background(), options)
 		}
 		w := func(options metav1.ListOptions) (watch.Interface, error) {
+			options.AllowWatchBookmarks = false
 			c := *current.Load()
-			log.Infof("building watch with %p", c)
+			log.Infof("building watch with %p, %v", c, options.ResourceVersion)
 			if listClient != fmt.Sprintf("%p", c) {
 				log.Infof("clearing RV %v", options.ResourceVersion)
 			}
