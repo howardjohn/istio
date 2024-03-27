@@ -108,12 +108,12 @@ require (
 	helm.sh/helm/v3 v3.14.2
 	istio.io/api v1.19.0-alpha.1.0.20240325173917-35fefa2d2903
 	istio.io/client-go v1.19.0-alpha.1.0.20240325174217-6067be7adc24
-	k8s.io/api v0.29.2
+	k8s.io/api v0.29.3
 	k8s.io/apiextensions-apiserver v0.29.2
-	k8s.io/apimachinery v0.29.2
-	k8s.io/apiserver v0.29.2
+	k8s.io/apimachinery v0.29.3
+	k8s.io/apiserver v0.29.3
 	k8s.io/cli-runtime v0.29.2
-	k8s.io/client-go v0.29.2
+	k8s.io/client-go v0.29.3
 	k8s.io/klog/v2 v2.120.1
 	k8s.io/kubectl v0.29.2
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
@@ -245,8 +245,9 @@ require (
 	google.golang.org/appengine v1.6.8 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	k8s.io/component-base v0.29.2 // indirect
+	k8s.io/component-base v0.29.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20240126223410-2919ad4fcfec // indirect
+	k8s.io/kubelet v0.29.3 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.29.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
