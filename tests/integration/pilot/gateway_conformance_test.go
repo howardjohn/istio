@@ -18,6 +18,7 @@
 package pilot
 
 import (
+	"istio.io/istio/pkg/test/util/assert"
 	"testing"
 
 	k8ssets "k8s.io/apimachinery/pkg/util/sets" //nolint: depguard
@@ -94,7 +95,7 @@ func TestGatewayConformance(t *testing.T) {
 					Insert(suite.MeshCoreFeatures.UnsortedList()...)
 			}
 			hostnameType := v1.AddressType("Hostname")
-			opts := suite.Options{
+			opts := suite.ConformanceOptions{
 				Client:                   c,
 				Clientset:                gatewayConformanceInputs.Client.Kube(),
 				RestConfig:               gatewayConformanceInputs.Client.RESTConfig(),
@@ -126,8 +127,9 @@ func TestGatewayConformance(t *testing.T) {
 				}
 			})
 
-			csuite := suite.New(opts)
+			csuite, err := suite.NewConformanceTestSuite(opts)
+			assert.NoError(t, err)
 			csuite.Setup(t)
-			csuite.Run(t, tests.ConformanceTests)
+			assert.NoError(t, csuite.Run(t, tests.ConformanceTests))
 		})
 }
