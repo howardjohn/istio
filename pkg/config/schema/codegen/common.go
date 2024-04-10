@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"istio.io/istio/pkg/slices"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,15 +37,35 @@ func Run() error {
 		return err
 	}
 
+	entries := slices.Filter(inp.Entries, func(entry colEntry) bool {
+		if entry.Resource.Builtin && !(entry.Resource.Kind == "Secret") {
+			return false
+		}
+		if entry.Resource.Synthetic {
+			return false
+		}
+		if entry.Resource.Kind == "ServiceEntry" {
+			// ServiceEntry will use synthetic types DNSName, Service, and Endpoint
+			return false
+		}
+		return true
+	})
+	_ = entries
 	// Include synthetic types used for XDS pushes
 	kindEntries := append([]colEntry{
 		{
 			Resource: &ast.Resource{Identifier: "Address", Kind: "Address", Version: "internal", Group: "internal"},
 		},
 		{
+			Resource: &ast.Resource{Identifier: "Service", Kind: "Service", Version: "internal", Group: "internal"},
+		},
+		{
+			Resource: &ast.Resource{Identifier: "Endpoints", Kind: "Endpoints", Version: "internal", Group: "internal"},
+		},
+		{
 			Resource: &ast.Resource{Identifier: "DNSName", Kind: "DNSName", Version: "internal", Group: "internal"},
 		},
-	}, inp.Entries...)
+	}, entries...)
 
 	sort.Slice(kindEntries, func(i, j int) bool {
 		return strings.Compare(kindEntries[i].Resource.Identifier, kindEntries[j].Resource.Identifier) < 0

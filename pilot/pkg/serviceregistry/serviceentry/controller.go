@@ -350,7 +350,7 @@ func getUpdatedConfigs(services []*model.Service) sets.Set[model.ConfigKey] {
 	configsUpdated := sets.New[model.ConfigKey]()
 	for _, svc := range services {
 		configsUpdated.Insert(model.ConfigKey{
-			Kind:      kind.ServiceEntry,
+			Kind:      kind.Service,
 			Name:      string(svc.Hostname),
 			Namespace: svc.Attributes.Namespace,
 		})
@@ -575,11 +575,11 @@ func (s *Controller) WorkloadInstanceHandler(wi *model.WorkloadInstance, event m
 
 				fullPush = true
 				for _, inst := range currInstance {
-					configsUpdated[model.ConfigKey{
-						Kind:      kind.ServiceEntry,
+					configsUpdated.Insert(model.ConfigKey{
+						Kind:      kind.Service,
 						Name:      string(inst.Service.Hostname),
 						Namespace: cfg.Namespace,
-					}] = struct{}{}
+					})
 				}
 			}
 		} else if labels.Instance(se.WorkloadSelector.Labels).Match(oldWi.Endpoint.Labels) {
@@ -981,7 +981,7 @@ func setAutoAllocatedIPs(svc *model.Service, octets octetPair) {
 
 func makeConfigKey(svc *model.Service) model.ConfigKey {
 	return model.ConfigKey{
-		Kind:      kind.ServiceEntry,
+		Kind:      kind.Service,
 		Name:      string(svc.Hostname),
 		Namespace: svc.Attributes.Namespace,
 	}

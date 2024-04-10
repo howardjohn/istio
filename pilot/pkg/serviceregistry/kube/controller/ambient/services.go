@@ -23,7 +23,6 @@ import (
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/constants"
-	"istio.io/istio/pkg/config/schema/kind"
 	"istio.io/istio/pkg/kube/krt"
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/slices"
@@ -50,7 +49,7 @@ func (a *index) ServicesCollection(
 			Service:       a.constructService(s, waypoint),
 			PortNames:     portNames,
 			LabelSelector: model.NewSelector(s.Spec.Selector),
-			Source:        kind.Service,
+			Source:        model.AmbientResourceSourceService,
 		}
 	}, krt.WithName("ServicesInfo"))
 	ServiceEntriesInfo := krt.NewManyCollection(ServiceEntries, func(ctx krt.HandlerContext, s *networkingclient.ServiceEntry) []model.ServiceInfo {
@@ -76,7 +75,7 @@ func (a *index) serviceEntriesInfo(s *networkingclient.ServiceEntry, w *Waypoint
 			Service:       e,
 			PortNames:     portNames,
 			LabelSelector: sel,
-			Source:        kind.ServiceEntry,
+			Source:        model.AmbientResourceSourceServiceEntry,
 		}
 	})
 }

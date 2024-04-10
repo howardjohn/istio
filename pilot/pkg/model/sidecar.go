@@ -43,7 +43,7 @@ const (
 
 var (
 	sidecarScopedKnownConfigTypes = sets.New(
-		kind.ServiceEntry,
+		kind.Service,
 		kind.VirtualService,
 		kind.DestinationRule,
 		kind.Sidecar,
@@ -341,7 +341,7 @@ func DefaultSidecarScopeForNamespace(ps *PushContext, configNamespace string) *S
 			}
 		}
 		out.AddConfigDependencies(ConfigKey{
-			Kind:      kind.ServiceEntry,
+			Kind:      kind.Service,
 			Name:      string(s.Hostname),
 			Namespace: s.Attributes.Namespace,
 		}.HashCode())
@@ -488,7 +488,7 @@ func (sc *SidecarScope) selectDestinationRules(ps *PushContext, configNamespace 
 			}
 		}
 		sc.AddConfigDependencies(ConfigKey{
-			Kind:      kind.ServiceEntry,
+			Kind:      kind.Service,
 			Name:      string(s.Hostname),
 			Namespace: s.Attributes.Namespace,
 		}.HashCode())

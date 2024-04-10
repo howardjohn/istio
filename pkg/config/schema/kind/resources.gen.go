@@ -10,45 +10,26 @@ import (
 const (
 	Address Kind = iota
 	AuthorizationPolicy
-	CertificateSigningRequest
-	ConfigMap
-	CustomResourceDefinition
 	DNSName
-	DaemonSet
-	Deployment
 	DestinationRule
-	EndpointSlice
 	Endpoints
 	EnvoyFilter
 	GRPCRoute
 	Gateway
 	GatewayClass
 	HTTPRoute
-	Ingress
-	IngressClass
 	KubernetesGateway
-	Lease
-	MeshConfig
-	MeshNetworks
-	MutatingWebhookConfiguration
-	Namespace
-	Node
 	PeerAuthentication
-	Pod
 	ProxyConfig
 	ReferenceGrant
 	RequestAuthentication
 	Secret
 	Service
-	ServiceAccount
-	ServiceEntry
 	Sidecar
-	StatefulSet
 	TCPRoute
 	TLSRoute
 	Telemetry
 	UDPRoute
-	ValidatingWebhookConfiguration
 	VirtualService
 	WasmPlugin
 	WorkloadEntry
@@ -61,22 +42,10 @@ func (k Kind) String() string {
 		return "Address"
 	case AuthorizationPolicy:
 		return "AuthorizationPolicy"
-	case CertificateSigningRequest:
-		return "CertificateSigningRequest"
-	case ConfigMap:
-		return "ConfigMap"
-	case CustomResourceDefinition:
-		return "CustomResourceDefinition"
 	case DNSName:
 		return "DNSName"
-	case DaemonSet:
-		return "DaemonSet"
-	case Deployment:
-		return "Deployment"
 	case DestinationRule:
 		return "DestinationRule"
-	case EndpointSlice:
-		return "EndpointSlice"
 	case Endpoints:
 		return "Endpoints"
 	case EnvoyFilter:
@@ -89,28 +58,10 @@ func (k Kind) String() string {
 		return "GatewayClass"
 	case HTTPRoute:
 		return "HTTPRoute"
-	case Ingress:
-		return "Ingress"
-	case IngressClass:
-		return "IngressClass"
 	case KubernetesGateway:
 		return "Gateway"
-	case Lease:
-		return "Lease"
-	case MeshConfig:
-		return "MeshConfig"
-	case MeshNetworks:
-		return "MeshNetworks"
-	case MutatingWebhookConfiguration:
-		return "MutatingWebhookConfiguration"
-	case Namespace:
-		return "Namespace"
-	case Node:
-		return "Node"
 	case PeerAuthentication:
 		return "PeerAuthentication"
-	case Pod:
-		return "Pod"
 	case ProxyConfig:
 		return "ProxyConfig"
 	case ReferenceGrant:
@@ -121,14 +72,8 @@ func (k Kind) String() string {
 		return "Secret"
 	case Service:
 		return "Service"
-	case ServiceAccount:
-		return "ServiceAccount"
-	case ServiceEntry:
-		return "ServiceEntry"
 	case Sidecar:
 		return "Sidecar"
-	case StatefulSet:
-		return "StatefulSet"
 	case TCPRoute:
 		return "TCPRoute"
 	case TLSRoute:
@@ -137,8 +82,6 @@ func (k Kind) String() string {
 		return "Telemetry"
 	case UDPRoute:
 		return "UDPRoute"
-	case ValidatingWebhookConfiguration:
-		return "ValidatingWebhookConfiguration"
 	case VirtualService:
 		return "VirtualService"
 	case WasmPlugin:
@@ -156,20 +99,8 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 	switch g {
 	case gvk.AuthorizationPolicy:
 		return AuthorizationPolicy
-	case gvk.CertificateSigningRequest:
-		return CertificateSigningRequest
-	case gvk.ConfigMap:
-		return ConfigMap
-	case gvk.CustomResourceDefinition:
-		return CustomResourceDefinition
-	case gvk.DaemonSet:
-		return DaemonSet
-	case gvk.Deployment:
-		return Deployment
 	case gvk.DestinationRule:
 		return DestinationRule
-	case gvk.EndpointSlice:
-		return EndpointSlice
 	case gvk.Endpoints:
 		return Endpoints
 	case gvk.EnvoyFilter:
@@ -182,28 +113,10 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 		return GatewayClass
 	case gvk.HTTPRoute:
 		return HTTPRoute
-	case gvk.Ingress:
-		return Ingress
-	case gvk.IngressClass:
-		return IngressClass
 	case gvk.KubernetesGateway:
 		return KubernetesGateway
-	case gvk.Lease:
-		return Lease
-	case gvk.MeshConfig:
-		return MeshConfig
-	case gvk.MeshNetworks:
-		return MeshNetworks
-	case gvk.MutatingWebhookConfiguration:
-		return MutatingWebhookConfiguration
-	case gvk.Namespace:
-		return Namespace
-	case gvk.Node:
-		return Node
 	case gvk.PeerAuthentication:
 		return PeerAuthentication
-	case gvk.Pod:
-		return Pod
 	case gvk.ProxyConfig:
 		return ProxyConfig
 	case gvk.ReferenceGrant:
@@ -214,14 +127,8 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 		return Secret
 	case gvk.Service:
 		return Service
-	case gvk.ServiceAccount:
-		return ServiceAccount
-	case gvk.ServiceEntry:
-		return ServiceEntry
 	case gvk.Sidecar:
 		return Sidecar
-	case gvk.StatefulSet:
-		return StatefulSet
 	case gvk.TCPRoute:
 		return TCPRoute
 	case gvk.TLSRoute:
@@ -230,8 +137,6 @@ func MustFromGVK(g config.GroupVersionKind) Kind {
 		return Telemetry
 	case gvk.UDPRoute:
 		return UDPRoute
-	case gvk.ValidatingWebhookConfiguration:
-		return ValidatingWebhookConfiguration
 	case gvk.VirtualService:
 		return VirtualService
 	case gvk.WasmPlugin:

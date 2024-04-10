@@ -283,7 +283,7 @@ func (a *index) Lookup(key string) []model.AddressInfo {
 		}
 		// Otherwise, try to find a pod - pods have precedence
 		pod := slices.FindFunc(wls, func(info model.WorkloadInfo) bool {
-			return info.Source == kind.Pod
+			return info.Source == model.AmbientResourceSourcePod
 		})
 		if pod != nil {
 			return []model.AddressInfo{modelWorkloadToAddressInfo(*pod)}
@@ -323,7 +323,7 @@ func (a *index) lookupService(key string) *model.ServiceInfo {
 func (a *index) All() []model.AddressInfo {
 	res := []model.AddressInfo{}
 	type kindindex struct {
-		k     kind.Kind
+		k     model.AmbientResourceSource
 		index int
 	}
 	addrm := map[netip.Addr]kindindex{}
@@ -335,7 +335,7 @@ func (a *index) All() []model.AddressInfo {
 			if existing, f := addrm[a]; f {
 				// This address was already found. We want unique addresses in the result.
 				// Pod > WorkloadEntry
-				if wl.Source == kind.Pod && existing.k != kind.Pod {
+				if wl.Source == model.AmbientResourceSourcePod && existing.k != model.AmbientResourceSourcePod {
 					overwrite = existing.index
 					addrm[a] = kindindex{
 						k:     wl.Source,

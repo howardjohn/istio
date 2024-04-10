@@ -45,7 +45,6 @@ import (
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/protocol"
-	"istio.io/istio/pkg/config/schema/kind"
 	"istio.io/istio/pkg/config/visibility"
 	"istio.io/istio/pkg/maps"
 	pm "istio.io/istio/pkg/model"
@@ -954,7 +953,7 @@ type ServiceInfo struct {
 	// PortNames provides a mapping of ServicePort -> port names. Note these are only used internally, not sent over XDS
 	PortNames map[int32]ServicePortName
 	// Source is the type that introduced this service.
-	Source kind.Kind
+	Source AmbientResourceSource
 }
 
 func (i ServiceInfo) Equals(other ServiceInfo) bool {
@@ -972,6 +971,15 @@ func serviceResourceName(s *workloadapi.Service) string {
 	return s.Namespace + "/" + s.Hostname
 }
 
+type AmbientResourceSource int
+
+const (
+	AmbientResourceSourcePod           AmbientResourceSource = iota
+	AmbientResourceSourceWorkloadEntry AmbientResourceSource = iota
+	AmbientResourceSourceServiceEntry  AmbientResourceSource = iota
+	AmbientResourceSourceService       AmbientResourceSource = iota
+)
+
 type WorkloadSource string
 
 type WorkloadInfo struct {
@@ -979,7 +987,7 @@ type WorkloadInfo struct {
 	// Labels for the workload. Note these are only used internally, not sent over XDS
 	Labels map[string]string
 	// Source is the type that introduced this workload.
-	Source kind.Kind
+	Source AmbientResourceSource
 	// CreationTime is the time when the workload was created. Note this is used internally only.
 	CreationTime time.Time
 }

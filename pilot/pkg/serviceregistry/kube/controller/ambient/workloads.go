@@ -30,7 +30,6 @@ import (
 	labelutil "istio.io/istio/pilot/pkg/serviceregistry/util/label"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/labels"
-	"istio.io/istio/pkg/config/schema/kind"
 	kubeutil "istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/kube/krt"
 	kubelabels "istio.io/istio/pkg/kube/labels"
@@ -140,7 +139,7 @@ func (a *index) WorkloadsCollection(
 			w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(se.Labels, w.WorkloadName)
 
 			setTunnelProtocol(se.Labels, se.Annotations, w)
-			res = append(res, model.WorkloadInfo{Workload: w, Labels: se.Labels, Source: kind.WorkloadEntry, CreationTime: se.CreationTimestamp.Time})
+			res = append(res, model.WorkloadInfo{Workload: w, Labels: se.Labels, Source: model.AmbientResourceSourceWorkloadEntry, CreationTime: se.CreationTimestamp.Time})
 		}
 		return res
 	}, krt.WithName("ServiceEntryWorkloads"))
@@ -182,7 +181,7 @@ func (a *index) workloadEntryWorkloadBuilder(
 		fo := []krt.FetchOption{krt.FilterIndex(WorkloadServicesNamespaceIndex, p.Namespace), krt.FilterSelectsNonEmpty(p.GetLabels())}
 		if !features.EnableK8SServiceSelectWorkloadEntries {
 			fo = append(fo, krt.FilterGeneric(func(a any) bool {
-				return a.(model.ServiceInfo).Source == kind.ServiceEntry
+				return a.(model.ServiceInfo).Source == model.AmbientResourceSourceServiceEntry
 			}))
 		}
 		services := krt.Fetch(ctx, WorkloadServices, fo...)
@@ -216,7 +215,7 @@ func (a *index) workloadEntryWorkloadBuilder(
 		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
 
 		setTunnelProtocol(p.Labels, p.Annotations, w)
-		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: kind.WorkloadEntry, CreationTime: p.CreationTimestamp.Time}
+		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: model.AmbientResourceSourceWorkloadEntry, CreationTime: p.CreationTimestamp.Time}
 	}
 }
 
@@ -258,7 +257,7 @@ func (a *index) podWorkloadBuilder(
 		fo := []krt.FetchOption{krt.FilterIndex(WorkloadServicesNamespaceIndex, p.Namespace), krt.FilterSelectsNonEmpty(p.GetLabels())}
 		if !features.EnableServiceEntrySelectPods {
 			fo = append(fo, krt.FilterGeneric(func(a any) bool {
-				return a.(model.ServiceInfo).Source == kind.Service
+				return a.(model.ServiceInfo).Source == model.AmbientResourceSourceService
 			}))
 		}
 		services := krt.Fetch(ctx, WorkloadServices, fo...)
@@ -298,7 +297,7 @@ func (a *index) podWorkloadBuilder(
 		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
 
 		setTunnelProtocol(p.Labels, p.Annotations, w)
-		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: kind.Pod, CreationTime: p.CreationTimestamp.Time}
+		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: model.AmbientResourceSourcePod, CreationTime: p.CreationTimestamp.Time}
 	}
 }
 
@@ -353,7 +352,7 @@ func constructServicesFromWorkloadEntry(p *networkingv1alpha3.WorkloadEntry, ser
 		for _, port := range svc.Ports {
 			targetPort := port.TargetPort
 			// Named targetPort has different semantics from Service vs ServiceEntry
-			if svc.Source == kind.Service {
+			if svc.Source == model.AmbientResourceSourceService {
 				// Service has explicit named targetPorts.
 				if named, f := svc.PortNames[int32(port.ServicePort)]; f && named.TargetPortName != "" {
 					// This port is a named target port, look it up
