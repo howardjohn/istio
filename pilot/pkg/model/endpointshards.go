@@ -154,11 +154,11 @@ func NewEndpointIndex(cache XdsCache) *EndpointIndex {
 
 // must be called with lock
 func (e *EndpointIndex) clearCacheForService(svc, ns string) {
-	e.cache.Clear(sets.Set[ConfigKey]{{
-		Kind:      kind.ServiceEntry,
+	e.cache.Clear(sets.New(ConfigKey{
+		Kind:      kind.Service,
 		Name:      svc,
 		Namespace: ns,
-	}: {}})
+	}))
 }
 
 // Shardz returns a full deep copy of the global map of shards. This should be used only for testing

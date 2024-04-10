@@ -93,12 +93,12 @@ func (r *Cache) DependentConfigs() []model.ConfigHash {
 	configs := make([]model.ConfigHash, 0, size)
 	for _, svc := range r.Services {
 		configs = append(configs, model.ConfigKey{
-			Kind:      kind.ServiceEntry,
+			Kind:      kind.Service,
 			Name:      string(svc.Hostname),
 			Namespace: svc.Attributes.Namespace,
 		}.HashCode())
 		for _, alias := range svc.Attributes.Aliases {
-			configs = append(configs, model.ConfigKey{Kind: kind.ServiceEntry, Name: alias.Hostname.String(), Namespace: alias.Namespace}.HashCode())
+			configs = append(configs, model.ConfigKey{Kind: kind.Service, Name: alias.Hostname.String(), Namespace: alias.Namespace}.HashCode())
 		}
 	}
 	for _, vs := range r.VirtualServices {

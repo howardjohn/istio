@@ -66,7 +66,7 @@ func proxyDependentOnConfig(proxy *model.Proxy, config model.ConfigKey, push *mo
 			return true
 		}
 	case model.Router:
-		if config.Kind == kind.ServiceEntry {
+		if config.Kind == kind.Service {
 			// If config is ServiceEntry, name of the config is service's FQDN
 			if features.FilterGatewayClusterConfig && !push.ServiceAttachedToGateway(config.Name, proxy) {
 				return false
@@ -98,11 +98,11 @@ func DefaultProxyNeedsPush(proxy *model.Proxy, req *model.PushRequest) bool {
 	// If the proxy's service updated, need push for it.
 	if len(proxy.ServiceTargets) > 0 && req.ConfigsUpdated != nil {
 		for _, svc := range proxy.ServiceTargets {
-			if _, ok := req.ConfigsUpdated[model.ConfigKey{
-				Kind:      kind.ServiceEntry,
+			if req.ConfigsUpdated.Contains(model.ConfigKey{
+				Kind:      kind.Service,
 				Name:      string(svc.Service.Hostname),
 				Namespace: svc.Service.Attributes.Namespace,
-			}]; ok {
+			}) {
 				return true
 			}
 		}

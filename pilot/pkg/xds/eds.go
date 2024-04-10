@@ -54,7 +54,7 @@ func (s *DiscoveryServer) EDSUpdate(shard model.ShardKey, serviceName string, na
 		// Trigger a push
 		s.ConfigUpdate(&model.PushRequest{
 			Full:           pushType == model.FullPush,
-			ConfigsUpdated: sets.New(model.ConfigKey{Kind: kind.ServiceEntry, Name: serviceName, Namespace: namespace}),
+			ConfigsUpdated: sets.New(model.ConfigKey{Kind: kind.Service, Name: serviceName, Namespace: namespace}),
 			Reason:         model.NewReasonStats(model.EndpointUpdate),
 		})
 	}
@@ -168,7 +168,7 @@ func canSendPartialFullPushes(req *model.PushRequest) bool {
 			// this happens when push requests are merged due to debounce
 			continue
 		}
-		if cfg.Kind != kind.ServiceEntry {
+		if cfg.Kind != kind.Service && cfg.Kind != kind.Endpoints {
 			return false
 		}
 	}
@@ -186,8 +186,8 @@ func (eds *EdsGenerator) buildEndpoints(proxy *model.Proxy,
 	// ConfigsUpdated=ALL, so in this case we would not enable a partial push.
 	// Despite this code existing on the SotW code path, sending these partial pushes is still allowed;
 	// see https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#grouping-resources-into-responses
-	if !req.Full || canSendPartialFullPushes(req) {
-		edsUpdatedServices = model.ConfigNamesOfKind(req.ConfigsUpdated, kind.ServiceEntry)
+	if !req.Full || canSendPartialFullPushes(req) { // TODO(howardjohn)
+		edsUpdatedServices = model.ConfigNamesOfKind(req.ConfigsUpdated, kind.Service)
 	}
 	var resources model.Resources
 	empty := 0
@@ -243,7 +243,8 @@ func (eds *EdsGenerator) buildDeltaEndpoints(proxy *model.Proxy,
 	req *model.PushRequest,
 	w *model.WatchedResource,
 ) (model.Resources, []string, model.XdsLogDetails) {
-	edsUpdatedServices := model.ConfigNamesOfKind(req.ConfigsUpdated, kind.ServiceEntry)
+	// TODO(howardjohn)
+	edsUpdatedServices := model.ConfigNamesOfKind(req.ConfigsUpdated, kind.Service)
 	var resources model.Resources
 	var removed []string
 	empty := 0

@@ -51,7 +51,6 @@ var skippedNdsConfigs = sets.New(
 	kind.PeerAuthentication,
 	kind.WasmPlugin,
 	kind.ProxyConfig,
-	kind.MeshConfig,
 
 	kind.KubernetesGateway,
 	kind.HTTPRoute,

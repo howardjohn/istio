@@ -43,7 +43,6 @@ import (
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/protocol"
-	"istio.io/istio/pkg/config/schema/kind"
 	"istio.io/istio/pkg/config/visibility"
 	"istio.io/istio/pkg/maps"
 	pm "istio.io/istio/pkg/model"
@@ -1128,12 +1127,23 @@ func serviceResourceName(s *workloadapi.Service) string {
 	return s.Namespace + "/" + s.Hostname
 }
 
+type AmbientResourceSource int
+
+const (
+	AmbientResourceSourcePod           AmbientResourceSource = iota
+	AmbientResourceSourceWorkloadEntry AmbientResourceSource = iota
+	AmbientResourceSourceServiceEntry  AmbientResourceSource = iota
+	AmbientResourceSourceService       AmbientResourceSource = iota
+)
+
+type WorkloadSource string
+
 type WorkloadInfo struct {
 	Workload *workloadapi.Workload
 	// Labels for the workload. Note these are only used internally, not sent over XDS
 	Labels map[string]string
 	// Source is the type that introduced this workload.
-	Source kind.Kind
+	Source AmbientResourceSource
 	// CreationTime is the time when the workload was created. Note this is used internally only.
 	CreationTime time.Time
 }

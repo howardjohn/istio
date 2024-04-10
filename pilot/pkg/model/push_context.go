@@ -1353,7 +1353,7 @@ func (ps *PushContext) updateContext(
 
 	for conf := range pushReq.ConfigsUpdated {
 		switch conf.Kind {
-		case kind.ServiceEntry, kind.DNSName:
+		case kind.Service, kind.DNSName:
 			servicesChanged = true
 		case kind.DestinationRule:
 			destinationRulesChanged = true
@@ -1610,7 +1610,7 @@ func resolveServiceAliases(allServices []*Service, configsUpdated sets.Set[Confi
 
 		// We also need to update configsUpdated, such that any "alias" updated also marks the concrete service as updated.
 		aliasKey := ConfigKey{
-			Kind:      kind.ServiceEntry,
+			Kind:      kind.Service,
 			Name:      alias.Hostname.String(),
 			Namespace: alias.Namespace,
 		}
@@ -1620,7 +1620,7 @@ func resolveServiceAliases(allServices []*Service, configsUpdated sets.Set[Confi
 			for _, svc := range allServices {
 				if svc.Hostname == concrete {
 					configsUpdated.Insert(ConfigKey{
-						Kind:      kind.ServiceEntry,
+						Kind:      kind.Service,
 						Name:      concrete.String(),
 						Namespace: svc.Attributes.Namespace,
 					})

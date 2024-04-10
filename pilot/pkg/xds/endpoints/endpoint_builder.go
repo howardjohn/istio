@@ -275,10 +275,16 @@ func (b *EndpointBuilder) DependentConfigs() []model.ConfigHash {
 		}
 	}
 	if b.service != nil {
-		configs = append(configs, model.ConfigKey{
-			Kind: kind.ServiceEntry,
-			Name: string(b.service.Hostname), Namespace: b.service.Attributes.Namespace,
-		}.HashCode())
+		configs = append(configs,
+			model.ConfigKey{
+				Kind: kind.Service,
+				Name: string(b.service.Hostname), Namespace: b.service.Attributes.Namespace,
+			}.HashCode(),
+			model.ConfigKey{
+				Kind: kind.Endpoints,
+				Name: string(b.service.Hostname), Namespace: b.service.Attributes.Namespace,
+			}.HashCode(),
+		)
 	}
 
 	// For now, this matches clusterCache's DependentConfigs. If adding anything here, we may need to add them there.

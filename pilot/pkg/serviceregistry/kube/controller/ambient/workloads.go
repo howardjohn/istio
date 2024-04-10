@@ -143,7 +143,7 @@ func (a *index) workloadEntryWorkloadBuilder(
 		fo := []krt.FetchOption{krt.FilterIndex(workloadServicesNamespaceIndex, wle.Namespace), krt.FilterSelectsNonEmpty(wle.GetLabels())}
 		if !a.Flags.EnableK8SServiceSelectWorkloadEntries {
 			fo = append(fo, krt.FilterGeneric(func(a any) bool {
-				return a.(model.ServiceInfo).Source.Kind == kind.ServiceEntry
+				return a.(model.ServiceInfo).Source.Kind == model.AmbientResourceSourceServiceEntry
 			}))
 		}
 		services := krt.Fetch(ctx, workloadServices, fo...)
@@ -251,7 +251,7 @@ func (a *index) podWorkloadBuilder(
 		fo := []krt.FetchOption{krt.FilterIndex(workloadServicesNamespaceIndex, p.Namespace), krt.FilterSelectsNonEmpty(p.GetLabels())}
 		if !features.EnableServiceEntrySelectPods {
 			fo = append(fo, krt.FilterGeneric(func(a any) bool {
-				return a.(model.ServiceInfo).Source.Kind == kind.Service
+				return a.(model.ServiceInfo).Source.Kind == model.AmbientResourceSourceService
 			}))
 		}
 		services := krt.Fetch(ctx, workloadServices, fo...)
@@ -298,7 +298,7 @@ func (a *index) podWorkloadBuilder(
 		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
 
 		setTunnelProtocol(p.Labels, p.Annotations, w)
-		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: kind.Pod, CreationTime: p.CreationTimestamp.Time}
+		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: model.AmbientResourceSourcePod, CreationTime: p.CreationTimestamp.Time}
 	}
 }
 
@@ -680,7 +680,7 @@ func constructServicesFromWorkloadEntry(p *networkingv1alpha3.WorkloadEntry, ser
 		for _, port := range svc.Service.Ports {
 			targetPort := port.TargetPort
 			// Named targetPort has different semantics from Service vs ServiceEntry
-			if svc.Source.Kind == kind.Service {
+			if svc.Source.Kind == model.AmbientResourceSourceService {
 				// Service has explicit named targetPorts.
 				if named, f := svc.PortNames[int32(port.ServicePort)]; f && named.TargetPortName != "" {
 					// This port is a named target port, look it up

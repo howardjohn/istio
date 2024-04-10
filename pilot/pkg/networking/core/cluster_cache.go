@@ -142,7 +142,7 @@ func (t *clusterCache) DependentConfigs() []model.ConfigHash {
 		}
 	}
 	if t.service != nil {
-		configs = append(configs, model.ConfigKey{Kind: kind.ServiceEntry, Name: string(t.service.Hostname), Namespace: t.service.Attributes.Namespace}.HashCode())
+		configs = append(configs, model.ConfigKey{Kind: kind.Service, Name: string(t.service.Hostname), Namespace: t.service.Attributes.Namespace}.HashCode())
 	}
 	for _, efKey := range t.envoyFilterKeys {
 		ns, name, _ := strings.Cut(efKey, "/")

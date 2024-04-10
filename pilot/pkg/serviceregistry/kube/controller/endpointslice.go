@@ -138,7 +138,7 @@ func (esc *endpointSliceController) onEventInternal(_, ep *v1.EndpointSlice, eve
 			// require a Listener based on IP: https://github.com/istio/istio/issues/48207
 			configsUpdated.Insert(model.ConfigKey{Kind: kind.DNSName, Name: modelSvc.Hostname.String(), Namespace: svc.Namespace})
 		} else {
-			configsUpdated.Insert(model.ConfigKey{Kind: kind.ServiceEntry, Name: modelSvc.Hostname.String(), Namespace: svc.Namespace})
+			configsUpdated.Insert(model.ConfigKey{Kind: kind.Service, Name: modelSvc.Hostname.String(), Namespace: svc.Namespace})
 		}
 	}
 
