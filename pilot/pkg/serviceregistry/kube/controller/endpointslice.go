@@ -97,6 +97,7 @@ func (esc *endpointSliceController) onEventInternal(_, ep *v1.EndpointSlice, eve
 	// As for gateways, the cluster discovery type is `EDS` for headless service.
 	namespacedName := getServiceNamespacedName(ep)
 	log.Debugf("Handle EDS endpoint %s %s in namespace %s", namespacedName.Name, event, namespacedName.Namespace)
+	esc.updatePodToHost(ep, event)
 	if event == model.EventDelete {
 		esc.deleteEndpointSlice(ep)
 	} else {
@@ -207,6 +208,7 @@ func (esc *endpointSliceController) serviceTargets(ep *v1.EndpointSlice, proxy *
 }
 
 func (esc *endpointSliceController) deleteEndpointSlice(slice *v1.EndpointSlice) {
+	esc.updatePodToHost(slice, nil, model.EventDelete)
 	key := config.NamespacedName(slice)
 	for _, e := range slice.Endpoints {
 		for _, a := range e.Addresses {
@@ -225,6 +227,7 @@ func (esc *endpointSliceController) deleteEndpointSlice(slice *v1.EndpointSlice)
 }
 
 func (esc *endpointSliceController) updateEndpointSlice(slice *v1.EndpointSlice) {
+	esc.updatePodToHost(slice, nil, model.EventAdd)
 	for _, hostname := range esc.c.hostNamesForNamespacedName(getServiceNamespacedName(slice)) {
 		esc.updateEndpointCacheForSlice(hostname, slice)
 	}
@@ -319,11 +322,13 @@ type endpointKey struct {
 type endpointSliceCache struct {
 	mu                         sync.RWMutex
 	endpointsByServiceAndSlice map[host.Name]map[string][]*model.IstioEndpoint
+	podsToService              map[types.NamespacedName]sets.Set[types.NamespacedName]
 }
 
 func newEndpointSliceCache() *endpointSliceCache {
 	out := &endpointSliceCache{
 		endpointsByServiceAndSlice: make(map[host.Name]map[string][]*model.IstioEndpoint),
+		podsToService:              make(map[types.NamespacedName]sets.Set[types.NamespacedName]),
 	}
 	return out
 }
@@ -427,6 +432,19 @@ func (esc *endpointSliceController) pushEDS(hostnames []host.Name, namespace str
 
 		esc.c.opts.XDSUpdater.EDSUpdate(shard, string(hostname), namespace, endpoints)
 	}
+}
+
+func (esc *endpointSliceController) updatePodToHost(now *v1.EndpointSlice, event model.Event) {
+	esc.endpointCache.mu.Lock()
+	defer esc.endpointCache.mu.Unlock()
+	svc := getServiceNamespacedName(now)
+	nowPods := sets.
+	for _, s := range now.Endpoints {
+		if s.TargetRef != nil && s.Kind == "Pod" {
+
+		}
+	}
+
 }
 
 // getPod fetches a pod by name or IP address.
