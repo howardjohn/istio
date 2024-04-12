@@ -367,7 +367,7 @@ func (lb *ListenerBuilder) buildHTTPConnectionManager(httpOpts *httpListenerOpts
 
 	accessLogBuilder.setHTTPAccessLog(lb.push, lb.node, connectionManager, httpOpts.class)
 
-	reqIDExtensionCtx := configureTracing(lb.push, lb.node, connectionManager, httpOpts.class)
+	reqIDExtensionCtx := configureTracing(lb.push, lb.node, connectionManager, httpOpts.class, httpOpts.tracingServiceName)
 
 	filters := []*hcm.HttpFilter{}
 	if !httpOpts.isWaypoint {

@@ -64,9 +64,10 @@ func configureTracing(
 	proxy *model.Proxy,
 	httpConnMgr *hcm.HttpConnectionManager,
 	class networking.ListenerClass,
+	serviceName string,
 ) *requestidextension.UUIDRequestIDExtensionContext {
 	tracingCfg := push.Telemetry.Tracing(proxy)
-	return configureTracingFromTelemetry(tracingCfg, push, proxy, httpConnMgr, class)
+	return configureTracingFromTelemetry(tracingCfg, push, proxy, httpConnMgr, class, serviceName)
 }
 
 func configureTracingFromTelemetry(
@@ -75,6 +76,7 @@ func configureTracingFromTelemetry(
 	proxy *model.Proxy,
 	h *hcm.HttpConnectionManager,
 	class networking.ListenerClass,
+	serviceName string,
 ) *requestidextension.UUIDRequestIDExtensionContext {
 	proxyCfg := proxy.Metadata.ProxyConfigOrDefault(push.Mesh.DefaultConfig)
 	// If there is no telemetry config defined, fallback to legacy mesh config.
@@ -104,7 +106,7 @@ func configureTracingFromTelemetry(
 
 	var useCustomSampler bool
 	if spec.Provider != nil {
-		hcmTracing, hasCustomSampler, err := configureFromProviderConfig(push, proxy, spec.Provider)
+		hcmTracing, hasCustomSampler, err := configureFromProviderConfig(push, proxy, spec.Provider, serviceName)
 		if err != nil {
 			log.Warnf("Not able to configure requested tracing provider %q: %v", spec.Provider.Name, err)
 			return nil
@@ -151,9 +153,7 @@ func configureTracingFromTelemetry(
 // STOP. DO NOT UPDATE THIS WITHOUT UPDATING configureFromProviderConfig.
 const configureFromProviderConfigHandled = 14
 
-func configureFromProviderConfig(pushCtx *model.PushContext, proxy *model.Proxy,
-	providerCfg *meshconfig.MeshConfig_ExtensionProvider,
-) (*hcm.HttpConnectionManager_Tracing, bool, error) {
+func configureFromProviderConfig(pushCtx *model.PushContext, proxy *model.Proxy, providerCfg *meshconfig.MeshConfig_ExtensionProvider, serviceName string) (*hcm.HttpConnectionManager_Tracing, bool, error) {
 	startChildSpan := false
 	useCustomSampler := false
 	var serviceCluster string
@@ -162,6 +162,9 @@ func configureFromProviderConfig(pushCtx *model.PushContext, proxy *model.Proxy,
 	var providerName string
 	if proxy.XdsNode != nil {
 		serviceCluster = proxy.XdsNode.Cluster
+	}
+	if serviceName != "" {
+		serviceCluster = serviceName
 	}
 	switch provider := providerCfg.Provider.(type) {
 	case *meshconfig.MeshConfig_ExtensionProvider_Zipkin:

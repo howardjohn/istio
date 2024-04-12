@@ -1014,7 +1014,8 @@ type httpListenerOpts struct {
 	hbone bool
 
 	// Waypoint-specific modifications in HCM
-	isWaypoint bool
+	isWaypoint         bool
+	tracingServiceName string
 }
 
 // filterChainOpts describes a filter chain: a set of filters with the same TLS context

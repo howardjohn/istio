@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 
 	xds "github.com/cncf/xds/go/xds/core/v3"
 	matcher "github.com/cncf/xds/go/xds/type/matcher/v3"
@@ -379,6 +380,10 @@ func (lb *ListenerBuilder) buildWaypointInboundHTTPFilters(svc *model.Service, c
 		class:                     istionetworking.ListenerClassSidecarInbound,
 		statPrefix:                cc.StatPrefix(),
 		isWaypoint:                true,
+	}
+	if svc != nil {
+		first, _, _ := strings.Cut(string(svc.Hostname), ".")
+		httpOpts.tracingServiceName = fmt.Sprintf("%s.%s", first, svc.Attributes.Namespace)
 	}
 	// See https://github.com/grpc/grpc-web/tree/master/net/grpc/gateway/examples/helloworld#configure-the-proxy
 	if cc.port.Protocol.IsHTTP2() {
