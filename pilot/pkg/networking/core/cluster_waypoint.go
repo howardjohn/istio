@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	wrappers "google.golang.org/protobuf/types/known/wrapperspb"
 
+	meshconfig "istio.io/api/mesh/v1alpha1"
 	networking "istio.io/api/networking/v1alpha3"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
@@ -78,7 +79,7 @@ func (configgen *ConfigGeneratorImpl) buildWaypointInboundClusters(
 	// Creates "encap" cluster to route to the encap listener.
 	clusters = append(clusters, MainInternalCluster, EncapCluster)
 	// Creates per-VIP load balancing upstreams.
-	clusters = append(clusters, cb.buildWaypointInboundVIP(proxy, svcs)...)
+	clusters = append(clusters, cb.buildWaypointInboundVIP(proxy, svcs, push.Mesh)...)
 	// Upstream of the "encap" listener.
 	clusters = append(clusters, cb.buildWaypointConnectOriginate(proxy, push))
 
@@ -91,7 +92,7 @@ func (configgen *ConfigGeneratorImpl) buildWaypointInboundClusters(
 }
 
 // `inbound-vip||hostname|port`. EDS routing to the internal listener for each pod in the VIP.
-func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(proxy *model.Proxy, svc *model.Service, port model.Port, subset string) *clusterWrapper {
+func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(proxy *model.Proxy, svc *model.Service, port model.Port, subset string, mesh *meshconfig.MeshConfig, policy *networking.TrafficPolicy) *cluster.Cluster {
 	clusterName := model.BuildSubsetKey(model.TrafficDirectionInboundVIP, subset, svc.Hostname, port.Port)
 
 	discoveryType := convertResolution(cb.proxyType, svc)
@@ -123,12 +124,32 @@ func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(proxy *model.Proxy, svc
 	// no TLS, we are just going to internal address
 	localCluster.cluster.TransportSocketMatches = nil
 	localCluster.cluster.TransportSocket = util.TunnelHostInternalUpstreamTransportSocket
+
+	connectionPool, outlierDetection, loadBalancer, _, _ := selectTrafficPolicyComponents(policy)
+	// Connection pool settings are applicable for both inbound and outbound clusters.
+	if connectionPool == nil {
+		connectionPool = &networking.ConnectionPoolSettings{}
+	}
+
+	cb.applyConnectionPool(mesh, localCluster, connectionPool)
+	cb.applyH2Upgrade(localCluster, &port, mesh, connectionPool)
+	applyOutlierDetection(localCluster.cluster, outlierDetection)
+	applyLoadBalancer(localCluster.cluster, loadBalancer, &port, cb.locality, cb.proxyLabels, mesh)
+
+	if localCluster.cluster.GetType() == cluster.Cluster_ORIGINAL_DST {
+		localCluster.cluster.LbPolicy = cluster.Cluster_CLUSTER_PROVIDED
+	}
 	maybeApplyEdsConfig(localCluster.cluster)
-	return localCluster
+
+	// Intentionally not added, that is in sidecar:
+	// * AddConfigInfoMetadata and AddSubsetToMetadata. do we need it? Seems like a legacy idea that is bad for performance
+	// * applyUpstreamTLSSettings, applyUpstreamProxyProtocol. Good to have, but needs implementation
+
+	return localCluster.build()
 }
 
 // `inbound-vip|protocol|hostname|port`. EDS routing to the internal listener for each pod in the VIP.
-func (cb *ClusterBuilder) buildWaypointInboundVIP(proxy *model.Proxy, svcs map[host.Name]*model.Service) []*cluster.Cluster {
+func (cb *ClusterBuilder) buildWaypointInboundVIP(proxy *model.Proxy, svcs map[host.Name]*model.Service, mesh *meshconfig.MeshConfig) []*cluster.Cluster {
 	clusters := []*cluster.Cluster{}
 
 	for _, svc := range svcs {
@@ -136,22 +157,21 @@ func (cb *ClusterBuilder) buildWaypointInboundVIP(proxy *model.Proxy, svcs map[h
 			if port.Protocol == protocol.UDP {
 				continue
 			}
+			dr := CastDestinationRule(cb.sidecarScope.DestinationRule(model.TrafficDirectionInbound, proxy, svc.Hostname).GetRule())
+			policy := dr.GetTrafficPolicy()
 			if port.Protocol.IsUnsupported() || port.Protocol.IsTCP() {
-				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp").build())
+				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp", mesh, policy))
 			}
 			if port.Protocol.IsUnsupported() || port.Protocol.IsHTTP() {
-				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http").build())
+				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http", mesh, policy))
 			}
-			cfg := cb.sidecarScope.DestinationRule(model.TrafficDirectionInbound, proxy, svc.Hostname).GetRule()
-			if cfg != nil {
-				destinationRule := cfg.Spec.(*networking.DestinationRule)
-				for _, ss := range destinationRule.Subsets {
-					if port.Protocol.IsUnsupported() || port.Protocol.IsTCP() {
-						clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp/"+ss.Name).build())
-					}
-					if port.Protocol.IsUnsupported() || port.Protocol.IsHTTP() {
-						clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http/"+ss.Name).build())
-					}
+			for _, ss := range dr.GetSubsets() {
+				policy = util.MergeSubsetTrafficPolicy(dr.GetTrafficPolicy(), ss.GetTrafficPolicy(), port)
+				if port.Protocol.IsUnsupported() || port.Protocol.IsTCP() {
+					clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp/"+ss.Name, mesh, policy))
+				}
+				if port.Protocol.IsUnsupported() || port.Protocol.IsHTTP() {
+					clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http/"+ss.Name, mesh, policy))
 				}
 			}
 		}

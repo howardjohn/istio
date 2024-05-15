@@ -145,7 +145,7 @@ var inMesh = match.Matcher(func(instance echo.Instance) bool {
 func SetupApps(t resource.Context, i istio.Instance, apps *EchoDeployments) error {
 	var err error
 	apps.Namespace, err = namespace.New(t, namespace.Config{
-		Prefix: "echo",
+		Prefix: "ambient",
 		Inject: false,
 		Labels: map[string]string{
 			constants.DataplaneModeLabel: "ambient",

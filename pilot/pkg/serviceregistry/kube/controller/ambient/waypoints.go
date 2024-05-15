@@ -153,7 +153,7 @@ func getUseWaypoint(meta metav1.ObjectMeta, defaultNamespace string) (named *krt
 		if labelValue == "none" || labelValue == "~" || strings.HasSuffix(labelValue, "/none") {
 			return nil, true
 		}
-		namespacedName := strings.Split(labelValue, "/")
+		namespacedName := strings.Split(labelValue, "_")
 		switch len(namespacedName) {
 		case 1:
 			return &krt.Named{
