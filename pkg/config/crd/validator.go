@@ -17,7 +17,15 @@ package crd
 import (
 	"context"
 	"fmt"
+	"github.com/google/cel-go/interpreter"
 	"io"
+	"istio.io/istio/pkg/config/schema/gvk"
+	"istio.io/istio/pkg/log"
+	"istio.io/istio/pkg/ptr"
+	"istio.io/istio/pkg/slices"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/model"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/apiserver/pkg/cel/environment"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,6 +36,7 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextval "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation"
 	structuralschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
 	structuraldefaulting "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/defaulting"
@@ -220,6 +229,66 @@ func NewValidatorFromFiles(files ...string) (*Validator, error) {
 	return NewValidatorFromCRDs(crds...)
 }
 
+type Result struct {
+	Programs map[string][]Program
+}
+type Program struct {
+	Size int64
+}
+
+func (v *Validator) Compile() error {
+	g := gvk.WasmPlugin
+	structural := v.structural[g.Kubernetes()]
+	result := &Result{Programs: make(map[string][]Program)}
+	compile(structural, field.NewPath("root"), result)
+	return nil
+}
+
+type validationActivation struct {
+	self any
+}
+
+func (a *validationActivation) ResolveName(name string) (interface{}, bool) {
+	switch name {
+	case cel.ScopedVarName:
+		return a.self, true
+	default:
+		return nil, false
+	}
+}
+
+func (a *validationActivation) Parent() interpreter.Activation {
+	return nil
+}
+
+func compile(s *structuralschema.Structural, path *field.Path, result *Result) {
+	res, err := cel.Compile(s, model.SchemaDeclType(s, false), celconfig.PerCallLimit,
+		environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion()), cel.StoredExpressionsEnvLoader())
+	if err != nil {
+		panic(err.Error())
+	}
+	for _, r := range res {
+		log.Errorf("howardjohn: %+v", r)
+		log.Infof("path %v: %+v\n%T", path, r, r.Program)
+		//result[path] = append(result[path], Program{
+		//	Size: r.MaxCost,
+		//})
+		val, details, err := r.Program.Eval(&validationActivation{self: "// 00"})
+		log.Infof("eval: %v %v %v", val, details, err)
+	}
+	switch s.Type {
+	case "array":
+		compile(s.Items, path.Child("items"), nil)
+	case "object":
+		for propName := range s.Properties {
+			compile(ptr.Of(s.Properties[propName]), path.Child(propName), result)
+		}
+		if s.AdditionalProperties != nil && s.AdditionalProperties.Structural != nil {
+			compile(s.AdditionalProperties.Structural, path.Child("additionalProperties"), result)
+		}
+	}
+}
+
 func NewValidatorFromCRDs(crds ...apiextensions.CustomResourceDefinition) (*Validator, error) {
 	v := &Validator{
 		byGvk:      map[schema.GroupVersionKind]validation.SchemaCreateValidator{},
@@ -230,6 +299,13 @@ func NewValidatorFromCRDs(crds ...apiextensions.CustomResourceDefinition) (*Vali
 		versions := crd.Spec.Versions
 		if len(versions) == 0 {
 			versions = []apiextensions.CustomResourceDefinitionVersion{{Name: crd.Spec.Version}} // nolint: staticcheck
+		}
+		crd.Status.StoredVersions = slices.Map(versions, func(e apiextensions.CustomResourceDefinitionVersion) string {
+			return e.Name
+		})
+		errs := apiextval.ValidateCustomResourceDefinition(context.Background(), &crd)
+		if len(errs) > 0 {
+			return nil, fmt.Errorf("CRD %v is not valid: %v", crd.Name, errs.ToAggregate())
 		}
 		for _, ver := range versions {
 			gvk := schema.GroupVersionKind{

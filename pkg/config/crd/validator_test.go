@@ -18,6 +18,12 @@ import (
 	"testing"
 )
 
+func TestCompile(t *testing.T) {
+	validator := NewIstioValidator(t)
+	validator.Compile()
+
+}
+
 func TestValidator(t *testing.T) {
 	validator := NewIstioValidator(t)
 	t.Run("valid", func(t *testing.T) {
