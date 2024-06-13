@@ -48,7 +48,7 @@ func Fetch[T any](ctx HandlerContext, cc Collection[T], opts ...FetchOption) []T
 		}
 		// Skip calling all the existing state for secondary dependencies, otherwise we end up with a deadlock due to
 		// rerunning the same collection's recomputation at the same time (once for the initial event, then for the initial registration).
-		c.RegisterBatch(ff, false)
+		c.RegisterBatch(ff, true)
 	})
 
 	// Now we can do the real fetching

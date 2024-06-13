@@ -58,14 +58,22 @@ type queueImpl struct {
 	closed    chan struct{}
 	closeOnce *sync.Once
 	// initialSync indicates the queue has initially "synced".
-	initialSync *atomic.Bool
-	id          string
-	metrics     *queueMetrics
+	initialSync  *atomic.Bool
+	id           string
+	metrics      *queueMetrics
+	syncCallback func()
 }
 
 // NewQueue instantiates a queue with a processing function
 func NewQueue(errorDelay time.Duration) Instance {
 	return NewQueueWithID(errorDelay, rand.String(10))
+}
+
+// NewQueue instantiates a queue with a processing function
+func NewWithSync(f func(), name string) Instance {
+	q := NewQueueWithID(time.Second, name)
+	q.(*queueImpl).syncCallback = f
+	return q
 }
 
 func NewQueueWithID(errorDelay time.Duration, name string) Instance {
@@ -85,6 +93,7 @@ func NewQueueWithID(errorDelay time.Duration, name string) Instance {
 func (q *queueImpl) Push(item Task) {
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
+	log.Errorf("howardjohn: process task.. %v %v", item, q.id)
 	if !q.closing {
 		q.tasks = append(q.tasks, &queueTask{task: item, enqueueTime: time.Now()})
 		q.metrics.depth.RecordInt(int64(len(q.tasks)))
@@ -163,7 +172,11 @@ func (q *queueImpl) Run(stop <-chan struct{}) {
 	}()
 
 	q.Push(func() error {
+		//log.Errorf("howardjohn: SYNC %v with depth %v", q.id, len(q.tasks))
 		q.initialSync.Store(true)
+		if q.syncCallback != nil {
+			q.syncCallback()
+		}
 		return nil
 	})
 	for q.processNextItem() {

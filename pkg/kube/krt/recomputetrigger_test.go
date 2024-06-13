@@ -15,6 +15,7 @@
 package krt_test
 
 import (
+	"go.uber.org/atomic"
 	"testing"
 
 	"istio.io/istio/pkg/kube/krt"
@@ -25,20 +26,20 @@ import (
 func TestRecomputeTrigger(t *testing.T) {
 	rt := krt.NewRecomputeTrigger()
 	col1 := krt.NewStatic(ptr.Of("foo")).AsCollection()
-	response := "foo"
+	response := atomic.NewString("foo")
 	col2 := krt.NewCollection(col1, func(ctx krt.HandlerContext, i string) *string {
 		rt.MarkDependant(ctx)
-		return ptr.Of(response)
+		return ptr.Of(response.Load())
 	})
 	tt := assert.NewTracker[string](t)
 	col2.Register(TrackerHandler[string](tt))
 	tt.WaitOrdered("add/foo")
 
-	response = "bar"
+	response.Store("bar")
 	rt.TriggerRecomputation()
 	tt.WaitUnordered("delete/foo", "add/bar")
 
-	response = "baz"
+	response.Store("baz")
 	rt.TriggerRecomputation()
 	tt.WaitUnordered("delete/bar", "add/baz")
 }

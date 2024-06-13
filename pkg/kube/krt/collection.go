@@ -22,6 +22,7 @@ import (
 	istiolog "istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/maps"
 	"istio.io/istio/pkg/ptr"
+	queue2 "istio.io/istio/pkg/queue"
 	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/util/sets"
 )
@@ -50,6 +51,7 @@ type manyCollection[I, O any] struct {
 	// mu protects all items grouped below.
 	// This is acquired for reads and writes of data.
 	// This can be acquired with recomputeMu held, but only with strict ordering (mu inside recomputeMu)
+	blockNewEvents  sync.Mutex
 	mu              sync.Mutex
 	collectionState multiIndex[I, O]
 	// collectionDependencies specifies the set of collections we depend on from within the transformation functions (via Fetch).
@@ -68,6 +70,7 @@ type manyCollection[I, O any] struct {
 	augmentation func(a any) any
 	synced       chan struct{}
 	stop         <-chan struct{}
+	queue        queue2.Instance
 }
 
 var _ internalCollection[any] = &manyCollection[any, any]{}
@@ -353,36 +356,80 @@ func newManyCollection[I, O any](cc Collection[I], hf TransformationMulti[I, O],
 		synced:        make(chan struct{}),
 		stop:          opts.stop,
 	}
+	markSynced := func() {
+		h.blockNewEvents.Lock()
+		defer h.blockNewEvents.Unlock()
+		h.eventHandlers.MarkInitialized()
+		close(h.synced)
+		h.log.Infof("%v synced", h.name())
+	}
+	var queue queue2.Instance
+	queue = queue2.NewWithSync(func() {
+		queue.Push(func() error {
+			markSynced()
+			return nil
+		})
+	}, h.collectionName)
+	h.queue = queue
+	// Doesn't work since event is not hashable
+	// queue := controllers.NewQueue(h.collectionName,
+	//	controllers.WithSyncedCallback(func() {
+	//		close(h.synced)
+	//		h.log.Infof("%v synced", h.name())
+	//	}),
+	//	controllers.WithGenericReconciler(func(rk any) error {
+	//		key := rk.([]Event[I])
+	//		h.onPrimaryInputEvent(key, false)
+	//		return nil
+	//	}))
+
+	c.RegisterBatch(func(o []Event[I], initialSync bool) {
+		h.blockNewEvents.Lock()
+		defer h.blockNewEvents.Unlock()
+		queue.Push(func() error {
+			h.log.Errorf("howardjohn: run event")
+			h.onPrimaryInputEvent(o, false)
+			return nil
+		})
+	}, true)
 	go func() {
 		// Wait for primary dependency to be ready
 		if !c.Synced().WaitUntilSynced(h.stop) {
 			return
 		}
-		// Now, register our handler. This will call Add() for the initial state
-		// Locking here is tricky. We want to make sure we don't get duplicate events.
-		// When we run RegisterBatch, it will trigger events for the initial state. However, other events could trigger
-		// while we are processing these.
-		// By holding the lock, we ensure we have exclusive access during this time.
-		h.recomputeMu.Lock()
-		h.eventHandlers.MarkInitialized()
-		handlerReg := c.RegisterBatch(func(events []Event[I], initialSync bool) {
-			if log.DebugEnabled() {
-				h.log.WithLabels("dep", "primary", "batch", len(events)).
-					Debugf("got event")
-			}
-			// Lock after the initial sync only
-			// For initial sync we explicitly hold the lock ourselves to ensure we have a broad enough critical section.
-			lock := !initialSync
-			h.onPrimaryInputEvent(events, lock)
-		}, true)
-		if !handlerReg.WaitUntilSynced(h.stop) {
-			h.recomputeMu.Unlock()
-			return
-		}
-		h.recomputeMu.Unlock()
-		close(h.synced)
-		h.log.Infof("%v synced", h.name())
+		queue.Run(h.stop)
 	}()
+
+	//go func() {
+	//	// Wait for primary dependency to be ready
+	//	if !c.Synced().WaitUntilSynced(h.stop) {
+	//		return
+	//	}
+	//	// Now, register our handler. This will call Add() for the initial state
+	//	// Locking here is tricky. We want to make sure we don't get duplicate events.
+	//	// When we run RegisterBatch, it will trigger events for the initial state. However, other events could trigger
+	//	// while we are processing these.
+	//	// By holding the lock, we ensure we have exclusive access during this time.
+	//	h.recomputeMu.Lock()
+	//	h.eventHandlers.MarkInitialized()
+	//	handlerReg := c.RegisterBatch(func(events []Event[I], initialSync bool) {
+	//		if log.DebugEnabled() {
+	//			h.log.WithLabels("dep", "primary", "batch", len(events)).
+	//				Debugf("got event")
+	//		}
+	//		// Lock after the initial sync only
+	//		// For initial sync we explicitly hold the lock ourselves to ensure we have a broad enough critical section.
+	//		lock := !initialSync
+	//		h.onPrimaryInputEvent(events, lock)
+	//	}, true)
+	//	if !handlerReg.WaitUntilSynced(h.stop) {
+	//		h.recomputeMu.Unlock()
+	//		return
+	//	}
+	//	h.recomputeMu.Unlock()
+	//	close(h.synced)
+	//	h.log.Infof("%v synced", h.name())
+	//}()
 	return h
 }
 
@@ -488,13 +535,20 @@ func (h *manyCollection[I, O]) Register(f func(o Event[O])) Syncer {
 
 func (h *manyCollection[I, O]) RegisterBatch(f func(o []Event[O], initialSync bool), runExistingState bool) Syncer {
 	if runExistingState {
-		h.recomputeMu.Lock()
-		defer h.recomputeMu.Unlock()
+		// h.recomputeMu.Lock()
+		// defer h.recomputeMu.Unlock()
 	}
 	initialized := !h.eventHandlers.Insert(f)
+	h.log.Errorf("howardjohn: %v and %v", initialized, runExistingState)
 	if initialized && runExistingState {
 		// Already started. Pause everything, and run through the handler.
-		h.mu.Lock()
+		h.blockNewEvents.Lock()
+		drain := make(chan struct{})
+		h.queue.Push(func() error {
+			close(drain)
+			return nil
+		})
+		<-drain
 		events := make([]Event[O], 0, len(h.collectionState.outputs))
 		for _, o := range h.collectionState.outputs {
 			o := o
@@ -503,7 +557,7 @@ func (h *manyCollection[I, O]) RegisterBatch(f func(o []Event[O], initialSync bo
 				Event: controllers.EventAdd,
 			})
 		}
-		h.mu.Unlock()
+		h.blockNewEvents.Unlock()
 		if len(events) > 0 {
 			if log.DebugEnabled() {
 				h.log.WithLabels("items", len(events)).Debugf("call handler with initial state")
@@ -559,7 +613,11 @@ func (i *collectionDependencyTracker[I, O]) registerDependency(
 		i.log.WithLabels("collection", d.collectionName).Debugf("register new dependency")
 		syncer.WaitUntilSynced(i.stop)
 		register(func(o []Event[any], initialSync bool) {
-			i.onSecondaryDependencyEvent(d.id, o)
+			i.queue.Push(func() error {
+				log.Errorf("howardjohn: secondary event for %v %v", ptr.TypeName[I](), ptr.TypeName[O]())
+				i.onSecondaryDependencyEvent(d.id, o)
+				return nil
+			})
 		})
 	}
 }
