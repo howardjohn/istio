@@ -222,6 +222,26 @@ func TestCollectionInitialState(t *testing.T) {
 	assert.Equal(t, fetcherSorted(SimpleEndpoints)(), []SimpleEndpoint{{"pod", "svc", "namespace", "1.2.3.4"}})
 }
 
+func TestHowardjohn(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod",
+			Namespace: "namespace",
+			Labels:    map[string]string{"app": "foo"},
+		},
+		Status: corev1.PodStatus{PodIP: "1.2.3.4"},
+	}
+	c := kube.NewFakeClient(
+		pod,
+	)
+	pods := krt.NewInformer[*corev1.Pod](c)
+	stop := test.NewStop(t)
+	c.RunAndWait(stop)
+	SimplePods := SimplePodCollection(pods)
+	assert.Equal(t, SimplePods.Synced().WaitUntilSynced(stop), true)
+	assert.Equal(t, fetcherSorted(SimplePods)(), []SimplePod{{NewNamed(pod), Labeled{map[string]string{"app": "foo"}}, "1.2.3.4"}})
+}
+
 func TestCollectionMerged(t *testing.T) {
 	c := kube.NewFakeClient()
 	pods := krt.NewInformer[*corev1.Pod](c)

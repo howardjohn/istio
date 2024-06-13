@@ -93,7 +93,7 @@ func NewQueueWithID(errorDelay time.Duration, name string) Instance {
 func (q *queueImpl) Push(item Task) {
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
-	log.Errorf("howardjohn: process task.. %v %v", item, q.id)
+	log.Errorf("howardjohn: push task.. %v %v", item, q.id)
 	if !q.closing {
 		q.tasks = append(q.tasks, &queueTask{task: item, enqueueTime: time.Now()})
 		q.metrics.depth.RecordInt(int64(len(q.tasks)))
@@ -139,6 +139,7 @@ func (q *queueImpl) processNextItem() bool {
 	}
 
 	// Run the task.
+	log.Errorf("howardjohn: run task")
 	if err := task.task(); err != nil {
 		delay := q.delay
 		log.Infof("Work item handle failed (%v), retry after delay %v", err, delay)
@@ -146,6 +147,7 @@ func (q *queueImpl) processNextItem() bool {
 			q.Push(task.task)
 		})
 	}
+	log.Errorf("howardjohn: run done")
 	q.metrics.workDuration.Record(time.Since(task.startTime).Seconds())
 
 	return true

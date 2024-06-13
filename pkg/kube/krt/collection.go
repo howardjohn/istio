@@ -365,7 +365,9 @@ func newManyCollection[I, O any](cc Collection[I], hf TransformationMulti[I, O],
 	}
 	var queue queue2.Instance
 	queue = queue2.NewWithSync(func() {
+		log.Errorf("howardjohn: queue synced 1")
 		queue.Push(func() error {
+			log.Errorf("howardjohn: queue synced 2")
 			markSynced()
 			return nil
 		})
@@ -383,7 +385,9 @@ func newManyCollection[I, O any](cc Collection[I], hf TransformationMulti[I, O],
 	//		return nil
 	//	}))
 
-	c.RegisterBatch(func(o []Event[I], initialSync bool) {
+	h.log.Errorf("REGISTER PRI")
+	syncer := c.RegisterBatch(func(o []Event[I], initialSync bool) {
+		log.Errorf("howardjohn: start event")
 		h.blockNewEvents.Lock()
 		defer h.blockNewEvents.Unlock()
 		queue.Push(func() error {
@@ -391,12 +395,15 @@ func newManyCollection[I, O any](cc Collection[I], hf TransformationMulti[I, O],
 			h.onPrimaryInputEvent(o, false)
 			return nil
 		})
+		log.Errorf("howardjohn: end event")
 	}, true)
 	go func() {
+		log.Errorf("howardjohn: start sync wait..")
 		// Wait for primary dependency to be ready
-		if !c.Synced().WaitUntilSynced(h.stop) {
+		if !syncer.WaitUntilSynced(h.stop) {
 			return
 		}
+		log.Errorf("howardjohn: start run queue")
 		queue.Run(h.stop)
 	}()
 

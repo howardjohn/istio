@@ -112,7 +112,7 @@ func TestIndexCollection(t *testing.T) {
 		})
 	}
 
-	SimplePods.Register(TrackerHandler[SimplePod](tt))
+	Collection.Register(TrackerHandler[string](tt))
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

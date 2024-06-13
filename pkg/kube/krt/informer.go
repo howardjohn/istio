@@ -16,7 +16,6 @@ package krt
 
 import (
 	"fmt"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
@@ -104,13 +103,19 @@ func (i *informer[I]) RegisterBatch(f func(o []Event[I], initialSync bool), runE
 	// the handlers are all called async, so we don't end up with the same deadlocks we would have in the other collection types.
 	// While this is quite kludgy, this is an internal interface so its not too bad.
 	if !i.eventHandlers.Insert(f) {
+		log.Errorf("howardjohn: register real")
 		i.inf.AddEventHandler(informerEventHandler[I](func(o Event[I], initialSync bool) {
+			log.Errorf("howardjohn: informer event %v", o.Event)
 			f([]Event[I]{o}, initialSync)
 		}))
+	} else {
+		log.Errorf("howardjohn: register skip")
 	}
 	return pollSyncer{
 		name: fmt.Sprintf("%v handler", i.name()),
-		f:    i.inf.HasSynced,
+		f: func() bool {
+			return i.Synced().HasSynced() && i.inf.HasSynced()
+		},
 	}
 }
 
@@ -146,7 +151,7 @@ func informerEventHandler[I controllers.ComparableObject](handler func(o Event[I
 func WrapClient[I controllers.ComparableObject](c kclient.Informer[I], opts ...CollectionOption) Collection[I] {
 	o := buildCollectionOptions(opts...)
 	if o.name == "" {
-		o.name = fmt.Sprintf("NewInformer[%v]", ptr.TypeName[I]())
+		o.name = fmt.Sprintf("Informer[%v]", ptr.TypeName[I]())
 	}
 	h := &informer[I]{
 		inf:            c,
@@ -163,8 +168,10 @@ func WrapClient[I controllers.ComparableObject](c kclient.Informer[I], opts ...C
 		if !kube.WaitForCacheSync(o.name, o.stop, c.HasSynced) {
 			return
 		}
+		log.Errorf("howardjohn: informer synced initial")
 		// Now, take all our handlers we have built up and register them...
 		handlers := h.eventHandlers.MarkInitialized()
+		log.Errorf("howardjohn: got handlers: %v", len(handlers))
 		for _, h := range handlers {
 			c.AddEventHandler(informerEventHandler[I](func(o Event[I], initialSync bool) {
 				h([]Event[I]{o}, initialSync)
@@ -175,6 +182,8 @@ func WrapClient[I controllers.ComparableObject](c kclient.Informer[I], opts ...C
 			c.ShutdownHandlers()
 			return
 		}
+
+		log.Errorf("howardjohn: handlers done for %v", len(h.inf.List("", klabels.Everything())))
 		close(h.synced)
 		h.log.Infof("%v synced", h.name())
 	}()
