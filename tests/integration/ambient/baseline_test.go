@@ -1369,6 +1369,9 @@ func TestDestinationRuleTLS(t *testing.T) {
 	framework.NewTest(t).Run(func(t framework.TestContext) {
 		dst := apps.ServiceAddressedWaypoint
 		for _, src := range apps.All {
+			if !src.Config().HasProxyCapabilities() {
+				continue
+			}
 			t.NewSubTestf("from %v", src.Config().Service).Run(func(t framework.TestContext) {
 				if src.Config().HasSidecar() && dst.Config().HasAnyWaypointProxy() {
 					// TODO: sidecar -> workload waypoint support
@@ -1390,12 +1393,49 @@ spec:
 				t.ConfigIstio().Eval(apps.Namespace.Name(), map[string]string{
 					"Host": dst.Config().Service,
 				}, originateTLSTmpl).ApplyOrFail(t)
-				res := src.CallOrFail(t, echo.CallOptions{
+				src.CallOrFail(t, echo.CallOptions{
 					To:     dst,
 					Port:   dst.PortForName("https"),
 					Scheme: scheme.HTTP,
 				})
-				t.Log(res)
+			})
+		}
+	})
+}
+
+func TestDestinationRulePROXY(t *testing.T) {
+	framework.NewTest(t).Run(func(t framework.TestContext) {
+		dst := apps.ServiceAddressedWaypoint
+		for _, src := range apps.All {
+			if !src.Config().HasProxyCapabilities() {
+				continue
+			}
+			t.NewSubTestf("from %v", src.Config().Service).Run(func(t framework.TestContext) {
+				if src.Config().HasSidecar() && dst.Config().HasAnyWaypointProxy() {
+					// TODO: sidecar -> workload waypoint support
+					t.Skip("https://github.com/istio/istio/issues/51445")
+				}
+				const originateTLSTmpl = `
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: "{{.Host}}"
+spec:
+  host: "{{.Host}}"
+  trafficPolicy:
+    proxyProtocol:
+      version: V1
+---
+`
+				t.ConfigIstio().Eval(apps.Namespace.Name(), map[string]string{
+					"Host": dst.Config().Service,
+				}, originateTLSTmpl).ApplyOrFail(t)
+				src.CallOrFail(t, echo.CallOptions{
+					To:     dst,
+					Port:   dst.PortForName("http"),
+					Scheme: scheme.HTTP,
+					//NewConnectionPerRequest: true,
+				})
 			})
 		}
 	})

@@ -15,13 +15,13 @@
 package core
 
 import (
-	"fmt"
 	"time"
 
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	internalupstream "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/internal_upstream/v3"
+	proxyprotocol "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/proxy_protocol/v3"
 	tls "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	http "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
@@ -136,10 +136,6 @@ func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(
 	svcMetaList := im.Fields["services"].GetListValue()
 	svcMetaList.Values = append(svcMetaList.Values, buildServiceMetadata(svc))
 
-	// no TLS, we are just going to internal address
-	localCluster.cluster.TransportSocketMatches = nil
-	localCluster.cluster.TransportSocket = util.TunnelHostInternalUpstreamTransportSocket
-
 	connectionPool, outlierDetection, loadBalancer, tls, proxyProtocol := selectTrafficPolicyComponents(policy)
 	if policy != nil {
 		util.AddConfigInfoMetadata(localCluster.cluster.Metadata, drConfig.Meta)
@@ -172,11 +168,9 @@ func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(
 		clusterMode:     DefaultClusterMode,
 		direction:       model.TrafficDirectionInboundVIP,
 	}
-	tlsContext, err := applyWaypointTlsPolicy(opts, tls)
-	if err != nil {
-		log.Errorf("failed to build Upstream TLSContext: %s", err.Error())
-	} else {
-		localCluster.cluster.TransportSocket = &core.TransportSocket{
+	transportSocket := util.RawBufferTransport
+	if tlsContext := buildWaypointTLSContext(opts, tls); tlsContext != nil {
+		transportSocket = &core.TransportSocket{
 			Name: "internal_upstream",
 			ConfigType: &core.TransportSocket_TypedConfig{TypedConfig: protoconv.MessageToAny(&internalupstream.InternalUpstreamTransport{
 				PassthroughMetadata: util.TunnelHostMetadata,
@@ -187,18 +181,30 @@ func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(
 			})},
 		}
 	}
-
-	// Intentionally not added, that is in sidecar:
-	_ = proxyProtocol
-	// * AddConfigInfoMetadata and AddSubsetToMetadata. do we need it? Seems like a legacy idea that is bad for performance
-	// * applyUpstreamTLSSettings, applyUpstreamProxyProtocol. Good to have, but needs implementation
+	if proxyProtocol != nil {
+		// Wrap the existing transport socket. Note this could be RawBuffer or TLS, depending on other config
+		transportSocket = &core.TransportSocket{
+			Name: wellknown.TransportSocketPROXY,
+			ConfigType: &core.TransportSocket_TypedConfig{
+				TypedConfig: protoconv.MessageToAny(&proxyprotocol.ProxyProtocolUpstreamTransport{
+					Config:          &core.ProxyProtocolConfig{Version: core.ProxyProtocolConfig_Version(proxyProtocol.Version)},
+					TransportSocket: transportSocket,
+				},
+				),
+			},
+		}
+	}
+	// no TLS, we are just going to internal address
+	localCluster.cluster.TransportSocketMatches = nil
+	// Wrap the transportSocket with internal listener upstream. Note this could be a raw buffer, PROXY, TLS, etc
+	localCluster.cluster.TransportSocket = util.TunnelHostInternalUpstreamTransportSocket(transportSocket)
 
 	return localCluster.build()
 }
 
-func applyWaypointTlsPolicy(opts *buildClusterOpts, tls *networking.ClientTLSSettings) (*tls.UpstreamTlsContext, error) {
+func buildWaypointTLSContext(opts *buildClusterOpts, tls *networking.ClientTLSSettings) *tls.UpstreamTlsContext {
 	if tls == nil {
-		return nil, nil
+		return nil
 	}
 	// TODO: selector part
 
@@ -206,10 +212,10 @@ func applyWaypointTlsPolicy(opts *buildClusterOpts, tls *networking.ClientTLSSet
 	switch tls.Mode {
 	case networking.ClientTLSSettings_DISABLE:
 		// nothing needed
-		return nil, nil
+		return nil
 	case networking.ClientTLSSettings_ISTIO_MUTUAL:
 		// not supported (?)
-		return nil, nil
+		return nil
 	case networking.ClientTLSSettings_SIMPLE:
 		tlsContext = &tlsv3.UpstreamTlsContext{
 			CommonTlsContext: defaultUpstreamCommonTLSContext(),
@@ -282,9 +288,9 @@ func applyWaypointTlsPolicy(opts *buildClusterOpts, tls *networking.ClientTLSSet
 		} else {
 			// If CredentialName is not set fallback to file based approach
 			if tls.ClientCertificate == "" || tls.PrivateKey == "" {
-				err := fmt.Errorf("failed to apply tls setting for %s: client certificate and private key must not be empty",
+				log.Errorf("failed to apply tls setting for %s: client certificate and private key must not be empty",
 					opts.mutable.cluster.Name)
-				return nil, err
+				return nil
 			}
 			// These are certs being mounted from within the pod and specified in Destination Rules.
 			// Rather than reading directly in Envoy, which does not support rotation, we will
@@ -323,7 +329,7 @@ func applyWaypointTlsPolicy(opts *buildClusterOpts, tls *networking.ClientTLSSet
 	if tlsContext != nil {
 		sec_model.EnforceCompliance(tlsContext.CommonTlsContext)
 	}
-	return tlsContext, nil
+	return tlsContext
 }
 
 // `inbound-vip|protocol|hostname|port`. EDS routing to the internal listener for each pod in the VIP.

@@ -112,5 +112,6 @@ const (
 	// TransportSocketTLS labels the "envoy.transport_sockets.tls" filter.
 	TransportSocketTLS = "envoy.transport_sockets.tls"
 	// TransportSocket Quic
-	TransportSocketQuic = "envoy.transport_sockets.quic"
+	TransportSocketQuic  = "envoy.transport_sockets.quic"
+	TransportSocketPROXY = "envoy.transport_sockets.upstream_proxy_protocol"
 )
