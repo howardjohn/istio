@@ -170,7 +170,7 @@ func (cb *ClusterBuilder) buildUpstreamClusterTLSContext(opts *buildClusterOpts,
 		// `istio-peer-exchange` alpn is only used when using mtls communication between peers.
 		// We add `istio-peer-exchange` to the list of alpn strings.
 		// The code has repeated snippets because We want to use predefined alpn strings for efficiency.
-		if cb.isHttp2Cluster(c) {
+		if isHttp2Cluster(c) {
 			// This is HTTP/2 in-mesh cluster, advertise it with ALPN.
 			if features.MetadataExchange && !features.DisableMxALPN {
 				tlsContext.CommonTlsContext.AlpnProtocols = util.ALPNInMeshH2WithMxc
@@ -191,7 +191,7 @@ func (cb *ClusterBuilder) buildUpstreamClusterTLSContext(opts *buildClusterOpts,
 			Sni:              tls.Sni,
 		}
 
-		cb.setAutoSniAndAutoSanValidation(c, tls)
+		setAutoSniAndAutoSanValidation(c, tls)
 
 		// Use subject alt names specified in service entry if TLS settings does not have subject alt names.
 		if opts.serviceRegistry == provider.External && len(tls.SubjectAltNames) == 0 {
@@ -232,7 +232,7 @@ func (cb *ClusterBuilder) buildUpstreamClusterTLSContext(opts *buildClusterOpts,
 
 		applyTLSDefaults(tlsContext, opts.mesh.GetTlsDefaults())
 
-		if cb.isHttp2Cluster(c) {
+		if isHttp2Cluster(c) {
 			// This is HTTP/2 cluster, advertise it with ALPN.
 			tlsContext.CommonTlsContext.AlpnProtocols = util.ALPNH2Only
 		}
@@ -243,7 +243,7 @@ func (cb *ClusterBuilder) buildUpstreamClusterTLSContext(opts *buildClusterOpts,
 			Sni:              tls.Sni,
 		}
 
-		cb.setAutoSniAndAutoSanValidation(c, tls)
+		setAutoSniAndAutoSanValidation(c, tls)
 
 		// Use subject alt names specified in service entry if TLS settings does not have subject alt names.
 		if opts.serviceRegistry == provider.External && len(tls.SubjectAltNames) == 0 {
@@ -296,7 +296,7 @@ func (cb *ClusterBuilder) buildUpstreamClusterTLSContext(opts *buildClusterOpts,
 
 		applyTLSDefaults(tlsContext, opts.mesh.GetTlsDefaults())
 
-		if cb.isHttp2Cluster(c) {
+		if isHttp2Cluster(c) {
 			// This is HTTP/2 cluster, advertise it with ALPN.
 			tlsContext.CommonTlsContext.AlpnProtocols = util.ALPNH2Only
 		}
@@ -324,7 +324,7 @@ func applyTLSDefaults(tlsContext *tlsv3.UpstreamTlsContext, tlsDefaults *v1alpha
 
 // Set auto_sni if EnableAutoSni feature flag is enabled and if sni field is not explicitly set in DR.
 // Set auto_san_validation if VerifyCertAtClient feature flag is enabled and if there is no explicit SubjectAltNames specified  in DR.
-func (cb *ClusterBuilder) setAutoSniAndAutoSanValidation(mc *clusterWrapper, tls *networking.ClientTLSSettings) {
+func setAutoSniAndAutoSanValidation(mc *clusterWrapper, tls *networking.ClientTLSSettings) {
 	if mc == nil || !features.EnableAutoSni {
 		return
 	}

@@ -15,12 +15,15 @@
 package core
 
 import (
+	"fmt"
 	"time"
 
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	internalupstream "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/internal_upstream/v3"
 	tls "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
+	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	http "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
 	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	metadata "github.com/envoyproxy/go-control-plane/envoy/type/metadata/v3"
@@ -34,13 +37,17 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
 	sec_model "istio.io/istio/pilot/pkg/security/model"
+	"istio.io/istio/pilot/pkg/serviceregistry/provider"
 	"istio.io/istio/pilot/pkg/util/protoconv"
 	"istio.io/istio/pilot/pkg/xds/endpoints"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
+	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/log"
+	"istio.io/istio/pkg/security"
 	"istio.io/istio/pkg/spiffe"
+	"istio.io/istio/pkg/wellknown"
 )
 
 // buildInternalUpstreamCluster builds a single endpoint cluster to the internal listener.
@@ -92,7 +99,15 @@ func (configgen *ConfigGeneratorImpl) buildWaypointInboundClusters(
 }
 
 // `inbound-vip||hostname|port`. EDS routing to the internal listener for each pod in the VIP.
-func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(proxy *model.Proxy, svc *model.Service, port model.Port, subset string, mesh *meshconfig.MeshConfig, policy *networking.TrafficPolicy) *cluster.Cluster {
+func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(
+	proxy *model.Proxy,
+	svc *model.Service,
+	port model.Port,
+	subset string,
+	mesh *meshconfig.MeshConfig,
+	policy *networking.TrafficPolicy,
+	drConfig *config.Config,
+) *cluster.Cluster {
 	clusterName := model.BuildSubsetKey(model.TrafficDirectionInboundVIP, subset, svc.Hostname, port.Port)
 
 	discoveryType := convertResolution(cb.proxyType, svc)
@@ -125,7 +140,13 @@ func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(proxy *model.Proxy, svc
 	localCluster.cluster.TransportSocketMatches = nil
 	localCluster.cluster.TransportSocket = util.TunnelHostInternalUpstreamTransportSocket
 
-	connectionPool, outlierDetection, loadBalancer, _, _ := selectTrafficPolicyComponents(policy)
+	connectionPool, outlierDetection, loadBalancer, tls, proxyProtocol := selectTrafficPolicyComponents(policy)
+	if policy != nil {
+		util.AddConfigInfoMetadata(localCluster.cluster.Metadata, drConfig.Meta)
+	}
+	if subset != "" {
+		util.AddSubsetToMetadata(localCluster.cluster.Metadata, subset)
+	}
 	// Connection pool settings are applicable for both inbound and outbound clusters.
 	if connectionPool == nil {
 		connectionPool = &networking.ConnectionPoolSettings{}
@@ -140,12 +161,169 @@ func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(proxy *model.Proxy, svc
 		localCluster.cluster.LbPolicy = cluster.Cluster_CLUSTER_PROVIDED
 	}
 	maybeApplyEdsConfig(localCluster.cluster)
+	opts := &buildClusterOpts{
+		mesh:            cb.req.Push.Mesh,
+		mutable:         localCluster,
+		policy:          policy,
+		port:            &port,
+		serviceAccounts: nil,
+		serviceTargets:  cb.serviceTargets,
+		istioMtlsSni:    "",
+		clusterMode:     DefaultClusterMode,
+		direction:       model.TrafficDirectionInboundVIP,
+	}
+	tlsContext, err := applyWaypointTlsPolicy(opts, tls)
+	if err != nil {
+		log.Errorf("failed to build Upstream TLSContext: %s", err.Error())
+	} else {
+		localCluster.cluster.TransportSocket = &core.TransportSocket{
+			Name: "internal_upstream",
+			ConfigType: &core.TransportSocket_TypedConfig{TypedConfig: protoconv.MessageToAny(&internalupstream.InternalUpstreamTransport{
+				PassthroughMetadata: util.TunnelHostMetadata,
+				TransportSocket: &core.TransportSocket{
+					Name:       wellknown.TransportSocketTLS,
+					ConfigType: &core.TransportSocket_TypedConfig{TypedConfig: protoconv.MessageToAny(tlsContext)},
+				},
+			})},
+		}
+	}
 
 	// Intentionally not added, that is in sidecar:
+	_ = proxyProtocol
 	// * AddConfigInfoMetadata and AddSubsetToMetadata. do we need it? Seems like a legacy idea that is bad for performance
 	// * applyUpstreamTLSSettings, applyUpstreamProxyProtocol. Good to have, but needs implementation
 
 	return localCluster.build()
+}
+
+func applyWaypointTlsPolicy(opts *buildClusterOpts, tls *networking.ClientTLSSettings) (*tls.UpstreamTlsContext, error) {
+	if tls == nil {
+		return nil, nil
+	}
+	// TODO: selector part
+
+	var tlsContext *tlsv3.UpstreamTlsContext
+	switch tls.Mode {
+	case networking.ClientTLSSettings_DISABLE:
+		// nothing needed
+		return nil, nil
+	case networking.ClientTLSSettings_ISTIO_MUTUAL:
+		// not supported (?)
+		return nil, nil
+	case networking.ClientTLSSettings_SIMPLE:
+		tlsContext = &tlsv3.UpstreamTlsContext{
+			CommonTlsContext: defaultUpstreamCommonTLSContext(),
+			Sni:              tls.Sni,
+		}
+
+		setAutoSniAndAutoSanValidation(opts.mutable, tls)
+
+		// Use subject alt names specified in service entry if TLS settings does not have subject alt names.
+		if opts.serviceRegistry == provider.External && len(tls.SubjectAltNames) == 0 {
+			tls = tls.DeepCopy()
+			tls.SubjectAltNames = opts.serviceAccounts
+		}
+		if tls.CredentialName != "" {
+			// If  credential name is specified at Destination Rule config and originating node is egress gateway, create
+			// SDS config for egress gateway to fetch key/cert at gateway agent.
+			sec_model.ApplyCustomSDSToClientCommonTLSContext(tlsContext.CommonTlsContext, tls, false /* TODO: support this? */)
+		} else {
+			// If CredentialName is not set fallback to files specified in DR.
+			res := security.SdsCertificateConfig{
+				CaCertificatePath: tls.CaCertificates,
+			}
+			// If tls.CaCertificate or CaCertificate in Metadata isn't configured, or tls.InsecureSkipVerify is true,
+			// don't set up SdsSecretConfig
+			if !res.IsRootCertificate() || tls.GetInsecureSkipVerify().GetValue() {
+				tlsContext.CommonTlsContext.ValidationContextType = &tlsv3.CommonTlsContext_ValidationContext{}
+			} else {
+				defaultValidationContext := &tlsv3.CertificateValidationContext{MatchSubjectAltNames: util.StringToExactMatch(tls.SubjectAltNames)}
+				if tls.GetCaCrl() != "" {
+					defaultValidationContext.Crl = &core.DataSource{
+						Specifier: &core.DataSource_Filename{
+							Filename: tls.GetCaCrl(),
+						},
+					}
+				}
+				tlsContext.CommonTlsContext.ValidationContextType = &tlsv3.CommonTlsContext_CombinedValidationContext{
+					CombinedValidationContext: &tlsv3.CommonTlsContext_CombinedCertificateValidationContext{
+						DefaultValidationContext:         defaultValidationContext,
+						ValidationContextSdsSecretConfig: sec_model.ConstructSdsSecretConfig(res.GetRootResourceName()),
+					},
+				}
+
+			}
+		}
+
+		applyTLSDefaults(tlsContext, opts.mesh.GetTlsDefaults())
+
+		if isHttp2Cluster(opts.mutable) {
+			// This is HTTP/2 cluster, advertise it with ALPN.
+			tlsContext.CommonTlsContext.AlpnProtocols = util.ALPNH2Only
+		}
+
+	case networking.ClientTLSSettings_MUTUAL:
+		tlsContext = &tlsv3.UpstreamTlsContext{
+			CommonTlsContext: defaultUpstreamCommonTLSContext(),
+			Sni:              tls.Sni,
+		}
+
+		setAutoSniAndAutoSanValidation(opts.mutable, tls)
+
+		// Use subject alt names specified in service entry if TLS settings does not have subject alt names.
+		if opts.serviceRegistry == provider.External && len(tls.SubjectAltNames) == 0 {
+			tls = tls.DeepCopy()
+			tls.SubjectAltNames = opts.serviceAccounts
+		}
+		if tls.CredentialName != "" {
+			// If credential name is specified at Destination Rule config and originating node is egress gateway, create
+			// SDS config for egress gateway to fetch key/cert at gateway agent.
+			sec_model.ApplyCustomSDSToClientCommonTLSContext(tlsContext.CommonTlsContext, tls, false /* TODO:?*/)
+		} else {
+			// If CredentialName is not set fallback to file based approach
+			if tls.ClientCertificate == "" || tls.PrivateKey == "" {
+				err := fmt.Errorf("failed to apply tls setting for %s: client certificate and private key must not be empty",
+					opts.mutable.cluster.Name)
+				return nil, err
+			}
+			// These are certs being mounted from within the pod and specified in Destination Rules.
+			// Rather than reading directly in Envoy, which does not support rotation, we will
+			// serve them over SDS by reading the files.
+			res := security.SdsCertificateConfig{
+				CertificatePath:   tls.ClientCertificate,
+				PrivateKeyPath:    tls.PrivateKey,
+				CaCertificatePath: tls.CaCertificates,
+			}
+			tlsContext.CommonTlsContext.TlsCertificateSdsSecretConfigs = append(tlsContext.CommonTlsContext.TlsCertificateSdsSecretConfigs,
+				sec_model.ConstructSdsSecretConfig(res.GetResourceName()))
+
+			// If tls.CaCertificate or CaCertificate in Metadata isn't configured, or tls.InsecureSkipVerify is true,
+			// don't set up SdsSecretConfig
+			if !res.IsRootCertificate() || tls.GetInsecureSkipVerify().GetValue() {
+				tlsContext.CommonTlsContext.ValidationContextType = &tlsv3.CommonTlsContext_ValidationContext{}
+			} else {
+				defaultValidationContext := &tlsv3.CertificateValidationContext{MatchSubjectAltNames: util.StringToExactMatch(tls.SubjectAltNames)}
+				if tls.GetCaCrl() != "" {
+					defaultValidationContext.Crl = &core.DataSource{
+						Specifier: &core.DataSource_Filename{
+							Filename: tls.GetCaCrl(),
+						},
+					}
+				}
+				tlsContext.CommonTlsContext.ValidationContextType = &tlsv3.CommonTlsContext_CombinedValidationContext{
+					CombinedValidationContext: &tlsv3.CommonTlsContext_CombinedCertificateValidationContext{
+						DefaultValidationContext:         defaultValidationContext,
+						ValidationContextSdsSecretConfig: sec_model.ConstructSdsSecretConfig(res.GetRootResourceName()),
+					},
+				}
+			}
+		}
+	}
+	// Compliance for Envoy TLS upstreams.
+	if tlsContext != nil {
+		sec_model.EnforceCompliance(tlsContext.CommonTlsContext)
+	}
+	return tlsContext, nil
 }
 
 // `inbound-vip|protocol|hostname|port`. EDS routing to the internal listener for each pod in the VIP.
@@ -157,21 +335,22 @@ func (cb *ClusterBuilder) buildWaypointInboundVIP(proxy *model.Proxy, svcs map[h
 			if port.Protocol == protocol.UDP {
 				continue
 			}
-			dr := CastDestinationRule(cb.sidecarScope.DestinationRule(model.TrafficDirectionInbound, proxy, svc.Hostname).GetRule())
+			cfg := cb.sidecarScope.DestinationRule(model.TrafficDirectionInbound, proxy, svc.Hostname).GetRule()
+			dr := CastDestinationRule(cfg)
 			policy := dr.GetTrafficPolicy()
 			if port.Protocol.IsUnsupported() || port.Protocol.IsTCP() {
-				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp", mesh, policy))
+				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp", mesh, policy, cfg))
 			}
 			if port.Protocol.IsUnsupported() || port.Protocol.IsHTTP() {
-				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http", mesh, policy))
+				clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http", mesh, policy, cfg))
 			}
 			for _, ss := range dr.GetSubsets() {
 				policy = util.MergeSubsetTrafficPolicy(dr.GetTrafficPolicy(), ss.GetTrafficPolicy(), port)
 				if port.Protocol.IsUnsupported() || port.Protocol.IsTCP() {
-					clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp/"+ss.Name, mesh, policy))
+					clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "tcp/"+ss.Name, mesh, policy, cfg))
 				}
 				if port.Protocol.IsUnsupported() || port.Protocol.IsHTTP() {
-					clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http/"+ss.Name, mesh, policy))
+					clusters = append(clusters, cb.buildWaypointInboundVIPCluster(proxy, svc, *port, "http/"+ss.Name, mesh, policy, cfg))
 				}
 			}
 		}

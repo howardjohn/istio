@@ -1365,6 +1365,42 @@ func TestL7JWT(t *testing.T) {
 	})
 }
 
+func TestDestinationRuleTLS(t *testing.T) {
+	framework.NewTest(t).Run(func(t framework.TestContext) {
+		dst := apps.ServiceAddressedWaypoint
+		for _, src := range apps.All {
+			t.NewSubTestf("from %v", src.Config().Service).Run(func(t framework.TestContext) {
+				if src.Config().HasSidecar() && dst.Config().HasAnyWaypointProxy() {
+					// TODO: sidecar -> workload waypoint support
+					t.Skip("https://github.com/istio/istio/issues/51445")
+				}
+				const originateTLSTmpl = `
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: "{{.Host}}"
+spec:
+  host: "{{.Host}}"
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      insecureSkipVerify: true
+---
+`
+				t.ConfigIstio().Eval(apps.Namespace.Name(), map[string]string{
+					"Host": dst.Config().Service,
+				}, originateTLSTmpl).ApplyOrFail(t)
+				res := src.CallOrFail(t, echo.CallOptions{
+					To:     dst,
+					Port:   dst.PortForName("https"),
+					Scheme: scheme.HTTP,
+				})
+				t.Log(res)
+			})
+		}
+	})
+}
+
 func applyDrainingWorkaround(t framework.TestContext) {
 	// Workaround https://github.com/istio/istio/issues/43239
 	t.ConfigIstio().YAML(apps.Namespace.Name(), `apiVersion: networking.istio.io/v1alpha3

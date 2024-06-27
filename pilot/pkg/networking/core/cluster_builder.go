@@ -558,7 +558,7 @@ func http2ProtocolOptions() *core.Http2ProtocolOptions {
 
 // nolint
 // revive:disable-next-line
-func (cb *ClusterBuilder) isHttp2Cluster(mc *clusterWrapper) bool {
+func isHttp2Cluster(mc *clusterWrapper) bool {
 	options := mc.httpProtocolOptions
 	return options != nil && options.GetExplicitHttpConfig().GetHttp2ProtocolOptions() != nil
 }
