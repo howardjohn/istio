@@ -1432,9 +1432,9 @@ spec:
 				}, originateTLSTmpl).ApplyOrFail(t)
 				src.CallOrFail(t, echo.CallOptions{
 					To:     dst,
-					Port:   dst.PortForName("http"),
+					Port:   ports.HTTPWithProxy,
 					Scheme: scheme.HTTP,
-					//NewConnectionPerRequest: true,
+					// NewConnectionPerRequest: true,
 				})
 			})
 		}

@@ -42,6 +42,7 @@ import (
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/security"
 	netutil "istio.io/istio/pkg/util/net"
+	"istio.io/istio/pkg/util/protomarshal"
 	"istio.io/istio/pkg/util/sets"
 )
 
@@ -378,6 +379,8 @@ func (p clusterPatcher) patch(hosts []host.Name, c *cluster.Cluster) *discovery.
 	if cluster == nil {
 		return nil
 	}
+	v, _ := protomarshal.MarshalIndent(c, "  ")
+	log.Errorf("howardjohn: %v", string(v))
 	return &discovery.Resource{Name: cluster.Name, Resource: protoconv.MessageToAny(cluster)}
 }
 

@@ -168,7 +168,7 @@ func (cb *ClusterBuilder) buildWaypointInboundVIPCluster(
 		clusterMode:     DefaultClusterMode,
 		direction:       model.TrafficDirectionInboundVIP,
 	}
-	transportSocket := util.RawBufferTransport
+	transportSocket := util.RawBufferTransport()
 	if tlsContext := buildWaypointTLSContext(opts, tls); tlsContext != nil {
 		transportSocket = &core.TransportSocket{
 			Name: "internal_upstream",
