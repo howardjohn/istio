@@ -1365,19 +1365,16 @@ func TestL7JWT(t *testing.T) {
 	})
 }
 
-func TestDestinationRuleTLS(t *testing.T) {
-	framework.NewTest(t).Run(func(t framework.TestContext) {
-		dst := apps.ServiceAddressedWaypoint
-		for _, src := range apps.All {
-			if !src.Config().HasProxyCapabilities() {
-				continue
-			}
-			t.NewSubTestf("from %v", src.Config().Service).Run(func(t framework.TestContext) {
-				if src.Config().HasSidecar() && dst.Config().HasAnyWaypointProxy() {
-					// TODO: sidecar -> workload waypoint support
-					t.Skip("https://github.com/istio/istio/issues/51445")
-				}
-				const originateTLSTmpl = `
+func TestDestinationRule(t *testing.T) {
+	dst := apps.ServiceAddressedWaypoint
+	cases := []struct {
+		name   string
+		config string
+		call   echo.CallOptions
+	}{
+		{
+			name: "TLS",
+			config: `
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
 metadata:
@@ -1388,34 +1385,16 @@ spec:
     tls:
       mode: SIMPLE
       insecureSkipVerify: true
----
-`
-				t.ConfigIstio().Eval(apps.Namespace.Name(), map[string]string{
-					"Host": dst.Config().Service,
-				}, originateTLSTmpl).ApplyOrFail(t)
-				src.CallOrFail(t, echo.CallOptions{
-					To:     dst,
-					Port:   dst.PortForName("https"),
-					Scheme: scheme.HTTP,
-				})
-			})
-		}
-	})
-}
-
-func TestDestinationRulePROXY(t *testing.T) {
-	framework.NewTest(t).Run(func(t framework.TestContext) {
-		dst := apps.ServiceAddressedWaypoint
-		for _, src := range apps.All {
-			if !src.Config().HasProxyCapabilities() {
-				continue
-			}
-			t.NewSubTestf("from %v", src.Config().Service).Run(func(t framework.TestContext) {
-				if src.Config().HasSidecar() && dst.Config().HasAnyWaypointProxy() {
-					// TODO: sidecar -> workload waypoint support
-					t.Skip("https://github.com/istio/istio/issues/51445")
-				}
-				const originateTLSTmpl = `
+`,
+			call: echo.CallOptions{
+				// Send to HTTPS port but over HTTP
+				Port:   dst.PortForName("https"),
+				Scheme: scheme.HTTP,
+			},
+		},
+		{
+			name: "PROXY",
+			config: `
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
 metadata:
@@ -1425,17 +1404,53 @@ spec:
   trafficPolicy:
     proxyProtocol:
       version: V1
----
-`
-				t.ConfigIstio().Eval(apps.Namespace.Name(), map[string]string{
-					"Host": dst.Config().Service,
-				}, originateTLSTmpl).ApplyOrFail(t)
-				src.CallOrFail(t, echo.CallOptions{
-					To:     dst,
-					Port:   ports.HTTPWithProxy,
-					Scheme: scheme.HTTP,
-					// NewConnectionPerRequest: true,
-				})
+`,
+			call: echo.CallOptions{
+				Port:   ports.HTTPWithProxy,
+				Scheme: scheme.HTTP,
+			},
+		},
+		{
+			name: "H2",
+			config: `
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: "{{.Host}}"
+spec:
+  host: "{{.Host}}"
+  trafficPolicy:
+    connectionPool:
+      http:
+        h2UpgradePolicy: UPGRADE
+`,
+			call: echo.CallOptions{
+				Port:   ports.HTTP,
+				Scheme: scheme.HTTP,
+				Check:  check.And(check.OK(), check.Protocol("HTTP/2.0")),
+			},
+		},
+	}
+	framework.NewTest(t).Run(func(t framework.TestContext) {
+		for _, tt := range cases {
+			t.NewSubTest(tt.name).Run(func(t framework.TestContext) {
+				for _, src := range apps.All {
+					if !src.Config().HasProxyCapabilities() {
+						continue
+					}
+					t.NewSubTestf("from %v", src.Config().Service).Run(func(t framework.TestContext) {
+						if src.Config().HasSidecar() && dst.Config().HasAnyWaypointProxy() {
+							// TODO: sidecar -> workload waypoint support
+							t.Skip("https://github.com/istio/istio/issues/51445")
+						}
+						t.ConfigIstio().Eval(apps.Namespace.Name(), map[string]string{
+							"Host": dst.Config().Service,
+						}, tt.config).ApplyOrFail(t)
+						call := tt.call
+						call.To = dst
+						t.Log(src.CallOrFail(t, call))
+					})
+				}
 			})
 		}
 	})
