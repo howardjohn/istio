@@ -295,8 +295,8 @@ func (l *lruCache[K]) Get(key K) *discovery.Resource {
 
 // get return the cached value if it exists.
 func (l *lruCache[K]) get(key K, token CacheToken) *discovery.Resource {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	//l.mu.Lock()
+	//defer l.mu.Unlock()
 	cv, ok := l.store.Get(key)
 	if !ok || cv.value == nil {
 		miss()
