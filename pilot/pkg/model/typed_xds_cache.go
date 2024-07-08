@@ -16,12 +16,13 @@ package model
 
 import (
 	"fmt"
+	"github.com/cespare/xxhash/v2"
+	"github.com/elastic/go-freelru"
 	"sync"
 	"time"
 
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/google/go-cmp/cmp"
-	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"istio.io/istio/pilot/pkg/features"
@@ -123,7 +124,7 @@ type evictKeyConfigs[K comparable] struct {
 
 type lruCache[K comparable] struct {
 	enableAssertions bool
-	store            simplelru.LRUCache[K, cacheValue]
+	store            *freelru.ShardedLRU[K, cacheValue]
 	// token stores the latest token of the store, used to prevent stale data overwrite.
 	// It is refreshed when Clear or ClearAll are called
 	token       CacheToken
@@ -138,15 +139,25 @@ type lruCache[K comparable] struct {
 
 var _ typedXdsCache[uint64] = &lruCache[uint64]{}
 
-func newLru[K comparable](evictCallback simplelru.EvictCallback[K, cacheValue]) simplelru.LRUCache[K, cacheValue] {
+func newLru[K comparable](evictCallback func(key K, value cacheValue)) *freelru.ShardedLRU[K, cacheValue] {
 	sz := features.XDSCacheMaxSize
 	if sz <= 0 {
 		sz = 20000
 	}
-	l, err := simplelru.NewLRU(sz, evictCallback)
+	hash := func(k K) uint32 {
+			return uint32(any(k).(uint64))
+	}
+	if _, ok := any(*new(K)).(string); ok {
+		hash = func(k K) uint32 {
+			return uint32(xxhash.Sum64String(any(k).(string)))
+		}
+
+	}
+	l, err := freelru.NewSharded[K, cacheValue](uint32(sz), hash)
 	if err != nil {
 		panic(fmt.Errorf("invalid lru configuration: %v", err))
 	}
+	l.SetOnEvict(evictCallback)
 	return l
 }
 

@@ -137,6 +137,7 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker v26.0.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.1 // indirect
+	github.com/elastic/go-freelru v0.13.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.0.4 // indirect
 	github.com/evanphx/json-patch v5.9.0+incompatible // indirect
