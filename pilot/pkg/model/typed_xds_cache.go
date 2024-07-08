@@ -16,6 +16,7 @@ package model
 
 import (
 	"fmt"
+	"github.com/maypok86/otter"
 	"sync"
 	"time"
 
@@ -26,7 +27,6 @@ import (
 
 	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pkg/monitoring"
-	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/util/sets"
 )
 
@@ -123,7 +123,7 @@ type evictKeyConfigs[K comparable] struct {
 
 type lruCache[K comparable] struct {
 	enableAssertions bool
-	store            simplelru.LRUCache[K, cacheValue]
+	store            otter.Cache[K, cacheValue]
 	// token stores the latest token of the store, used to prevent stale data overwrite.
 	// It is refreshed when Clear or ClearAll are called
 	token       CacheToken
@@ -138,12 +138,13 @@ type lruCache[K comparable] struct {
 
 var _ typedXdsCache[uint64] = &lruCache[uint64]{}
 
-func newLru[K comparable](evictCallback simplelru.EvictCallback[K, cacheValue]) simplelru.LRUCache[K, cacheValue] {
+func newLru[K comparable](evictCallback simplelru.EvictCallback[K, cacheValue]) otter.Cache[K, cacheValue] {
 	sz := features.XDSCacheMaxSize
 	if sz <= 0 {
 		sz = 20000
 	}
-	l, err := simplelru.NewLRU(sz, evictCallback)
+	l, err := otter.MustBuilder[K, cacheValue](sz).Build()
+	//l, err := simplelru.NewLRU(sz, evictCallback)
 	if err != nil {
 		panic(fmt.Errorf("invalid lru configuration: %v", err))
 	}
@@ -260,7 +261,7 @@ func (l *lruCache[K]) Add(k K, entry dependents, pushReq *PushRequest, value *di
 
 	dependentConfigs := entry.DependentConfigs()
 	toWrite := cacheValue{value: value, token: token, dependentConfigs: dependentConfigs}
-	l.store.Add(k, toWrite)
+	l.store.Set(k, toWrite)
 	l.token = token
 	l.updateConfigIndex(k, dependentConfigs)
 
@@ -269,7 +270,7 @@ func (l *lruCache[K]) Add(k K, entry dependents, pushReq *PushRequest, value *di
 	if f {
 		l.evictQueue = append(l.evictQueue, evictKeyConfigs[K]{k, cur.dependentConfigs})
 	}
-	size(l.store.Len())
+	size(l.store.Size())
 }
 
 type cacheValue struct {
@@ -284,8 +285,8 @@ func (l *lruCache[K]) Get(key K) *discovery.Resource {
 
 // get return the cached value if it exists.
 func (l *lruCache[K]) get(key K, token CacheToken) *discovery.Resource {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	//l.mu.Lock()
+	//defer l.mu.Unlock()
 	cv, ok := l.store.Get(key)
 	if !ok || cv.value == nil {
 		miss()
@@ -312,10 +313,10 @@ func (l *lruCache[K]) Clear(configs sets.Set[ConfigKey]) {
 		referenced := l.configIndex[hc]
 		delete(l.configIndex, hc)
 		for key := range referenced {
-			l.store.Remove(key)
+			l.store.Delete(key)
 		}
 	}
-	size(l.store.Len())
+	size(l.store.Size())
 }
 
 func (l *lruCache[K]) ClearAll() {
@@ -332,29 +333,33 @@ func (l *lruCache[K]) ClearAll() {
 	clear(l.evictQueue)
 	l.evictQueue = l.evictQueue[:0:1000]
 
-	size(l.store.Len())
+	size(l.store.Size())
 }
 
 func (l *lruCache[K]) Keys() []K {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return slices.Clone(l.store.Keys())
+	// TODO
+	return nil
+	//return slices.Clone(l.store.())
 }
 
 func (l *lruCache[K]) Snapshot() []*discovery.Resource {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	iKeys := l.store.Keys()
-	res := make([]*discovery.Resource, len(iKeys))
-	for i, ik := range iKeys {
-		v, ok := l.store.Get(ik)
-		if !ok {
-			continue
-		}
-
-		res[i] = v.value
-	}
-	return res
+	// TODO
+	return nil
+	//iKeys := l.store.Keys()
+	//res := make([]*discovery.Resource, len(iKeys))
+	//for i, ik := range iKeys {
+	//	v, ok := l.store.Get(ik)
+	//	if !ok {
+	//		continue
+	//	}
+	//
+	//	res[i] = v.value
+	//}
+	//return res
 }
 
 func (l *lruCache[K]) indexLength() int {
