@@ -12,6 +12,8 @@
     'round(%s, %s)' % [query, by],
   quantile(quantile, query):
     'histogram_quantile(%s, %s)' %[quantile, query],
+  label_join(query, dst, sep, sources):
+    'label_join(%s, "%s", "%s", %s)' %[query, dst, sep, std.join(',', std.map(std.escapeStringJson, sources))],
   labels(metric_name, labels):
     // One can nest locals.
     // Every local ends with a semi-colon.

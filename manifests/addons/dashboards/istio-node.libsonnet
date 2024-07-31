@@ -13,40 +13,14 @@ local queries = (import './queries.libsonnet').queries({
   app: '',
 });
 
-dashboard.new('Istio Mesh Dashboard')
+dashboard.new('Istio Node Graph')
 + g.dashboard.withPanels(
-  grid.makeGrid([
-    row.new('Global Traffic')
-    + row.withPanels([
-      panels.timeSeries.statRps('Traffic Volume', queries.globalRequest, 'Total requests in the cluster'),
-      panels.timeSeries.statPercent('Success Rate', queries.globalRequestSuccessRate, 'Total success rate of requests in the cluster'),
-      panels.timeSeries.statRps('4xxs', queries.globalRequest4xx, 'Total 4xx requests in in the cluster'),
-      panels.timeSeries.statRps('5xxs', queries.globalRequest5xx, 'Total 5xx requests in in the cluster'),
-    ]),
-  ], panelHeight=5)
-  + [
-
-    panels.tables.requests('HTTP/gRPC Workloads', queries.httpWorkloads, 'Request information for HTTP services') + {
+panels.node.base('Traffic', queries.nodeGraph, 'Traffic') + {
       gridPos+: {
         h: 16,
         w: 24,
-        y: 10,
+        y: 0,
       },
-    },
-    panels.tables.tcpRequests('TCP Workloads', queries.tcpWorkloads, 'Bytes sent and recieived information for TCP services') + {
-      gridPos+: {
-        h: 16,
-        w: 24,
-        y: 16+10,
-      },
-    },
-  ]
-  +
-  grid.makeGrid([
-    row.new('Istio Component Versions')
-    + row.withPanels([
-      panels.timeSeries.simple('Istio Component Versions', queries.allIstioBuild, 'Version number of each running instance'),
-    ]),
-  ], startY=16+10+16)
+    }
 )
-+ g.dashboard.withUid(std.md5('istio-mesh.json'))
++ g.dashboard.withUid(std.md5('istio-node.json'))

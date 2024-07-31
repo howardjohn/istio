@@ -9,6 +9,17 @@ local overrideSeries = function(series, override)
   );
 
 {
+  node: {
+    local nodes = g.panel.nodeGraph,
+    base(title, targets, desc=''):
+      nodes.new(title)
+      + nodes.queryOptions.withTargets(targets)
+      + nodes.queryOptions.withInterval('5s')
+      + nodes.options.nodes.withMainStatUnit("reqps")
+      + if std.length(desc) > 0 then
+        nodes.panelOptions.withDescription(desc)
+      else {},
+  },
   timeSeries: {
     local timeSeries = g.panel.timeSeries,
     local stat = g.panel.stat,

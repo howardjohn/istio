@@ -8,6 +8,7 @@ local irate = query.irate;
 local labels = query.labels;
 local round = query.round;
 local quantile = query.quantile;
+local label_join = query.label_join;
 
 local variables = import './variables.libsonnet';
 
@@ -328,6 +329,69 @@ local variables = import './variables.libsonnet';
             by=['destination_workload', 'destination_workload_namespace', 'destination_service']
           ))
         ) + q.withFormat('table') + q.withRefId('sent') + q.withInstant(),
+      ],
+
+      local destinations = sum(
+        label_join(
+          rate(labels('istio_requests_total', { reporter: 'destination' })),
+          'id',
+          '',
+          ['destination_canonical_service'],
+        ), by=['id']
+      ),
+      local sources = sum(
+        label_join(
+          rate(labels('istio_requests_total', { reporter: 'source' })),
+          'id',
+          '',
+          ['source_canonical_service'],
+        ), by=['id']
+      ),
+      // Trick to get an add that is union instead of intersection
+      local joined = round(|||
+        (%(destinations)s + %(sources)s)
+        or
+        (%(destinations)s unless %(sources)s)
+        or
+        (%(sources)s unless %(destinations)s)
+      ||| % { sources: sources, destinations: destinations }),
+      local valued = 'count_values without() ("mainstat", %s)' % [joined],
+      local named = label_join(valued, 'title', '', ['id']),
+
+
+        
+      local srcToDst = label_join(
+        sum(
+          rate(labels('istio_requests_total', { reporter: 'source' })),
+          by=['source_canonical_service', 'destination_canonical_service']
+        ),
+        'id',
+        '~',
+        ['source_canonical_service', 'destination_canonical_service'],
+      ),
+      local dstToSrc = label_join(
+        sum(
+          rate(labels('istio_requests_total', { reporter: 'destination' })),
+          by=['source_canonical_service', 'destination_canonical_service']
+        ),
+        'id',
+        '~rev~',
+        ['source_canonical_service', 'destination_canonical_service'],
+      ),      
+      local bidi = round(|||
+        (%(destinations)s + %(sources)s)
+        or
+        (%(destinations)s unless %(sources)s)
+        or
+        (%(sources)s unless %(destinations)s)
+      ||| % { sources: srcToDst, destinations: dstToSrc }),
+      local srcToDestNamed =  label_join(bidi, 'source', '', ['source_canonical_service']),
+      local srcToDestNamed2 =  label_join(srcToDestNamed, 'target', '', ['destination_canonical_service']),
+      local srcToDestNamedValued = 'count_values without() ("mainstat", %s)' % [srcToDestNamed2],
+      nodeGraph: [
+        self.rawQuery(named) + q.withFormat('table') + q.withRefId('nodes') + q.withInstant(),
+
+        self.rawQuery(srcToDestNamedValued) + q.withFormat('table') + q.withRefId('edges') + q.withInstant(),
       ],
     },
 }
