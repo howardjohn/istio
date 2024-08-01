@@ -411,9 +411,9 @@ func (d *DeploymentController) setLabelOverrides(gw gateway.Gateway, input Templ
 	}
 
 	// Default the network label for waypoints if not explicitly set in gateway's labels
-	network := d.injectConfig().Values.Struct().GetGlobal().GetNetwork()
+	network := d.injectConfig().Values.Struct().GetGlobal().GetNetwork().GetValue()
 	if _, ok := gw.GetLabels()[label.TopologyNetwork.Name]; !ok && network != "" && isWaypointGateway {
-		input.InfrastructureLabels[label.TopologyNetwork.Name] = d.injectConfig().Values.Struct().GetGlobal().GetNetwork()
+		input.InfrastructureLabels[label.TopologyNetwork.Name] = d.injectConfig().Values.Struct().GetGlobal().GetNetwork().GetValue()
 	}
 }
 

@@ -867,18 +867,7 @@ func firstCharToLower(s string) string {
 
 // MergeK8sObject does strategic merge for overlayNode on the base object.
 func MergeK8sObject(base *object.K8sObject, overlayNode any, path util.Path) (*object.K8sObject, error) {
-	overlay, err := createPatchObjectFromPath(overlayNode, path)
-	if err != nil {
-		return nil, err
-	}
-	overlayYAML, err := yaml.Marshal(overlay)
-	if err != nil {
-		return nil, err
-	}
-	overlayJSON, err := yaml.YAMLToJSON(overlayYAML)
-	if err != nil {
-		return nil, fmt.Errorf("yamlToJSON error in overlayYAML: %s\n%s", err, overlayYAML)
-	}
+	overlayJSON, err := json.Marshal(overlayNode)
 	baseJSON, err := base.JSON()
 	if err != nil {
 		return nil, err

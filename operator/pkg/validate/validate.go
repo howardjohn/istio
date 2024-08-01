@@ -49,10 +49,10 @@ func CheckIstioOperatorSpec(is v1alpha1.IstioOperatorSpec) util.Errors {
 			errs = util.AppendErrs(errs, f(util.PathFromString(p), v))
 		}
 	}
-	run(val.GetGlobal().GetProxy().GetIncludeIPRanges(), validateIPRangesOrStar, "global.proxy.includeIPRanges")
-	run(val.GetGlobal().GetProxy().GetExcludeIPRanges(), validateIPRangesOrStar, "global.proxy.excludeIPRanges")
-	run(val.GetGlobal().GetProxy().GetIncludeInboundPorts(), validateStringList(validatePortNumberString), "global.proxy.includeInboundPorts")
-	run(val.GetGlobal().GetProxy().GetExcludeInboundPorts(), validateStringList(validatePortNumberString), "global.proxy.excludeInboundPorts")
+	run(val.GetGlobal().GetProxy().GetIncludeIPRanges().GetValue(), validateIPRangesOrStar, "global.proxy.includeIPRanges")
+	run(val.GetGlobal().GetProxy().GetExcludeIPRanges().GetValue(), validateIPRangesOrStar, "global.proxy.excludeIPRanges")
+	run(val.GetGlobal().GetProxy().GetIncludeInboundPorts().GetValue(), validateStringList(validatePortNumberString), "global.proxy.includeInboundPorts")
+	run(val.GetGlobal().GetProxy().GetExcludeInboundPorts().GetValue(), validateStringList(validatePortNumberString), "global.proxy.excludeInboundPorts")
 	run(val.GetMeshConfig(), validateMeshConfig, "meshConfig")
 
 	run(is.MeshConfig, validateMeshConfig, "meshConfig")

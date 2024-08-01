@@ -396,7 +396,7 @@ func filterOutBasedOnResources(ms diag.Messages, resources object.K8sObjects) di
 }
 
 func (h *HelmReconciler) networkName() string {
-	return h.iop.Spec.Values.GetGlobal().GetNetwork()
+	return h.iop.Spec.Values.GetGlobal().GetNetwork().GetValue()
 }
 
 type ProcessDefaultWebhookOptions struct {

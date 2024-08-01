@@ -316,20 +316,20 @@ func ProxyImage(values *opconfig.Values, image *proxyConfig.ProxyImage, annotati
 		tag = fmt.Sprintf("%v", global.GetTag().AsInterface())
 	}
 
-	imageType := global.GetVariant()
+	imageType := global.GetVariant().GetValue()
 	if image != nil {
 		imageType = image.ImageType
 	}
 
-	if global.GetProxy() != nil && global.GetProxy().GetImage() != "" {
-		imageName = global.GetProxy().GetImage()
+	if global.GetProxy() != nil && global.GetProxy().GetImage().GetValue() != "" {
+		imageName = global.GetProxy().GetImage().GetValue()
 	}
 
 	if it, ok := annotations[annotation.SidecarProxyImageType.Name]; ok {
 		imageType = it
 	}
 
-	return imageURL(global.GetHub(), imageName, tag, imageType)
+	return imageURL(global.GetHub().GetValue(), imageName, tag, imageType)
 }
 
 func InboundTrafficPolicyMode(meshConfig *meshconfig.MeshConfig) string {
@@ -376,9 +376,9 @@ func updateImageTypeIfPresent(tag string, imageType string) string {
 
 func extractClusterAndNetwork(params InjectionParameters) (string, string) {
 	metadata := &params.pod.ObjectMeta
-	cluster := params.valuesConfig.asStruct.GetGlobal().GetMultiCluster().GetClusterName()
+	cluster := params.valuesConfig.asStruct.GetGlobal().GetMultiCluster().GetClusterName().GetValue()
 	// TODO allow overriding the values.global network in injection with the system namespace label
-	network := params.valuesConfig.asStruct.GetGlobal().GetNetwork()
+	network := params.valuesConfig.asStruct.GetGlobal().GetNetwork().GetValue()
 	// params may be set from webhook URL, take priority over values yaml
 	if params.proxyEnvs["ISTIO_META_CLUSTER_ID"] != "" {
 		cluster = params.proxyEnvs["ISTIO_META_CLUSTER_ID"]

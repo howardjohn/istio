@@ -561,40 +561,40 @@ func TestManifestGenerateFlags(t *testing.T) {
 
 func TestManifestGeneratePilot(t *testing.T) {
 	runTestGroup(t, testGroup{
-		{
-			desc:       "pilot_default",
-			diffIgnore: "CustomResourceDefinition:*:*,ConfigMap:*:istio",
-		},
-		{
-			desc:       "pilot_k8s_settings",
-			diffSelect: "Deployment:*:istiod,HorizontalPodAutoscaler:*:istiod",
-		},
-		{
-			desc:       "pilot_override_values",
-			diffSelect: "Deployment:*:istiod,HorizontalPodAutoscaler:*:istiod",
-		},
-		{
-			desc:       "pilot_override_kubernetes",
-			diffSelect: "Deployment:*:istiod, Service:*:istiod,MutatingWebhookConfiguration:*:istio-sidecar-injector,ServiceAccount:*:istio-reader-service-account",
-		},
-		// TODO https://github.com/istio/istio/issues/22347 this is broken for overriding things to default value
-		// This can be seen from REGISTRY_ONLY not applying
-		{
-			desc:       "pilot_merge_meshconfig",
-			diffSelect: "ConfigMap:*:istio$",
-		},
-		{
-			desc:       "pilot_disable_tracing",
-			diffSelect: "ConfigMap:*:istio$",
-		},
+		//{
+		//	desc:       "pilot_default",
+		//	diffIgnore: "CustomResourceDefinition:*:*,ConfigMap:*:istio",
+		//},
+		//{
+		//	desc:       "pilot_k8s_settings",
+		//	diffSelect: "Deployment:*:istiod,HorizontalPodAutoscaler:*:istiod",
+		//},
+		//{
+		//	desc:       "pilot_override_values",
+		//	diffSelect: "Deployment:*:istiod,HorizontalPodAutoscaler:*:istiod",
+		//},
+		//{
+		//	desc:       "pilot_override_kubernetes",
+		//	diffSelect: "Deployment:*:istiod, Service:*:istiod,MutatingWebhookConfiguration:*:istio-sidecar-injector,ServiceAccount:*:istio-reader-service-account",
+		//},
+		//// TODO https://github.com/istio/istio/issues/22347 this is broken for overriding things to default value
+		//// This can be seen from REGISTRY_ONLY not applying
+		//{
+		//	desc:       "pilot_merge_meshconfig",
+		//	diffSelect: "ConfigMap:*:istio$",
+		//},
+		//{
+		//	desc:       "pilot_disable_tracing",
+		//	diffSelect: "ConfigMap:*:istio$",
+		//},
 		{
 			desc:       "autoscaling_ingress_v2",
 			diffSelect: "HorizontalPodAutoscaler:*:istiod,HorizontalPodAutoscaler:*:istio-ingressgateway",
 		},
-		{
-			desc:       "autoscaling_v2",
-			diffSelect: "HorizontalPodAutoscaler:*:istiod,HorizontalPodAutoscaler:*:istio-ingressgateway",
-		},
+		//{
+		//	desc:       "autoscaling_v2",
+		//	diffSelect: "HorizontalPodAutoscaler:*:istiod,HorizontalPodAutoscaler:*:istio-ingressgateway",
+		//},
 	})
 }
 

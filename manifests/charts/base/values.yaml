@@ -30,7 +30,7 @@ defaults:
 
     # Validation webhook configuration url
     # For example: https://$remotePilotAddress:15017/validate
-    validationURL: "xyz"
+    validationURL: ""
     # Validation webhook caBundle value. Useful when running pilot with a well known cert
     validationCABundle: ""
 
