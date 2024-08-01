@@ -17,6 +17,8 @@ package validate
 import (
 	"errors"
 	"fmt"
+	meshconfig "istio.io/api/mesh/v1alpha1"
+	"istio.io/istio/pkg/config/validation/agent"
 	"reflect"
 
 	"google.golang.org/protobuf/types/known/structpb"
@@ -28,7 +30,6 @@ import (
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/util/protomarshal"
 )
-
 
 // CheckIstioOperator validates the operator CR.
 func CheckIstioOperator(iop *operator_v1alpha1.IstioOperator) error {
@@ -43,30 +44,36 @@ func CheckIstioOperator(iop *operator_v1alpha1.IstioOperator) error {
 // CheckIstioOperatorSpec validates the values in the given Installer spec, using the field map DefaultValidations to
 // call the appropriate validation function. checkRequiredFields determines whether missing mandatory fields generate
 // errors.
-func CheckIstioOperatorSpec(is *v1alpha1.IstioOperatorSpec) (util.Errors) {
+func CheckIstioOperatorSpec(is *v1alpha1.IstioOperatorSpec) util.Errors {
 	if is == nil {
 		return nil
 	}
 	val := is.Values
 	var errs util.Errors
 
-	run := func(v any, f ValidatorFunc, p util.Path) {
+	run := func(v any, f ValidatorFunc, p string) {
 		if !reflect.ValueOf(v).IsZero() {
-			errs = util.AppendErrs(errs, f(p, v))
+			errs = util.AppendErrs(errs, f(util.PathFromString(p), v))
 		}
 	}
-	run(val.GetGlobal().GetProxy().GetIncludeIPRanges(), validateIPRangesOrStar, util.PathFromString("global.proxy.includeIPRanges"))
-	run(val.GetGlobal().GetProxy().GetExcludeIPRanges(), validateIPRangesOrStar, util.PathFromString("global.proxy.excludeIPRanges"))
-	run(val.GetGlobal().GetProxy().GetIncludeInboundPorts(), validateStringList(validatePortNumberString), util.PathFromString("global.proxy.includeInboundPorts"))
-	run(val.GetGlobal().GetProxy().GetExcludeInboundPorts(), validateStringList(validatePortNumberString), util.PathFromString("global.proxy.excludeInboundPorts"))
-	run(val.GetMeshConfig(), validateMeshConfig, util.PathFromString("meshConfig"))
+	run(val.GetGlobal().GetProxy().GetIncludeIPRanges(), validateIPRangesOrStar, "global.proxy.includeIPRanges")
+	run(val.GetGlobal().GetProxy().GetExcludeIPRanges(), validateIPRangesOrStar, "global.proxy.excludeIPRanges")
+	run(val.GetGlobal().GetProxy().GetIncludeInboundPorts(), validateStringList(validatePortNumberString), "global.proxy.includeInboundPorts")
+	run(val.GetGlobal().GetProxy().GetExcludeInboundPorts(), validateStringList(validatePortNumberString), "global.proxy.excludeInboundPorts")
+	run(val.GetMeshConfig(), validateMeshConfig, "meshConfig")
 
-	//run(is.GetMeshConfig())
-	run(is.GetHub(), validateHub, util.PathFromString("hub"))
-	run(is.GetTag(), validateTag, util.PathFromString("tag"))
-	run(is.GetRevision(), validateRevision, util.PathFromString("revision"))
-	run(is.GetComponents().GetIngressGateways(), validateGatewayName, util.PathFromString("components.ingressGateways"))
-	run(is.GetComponents().GetEgressGateways(), validateGatewayName, util.PathFromString("components.egressGateways"))
+	run(is.MeshConfig, func(_ util.Path, i any) util.Errors {
+		_, err := agent.ValidateMeshConfig(i.(*meshconfig.MeshConfig))
+		if err != nil {
+			return util.Errors{err}
+		}
+		return nil
+	}, "meshConfig")
+	run(is.Hub, validateHub, "hub")
+	run(is.Tag, validateTag, "tag")
+	run(is.Revision, validateRevision, "revision")
+	run(is.Components.IngressGateways, validateGatewayName, "components.ingressGateways")
+	run(is.Components.EgressGateways, validateGatewayName, "components.egressGateways")
 	return errs
 }
 

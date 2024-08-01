@@ -16,6 +16,7 @@ package util
 
 import (
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
 	"strings"
 
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -85,7 +86,7 @@ type values struct {
 }
 
 type gatewaysConfig struct {
-	SecurityContext     *v1alpha1.PodSecurityContext `json:"securityContext" patchStrategy:"merge"`
+	SecurityContext     *corev1.PodSecurityContext `json:"securityContext" patchStrategy:"merge"`
 	IstioEgressgateway  *egressGatewayConfig         `json:"istio-egressgateway" patchStrategy:"merge"`
 	IstioIngressgateway *ingressGatewayConfig        `json:"istio-ingressgateway" patchStrategy:"merge"`
 }

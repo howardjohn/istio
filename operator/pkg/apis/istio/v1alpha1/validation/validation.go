@@ -128,7 +128,7 @@ func validateFeatures(values *v1alpha1.Values, spec *v1alpha1.IstioOperatorSpec)
 
 // CheckAutoScaleAndReplicaCount warns when autoscaleEnabled is true and k8s replicaCount is set.
 func CheckAutoScaleAndReplicaCount(values *v1alpha1.Values, spec *v1alpha1.IstioOperatorSpec) (errs util.Errors, warnings []string) {
-	if values.GetPilot().GetAutoscaleEnabled().GetValue() && spec.GetComponents().GetPilot().GetK8S().GetReplicaCount() > 1 {
+	if values.GetPilot().GetAutoscaleEnabled().GetValue() && spec.Components.Pilot.GetK8S().GetReplicaCount() > 1 {
 		warnings = append(warnings,
 			"components.pilot.k8s.replicaCount should not be set when values.pilot.autoscaleEnabled is true")
 	}

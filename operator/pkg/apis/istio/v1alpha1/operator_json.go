@@ -16,23 +16,21 @@
 
 package v1alpha1
 
-import (
-	bytes "bytes"
-	"github.com/golang/protobuf/jsonpb" // nolint: depguard
-)
+// nolint: depguard
 
-// MarshalJSON is a custom marshaler for IstioOperatorSpec
-func (in *IstioOperatorSpec) MarshalJSON() ([]byte, error) {
-	str, err := OperatorMarshaler.MarshalToString(in)
-	return []byte(str), err
-}
-
-// UnmarshalJSON is a custom unmarshaler for IstioOperatorSpec
-func (in *IstioOperatorSpec) UnmarshalJSON(b []byte) error {
-	return OperatorUnmarshaler.Unmarshal(bytes.NewReader(b), in)
-}
-
-var (
-	OperatorMarshaler   = &jsonpb.Marshaler{}
-	OperatorUnmarshaler = &jsonpb.Unmarshaler{}
-)
+//
+//// MarshalJSON is a custom marshaler for IstioOperatorSpec
+//func (in *IstioOperatorSpec) MarshalJSON() ([]byte, error) {
+//	str, err := OperatorMarshaler.MarshalToString(in)
+//	return []byte(str), err
+//}
+//
+//// UnmarshalJSON is a custom unmarshaler for IstioOperatorSpec
+//func (in *IstioOperatorSpec) UnmarshalJSON(b []byte) error {
+//	return OperatorUnmarshaler.Unmarshal(bytes.NewReader(b), in)
+//}
+//
+//var (
+//	OperatorMarshaler   = &jsonpb.Marshaler{}
+//	OperatorUnmarshaler = &jsonpb.Unmarshaler{}
+//)

@@ -16,18 +16,18 @@ package validate
 
 import (
 	"fmt"
-	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
-	"istio.io/istio/pkg/test/util/assert"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"sigs.k8s.io/yaml"
 
+	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	"istio.io/istio/operator/pkg/helm"
 	"istio.io/istio/operator/pkg/object"
 	"istio.io/istio/operator/pkg/util"
 	"istio.io/istio/pkg/test/env"
+	"istio.io/istio/pkg/test/util/assert"
 )
 
 var repoRootDir string
