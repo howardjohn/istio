@@ -225,7 +225,7 @@ a:
 		t.Run(tt.desc, func(t *testing.T) {
 			rc := &v1alpha1.KubernetesResourcesSpec{}
 			oh := makeOverlayHeader(tt.path, tt.value)
-			err := util.UnmarshalWithJSONPB(oh, rc, false)
+			err := util.UnmarshalYaml(oh, rc, false)
 			if err != nil {
 				t.Fatalf("unmarshalWithJSONPB(%s): got error %s for string:\n%s\n", tt.desc, err, oh)
 			}
@@ -475,7 +475,7 @@ spec:
 		t.Run(tt.desc, func(t *testing.T) {
 			rc := &v1alpha1.KubernetesResourcesSpec{}
 			t.Log(makeOverlayHeader(tt.path, tt.value))
-			err := util.UnmarshalWithJSONPB(makeOverlayHeader(tt.path, tt.value), rc, false)
+			err := util.UnmarshalYaml(makeOverlayHeader(tt.path, tt.value), rc, false)
 			if err != nil {
 				t.Fatalf("unmarshalWithJSONPB(%s): got error %s", tt.desc, err)
 			}

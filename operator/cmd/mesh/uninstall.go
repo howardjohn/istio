@@ -155,11 +155,8 @@ func uninstall(cmd *cobra.Command, ctx cli.Context, rootArgs *RootArgs, uiArgs *
 	// owning name label.
 	var iop *iopv1alpha1.IstioOperator
 	if uiArgs.filename == "" {
-		emptyiops := &v1alpha1.IstioOperatorSpec{Profile: "empty", Revision: uiArgs.revision}
-		iop, err = translate.IOPStoIOP(emptyiops, "", "")
-		if err != nil {
-			return err
-		}
+		emptyiops := v1alpha1.IstioOperatorSpec{Profile: "empty", Revision: uiArgs.revision}
+		iop = translate.IOPStoIOP(emptyiops, "", "")
 	} else {
 		_, iop, err = manifest.GenManifests([]string{uiArgs.filename},
 			applyFlagAliases(uiArgs.set, uiArgs.manifestsPath, uiArgs.revision), uiArgs.force, kubeClient, l)

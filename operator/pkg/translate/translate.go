@@ -22,15 +22,13 @@ import (
 	"sort"
 	"strings"
 
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/structpb"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/yaml"
 
-	"istio.io/istio/operator/pkg/apis/istio"
 	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	iopv1alpha1 "istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	"istio.io/istio/operator/pkg/name"
@@ -40,6 +38,7 @@ import (
 	"istio.io/istio/operator/pkg/version"
 	oversion "istio.io/istio/operator/version"
 	"istio.io/istio/pkg/log"
+	"istio.io/istio/pkg/ptr"
 	"istio.io/istio/pkg/util/sets"
 )
 
@@ -187,7 +186,7 @@ func NewTranslator() *Translator {
 }
 
 // OverlayK8sSettings overlays k8s settings from iop over the manifest objects, based on t's translation mappings.
-func (t *Translator) OverlayK8sSettings(yml string, iop *v1alpha1.IstioOperatorSpec, componentName name.ComponentName,
+func (t *Translator) OverlayK8sSettings(yml string, iop v1alpha1.IstioOperatorSpec, componentName name.ComponentName,
 	resourceName string, index int) (string, error,
 ) {
 	// om is a map of kind:name string to Object ptr.
@@ -283,7 +282,7 @@ func (t *Translator) OverlayK8sSettings(yml string, iop *v1alpha1.IstioOperatorS
 		// Apply the workaround for merging service ports with (port,protocol) composite
 		// keys instead of just the merging by port.
 		if inPathParts[len(inPathParts)-1] == "Service" {
-			if msvc, ok := m.(*v1alpha1.ServiceSpec); ok {
+			if msvc, ok := m.(*v1.ServiceSpec); ok {
 				mergedObj, err = t.fixMergedObjectWithCustomServicePortOverlay(oo, msvc, mergedObj)
 				if err != nil {
 					return "", err
@@ -301,7 +300,7 @@ func (t *Translator) OverlayK8sSettings(yml string, iop *v1alpha1.IstioOperatorS
 	return yml, nil
 }
 
-func skipReplicaCountWithAutoscaleEnabled(iop *v1alpha1.IstioOperatorSpec, componentName name.ComponentName) bool {
+func skipReplicaCountWithAutoscaleEnabled(iop v1alpha1.IstioOperatorSpec, componentName name.ComponentName) bool {
 	switch componentName {
 	case name.PilotComponentName:
 		return iop.Values.GetPilot().GetAutoscaleEnabled().GetValue()
@@ -315,9 +314,9 @@ func skipReplicaCountWithAutoscaleEnabled(iop *v1alpha1.IstioOperatorSpec, compo
 }
 
 func (t *Translator) fixMergedObjectWithCustomServicePortOverlay(oo *object.K8sObject,
-	msvc *v1alpha1.ServiceSpec, mergedObj *object.K8sObject,
+	msvc *v1.ServiceSpec, mergedObj *object.K8sObject,
 ) (*object.K8sObject, error) {
-	var basePorts []*v1.ServicePort
+	var basePorts []v1.ServicePort
 	bps, _, err := unstructured.NestedSlice(oo.Unstructured(), "spec", "ports")
 	if err != nil {
 		return nil, err
@@ -329,31 +328,7 @@ func (t *Translator) fixMergedObjectWithCustomServicePortOverlay(oo *object.K8sO
 	if err = json.Unmarshal(bby, &basePorts); err != nil {
 		return nil, err
 	}
-	overlayPorts := make([]*v1.ServicePort, 0, len(msvc.GetPorts()))
-	for _, p := range msvc.GetPorts() {
-		var pr v1.Protocol
-		switch strings.ToLower(p.GetProtocol()) {
-		case "udp":
-			pr = v1.ProtocolUDP
-		default:
-			pr = v1.ProtocolTCP
-		}
-		port := &v1.ServicePort{
-			Name:     p.GetName(),
-			Protocol: pr,
-			Port:     p.GetPort(),
-			NodePort: p.GetNodePort(),
-		}
-		if p.GetAppProtocol() != "" {
-			ap := p.AppProtocol
-			port.AppProtocol = &ap
-		}
-		if p.TargetPort != nil {
-			port.TargetPort = p.TargetPort.ToKubernetes()
-		}
-		overlayPorts = append(overlayPorts, port)
-	}
-	mergedPorts := strategicMergePorts(basePorts, overlayPorts)
+	mergedPorts := strategicMergePorts(basePorts, msvc.Ports)
 	mpby, err := json.Marshal(mergedPorts)
 	if err != nil {
 		return nil, err
@@ -396,7 +371,7 @@ func portIndexOf(element portWithProtocol, data []portWithProtocol) int {
 // an issue when we have to expose the same port with different protocols.
 // See - https://github.com/kubernetes/kubernetes/issues/103544
 // TODO(su225): Remove this once the above issue is addressed in Kubernetes
-func strategicMergePorts(base, overlay []*v1.ServicePort) []*v1.ServicePort {
+func strategicMergePorts(base, overlay []v1.ServicePort) []v1.ServicePort {
 	// We want to keep the original port order with base first and then the newly
 	// added ports through the overlay. This is because there are some cases where
 	// port order actually matters. For instance, some cloud load balancers use the
@@ -409,18 +384,12 @@ func strategicMergePorts(base, overlay []*v1.ServicePort) []*v1.ServicePort {
 	// appending newly added ports through overlay.
 	portPriority := make([]portWithProtocol, 0, len(base)+len(overlay))
 	for _, p := range base {
-		if p.Protocol == "" {
-			p.Protocol = v1.ProtocolTCP
-		}
-		portPriority = append(portPriority, portWithProtocol{port: p.Port, protocol: p.Protocol})
+		portPriority = append(portPriority, portWithProtocol{port: p.Port, protocol: ptr.NonEmptyOrDefault(p.Protocol, v1.ProtocolTCP)})
 	}
 	for _, p := range overlay {
-		if p.Protocol == "" {
-			p.Protocol = v1.ProtocolTCP
-		}
-		portPriority = append(portPriority, portWithProtocol{port: p.Port, protocol: p.Protocol})
+		portPriority = append(portPriority, portWithProtocol{port: p.Port, protocol: ptr.NonEmptyOrDefault(p.Protocol, v1.ProtocolTCP)})
 	}
-	sortFn := func(ps []*v1.ServicePort) func(int, int) bool {
+	sortFn := func(ps []v1.ServicePort) func(int, int) bool {
 		return func(i, j int) bool {
 			pi := portIndexOf(portWithProtocol{port: ps[i].Port, protocol: ps[i].Protocol}, portPriority)
 			pj := portIndexOf(portWithProtocol{port: ps[j].Port, protocol: ps[j].Protocol}, portPriority)
@@ -437,17 +406,20 @@ func strategicMergePorts(base, overlay []*v1.ServicePort) []*v1.ServicePort {
 	}
 	// first add the base and then replace appropriate
 	// keys with the items in the overlay list
-	merged := make(map[portWithProtocol]*v1.ServicePort)
+	merged := make(map[portWithProtocol]v1.ServicePort)
 	for _, p := range base {
-		key := portWithProtocol{port: p.Port, protocol: p.Protocol}
+		key := portWithProtocol{port: p.Port, protocol: ptr.NonEmptyOrDefault(p.Protocol, v1.ProtocolTCP)}
 		merged[key] = p
 	}
 	for _, p := range overlay {
-		key := portWithProtocol{port: p.Port, protocol: p.Protocol}
+		key := portWithProtocol{port: p.Port, protocol: ptr.NonEmptyOrDefault(p.Protocol, v1.ProtocolTCP)}
 		merged[key] = p
 	}
-	res := make([]*v1.ServicePort, 0, len(merged))
+	res := make([]v1.ServicePort, 0, len(merged))
 	for _, pv := range merged {
+		if pv.Protocol == "" {
+			pv.Protocol = v1.ProtocolTCP
+		}
 		res = append(res, pv)
 	}
 	sort.Slice(res, sortFn(res))
@@ -455,7 +427,7 @@ func strategicMergePorts(base, overlay []*v1.ServicePort) []*v1.ServicePort {
 }
 
 // ProtoToValues traverses the supplied IstioOperatorSpec and returns a values.yaml translation from it.
-func (t *Translator) ProtoToValues(ii *v1alpha1.IstioOperatorSpec) (string, error) {
+func (t *Translator) ProtoToValues(ii v1alpha1.IstioOperatorSpec) (string, error) {
 	root, err := t.ProtoToHelmValues2(ii)
 	if err != nil {
 		return "", err
@@ -488,7 +460,7 @@ var topLevelFields = sets.New(
 )
 
 // TranslateHelmValues creates a Helm values.yaml config data tree from iop using the given translator.
-func (t *Translator) TranslateHelmValues(iop *v1alpha1.IstioOperatorSpec, componentsSpec any, componentName name.ComponentName) (string, error) {
+func (t *Translator) TranslateHelmValues(iop v1alpha1.IstioOperatorSpec, componentsSpec any, componentName name.ComponentName) (string, error) {
 	apiVals := make(map[string]any)
 
 	// First, translate the IstioOperator API to helm Values.
@@ -504,7 +476,7 @@ func (t *Translator) TranslateHelmValues(iop *v1alpha1.IstioOperatorSpec, compon
 	scope.Debugf("Values translated from IstioOperator API:\n%s", apiValsStr)
 
 	// Add global overlay from IstioOperatorSpec.Values/UnvalidatedValues.
-	b, err := json.Marshal(iop.GetValues())
+	b, err := json.Marshal(iop.Values)
 	if err != nil {
 		return "", err
 	}
@@ -512,7 +484,7 @@ func (t *Translator) TranslateHelmValues(iop *v1alpha1.IstioOperatorSpec, compon
 	if err := json.Unmarshal(b, &globalVals); err != nil {
 		return "", err
 	}
-	globalUnvalidatedVals := iop.GetUnvalidatedValues().AsMap()
+	globalUnvalidatedVals := iop.UnvalidatedValues
 
 	mergedVals, err := util.OverlayTrees(apiVals, globalVals)
 	if err != nil {
@@ -632,7 +604,7 @@ func (t *Translator) ComponentMap(cns string) *ComponentMaps {
 	return t.ComponentMaps[cn]
 }
 
-func (t *Translator) ProtoToHelmValues2(ii *v1alpha1.IstioOperatorSpec) (map[string]any, error) {
+func (t *Translator) ProtoToHelmValues2(ii v1alpha1.IstioOperatorSpec) (map[string]any, error) {
 	by, err := json.Marshal(ii)
 	if err != nil {
 		return nil, err
@@ -704,7 +676,7 @@ func (t *Translator) ProtoToHelmValues(node any, root map[string]any, path util.
 
 // setComponentProperties translates properties (e.g., enablement and namespace) of each component
 // in the baseYAML values tree, based on feature/component inheritance relationship.
-func (t *Translator) setComponentProperties(root map[string]any, iop *v1alpha1.IstioOperatorSpec) error {
+func (t *Translator) setComponentProperties(root map[string]any, iop v1alpha1.IstioOperatorSpec) error {
 	var keys []string
 	for k := range t.ComponentMaps {
 		if k != name.IngressComponentName && k != name.EgressComponentName {
@@ -749,9 +721,8 @@ func (t *Translator) setComponentProperties(root map[string]any, iop *v1alpha1.I
 		}
 
 		tag, found, _ := tpath.GetFromStructPath(iop, "Components."+string(cn)+".Tag")
-		tagv, ok := tag.(*structpb.Value)
-		if found && !(ok && util.ValueString(tagv) == "") {
-			if err := tpath.WriteNode(root, util.PathFromString(c.ToHelmValuesTreeRoot+"."+HelmValuesTagSubpath), util.ValueString(tagv)); err != nil {
+		if found {
+			if err := tpath.WriteNode(root, util.PathFromString(c.ToHelmValuesTreeRoot+"."+HelmValuesTagSubpath), tag.(string)); err != nil {
 				return err
 			}
 		}
@@ -772,7 +743,7 @@ func (t *Translator) setComponentProperties(root map[string]any, iop *v1alpha1.I
 
 // IsComponentEnabled reports whether the component with name cn is enabled, according to the translations in t,
 // and the contents of ocp.
-func (t *Translator) IsComponentEnabled(cn name.ComponentName, iop *v1alpha1.IstioOperatorSpec) (bool, error) {
+func (t *Translator) IsComponentEnabled(cn name.ComponentName, iop v1alpha1.IstioOperatorSpec) (bool, error) {
 	if t.ComponentMaps[cn] == nil {
 		return false, nil
 	}
@@ -1010,46 +981,9 @@ func createPatchObjectFromPath(node any, path util.Path) (map[string]any, error)
 }
 
 // IOPStoIOP takes an IstioOperatorSpec and returns a corresponding IstioOperator with the given name and namespace.
-func IOPStoIOP(iops proto.Message, name, namespace string) (*iopv1alpha1.IstioOperator, error) {
-	iopStr, err := IOPStoIOPstr(iops, name, namespace)
-	if err != nil {
-		return nil, err
+func IOPStoIOP(iops v1alpha1.IstioOperatorSpec, name, namespace string) *iopv1alpha1.IstioOperator {
+	return &iopv1alpha1.IstioOperator{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec:       iops,
 	}
-	iop, err := istio.UnmarshalIstioOperator(iopStr, false)
-	if err != nil {
-		return nil, err
-	}
-	return iop, nil
-}
-
-// IOPStoIOPstr takes an IstioOperatorSpec and returns a corresponding IstioOperator string with the given name and namespace.
-func IOPStoIOPstr(iops proto.Message, name, namespace string) (string, error) {
-	iopsStr, err := util.MarshalWithJSONPB(iops)
-	if err != nil {
-		return "", err
-	}
-	spec, err := tpath.AddSpecRoot(iopsStr)
-	if err != nil {
-		return "", err
-	}
-
-	tmpl := `
-apiVersion: install.istio.io/v1alpha1
-kind: IstioOperator
-metadata:
-  namespace: {{ .Namespace }}
-  name: {{ .Name }} 
-`
-	// Passing into template causes reformatting, use simple concatenation instead.
-	tmpl += spec
-
-	type Temp struct {
-		Namespace string
-		Name      string
-	}
-	ts := Temp{
-		Namespace: namespace,
-		Name:      name,
-	}
-	return util.RenderTemplate(tmpl, ts)
 }

@@ -35,7 +35,6 @@ const operatorSubdirFilePath = "manifests"
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
 		name     string
-		value    *v1alpha12.IstioOperatorSpec
 		values   string
 		errors   string
 		warnings string
@@ -216,12 +215,9 @@ components:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			iop := tt.value
-			if tt.values != "" {
-				iop = &v1alpha12.IstioOperatorSpec{}
-				if err := util.UnmarshalWithJSONPB(tt.values, iop, true); err != nil {
-					t.Fatal(err)
-				}
+			iop := v1alpha12.IstioOperatorSpec{}
+			if err := util.UnmarshalYaml(tt.values, &iop, true); err != nil {
+				t.Fatal(err)
 			}
 			err, warnings := validation.ValidateConfig(iop)
 			if tt.errors != err.String() {

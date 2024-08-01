@@ -460,17 +460,6 @@ func DefaultObjectOrder() func(o *K8sObject) int {
 	}
 }
 
-// KindObjects returns the subset of objs with the given kind.
-func KindObjects(objs K8sObjects, kind string) K8sObjects {
-	var ret K8sObjects
-	for _, o := range objs {
-		if o.Kind == kind {
-			ret = append(ret, o)
-		}
-	}
-	return ret
-}
-
 // ParseK8SYAMLToIstioOperator parses a IstioOperator CustomResource YAML string and unmarshals in into
 // an IstioOperatorSpec object. It returns the object and an API group/version with it.
 func ParseK8SYAMLToIstioOperator(yml string) (*v1alpha1.IstioOperator, *schema.GroupVersionKind, error) {
@@ -483,7 +472,7 @@ func ParseK8SYAMLToIstioOperator(yml string) (*v1alpha1.IstioOperator, *schema.G
 		return nil, nil, err
 	}
 	gvk := o.GroupVersionKind()
-	v1alpha1.SetNamespace(iop.Spec, o.Namespace)
+	v1alpha1.SetNamespace(&iop.Spec, o.Namespace)
 	return iop, &gvk, nil
 }
 

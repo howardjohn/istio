@@ -270,7 +270,7 @@ func anchored(res ...*regexp.Regexp) *regexp.Regexp {
 type ValidatorFunc func(path util.Path, i any) util.Errors
 
 // UnmarshalIOP unmarshals a string containing IstioOperator as YAML.
-func UnmarshalIOP(iopYAML string) (*v1alpha1.IstioOperator, error) {
+func UnmarshalIOP(iopYAML string, strict bool) (*v1alpha1.IstioOperator, error) {
 	// Remove creationDate (util.UnmarshalWithJSONPB fails if present)
 	mapIOP := make(map[string]any)
 	if err := yaml.Unmarshal([]byte(iopYAML), &mapIOP); err != nil {
@@ -285,8 +285,14 @@ func UnmarshalIOP(iopYAML string) (*v1alpha1.IstioOperator, error) {
 	}
 	iop := &v1alpha1.IstioOperator{}
 
-	if err := yaml.UnmarshalStrict([]byte(iopYAML), iop); err != nil {
-		return nil, fmt.Errorf("%s:\n\nYAML:\n%s", err, iopYAML)
+	if strict {
+		if err := yaml.UnmarshalStrict([]byte(iopYAML), iop); err != nil {
+			return nil, fmt.Errorf("%s:\n\nYAML:\n%s", err, iopYAML)
+		}
+	} else {
+		if err := yaml.Unmarshal([]byte(iopYAML), iop); err != nil {
+			return nil, fmt.Errorf("%s:\n\nYAML:\n%s", err, iopYAML)
+		}
 	}
 	return iop, nil
 }

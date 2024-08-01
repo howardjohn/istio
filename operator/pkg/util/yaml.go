@@ -116,6 +116,18 @@ func UnmarshalWithJSONPB(y string, out proto.Message, allowUnknownField bool) er
 	return nil
 }
 
+func UnmarshalYaml(y string, out any, allowUnknownField bool) error {
+	// Treat nothing as nothing.  If we called jsonpb.Unmarshaler it would return the same.
+	if y == "" {
+		return nil
+	}
+	if allowUnknownField {
+		return yaml.Unmarshal([]byte(y), out)
+	} else {
+		return yaml.UnmarshalStrict([]byte(y), out)
+	}
+}
+
 // OverlayTrees performs a sequential JSON strategic of overlays over base.
 func OverlayTrees(base map[string]any, overlays ...map[string]any) (map[string]any, error) {
 	needsOverlay := false

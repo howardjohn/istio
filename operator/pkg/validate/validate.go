@@ -17,11 +17,7 @@ package validate
 import (
 	"errors"
 	"fmt"
-	meshconfig "istio.io/api/mesh/v1alpha1"
-	"istio.io/istio/pkg/config/validation/agent"
 	"reflect"
-
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	operator_v1alpha1 "istio.io/istio/operator/pkg/apis/istio/v1alpha1"
@@ -44,10 +40,7 @@ func CheckIstioOperator(iop *operator_v1alpha1.IstioOperator) error {
 // CheckIstioOperatorSpec validates the values in the given Installer spec, using the field map DefaultValidations to
 // call the appropriate validation function. checkRequiredFields determines whether missing mandatory fields generate
 // errors.
-func CheckIstioOperatorSpec(is *v1alpha1.IstioOperatorSpec) util.Errors {
-	if is == nil {
-		return nil
-	}
+func CheckIstioOperatorSpec(is v1alpha1.IstioOperatorSpec) util.Errors {
 	val := is.Values
 	var errs util.Errors
 
@@ -62,13 +55,7 @@ func CheckIstioOperatorSpec(is *v1alpha1.IstioOperatorSpec) util.Errors {
 	run(val.GetGlobal().GetProxy().GetExcludeInboundPorts(), validateStringList(validatePortNumberString), "global.proxy.excludeInboundPorts")
 	run(val.GetMeshConfig(), validateMeshConfig, "meshConfig")
 
-	run(is.MeshConfig, func(_ util.Path, i any) util.Errors {
-		_, err := agent.ValidateMeshConfig(i.(*meshconfig.MeshConfig))
-		if err != nil {
-			return util.Errors{err}
-		}
-		return nil
-	}, "meshConfig")
+	run(is.MeshConfig, validateMeshConfig, "meshConfig")
 	run(is.Hub, validateHub, "hub")
 	run(is.Tag, validateTag, "tag")
 	run(is.Revision, validateRevision, "revision")
@@ -101,7 +88,7 @@ func validateHub(path util.Path, val any) util.Errors {
 }
 
 func validateTag(path util.Path, val any) util.Errors {
-	return validateWithRegex(path, val.(*structpb.Value).GetStringValue(), TagRegexp)
+	return validateWithRegex(path, val.(string), TagRegexp)
 }
 
 func validateRevision(_ util.Path, val any) util.Errors {

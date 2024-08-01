@@ -1,14 +1,18 @@
 package v1alpha1
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"google.golang.org/protobuf/types/known/structpb"
-	wrappers "google.golang.org/protobuf/types/known/wrapperspb"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
+	"istio.io/istio/pkg/config/mesh"
+	"istio.io/istio/pkg/util/protomarshal"
 )
 
 type IstioOperatorSpec struct {
@@ -40,7 +44,7 @@ type IstioOperatorSpec struct {
 	// This option is currently experimental.
 	CompatibilityVersion string `json:"compatibilityVersion,omitempty"`
 	// Config used by control plane components internally.
-	MeshConfig *meshconfig.MeshConfig `json:"meshConfig,omitempty"`
+	MeshConfig *MeshConfig `json:"meshConfig,omitempty"`
 	// Kubernetes resource settings, enablement and component-specific settings that are not internal to the
 	// component.
 	Components IstioComponentSetSpec `json:"components,omitempty"`
@@ -54,10 +58,10 @@ type IstioOperatorSpec struct {
 }
 
 type IstioComponentSetSpec struct {
-	Base    *ComponentSpec `json:"base,omitempty"`
-	Pilot   *ComponentSpec `json:"pilot,omitempty"`
-	Cni     *ComponentSpec `json:"cni,omitempty"`
-	Ztunnel *ComponentSpec `json:"ztunnel,omitempty"`
+	Base    *BaseComponentSpec `json:"base,omitempty"`
+	Pilot   *ComponentSpec     `json:"pilot,omitempty"`
+	Cni     *ComponentSpec     `json:"cni,omitempty"`
+	Ztunnel *ComponentSpec     `json:"ztunnel,omitempty"`
 	// Remote cluster using an external control plane.
 	IstiodRemote    *ComponentSpec `json:"istiodRemote,omitempty"`
 	IngressGateways []*GatewaySpec `json:"ingressGateways,omitempty"`
@@ -66,14 +70,29 @@ type IstioComponentSetSpec struct {
 
 type ComponentSpec struct {
 	// Selects whether this component is installed.
-	Enabled *wrappers.BoolValue `json:"enabled,omitempty"`
+	Enabled *BoolValue `json:"enabled,omitempty"`
+	// Namespace for the component.
+	Namespace string `json:"namespace,omitempty"`
+	// Hub for the component (overrides top level hub setting).
+	Hub string `json:"hub,omitempty"`
+	// Tag for the component (overrides top level tag setting).
+	Tag string `json:"tag,omitempty"`
+	// Arbitrary install time configuration for the component.
+	Spec *structpb.Struct `json:"spec,omitempty"`
+	// Kubernetes resource spec.
+	K8S *KubernetesResourcesSpec `json:"k8s,omitempty"`
+}
+
+type BaseComponentSpec struct {
+	// Selects whether this component is installed.
+	Enabled *BoolValue `json:"enabled,omitempty"`
 	// Kubernetes resource spec.
 	K8S *KubernetesResourcesSpec `json:"k8s,omitempty"`
 }
 
 type GatewaySpec struct {
 	// Selects whether this gateway is installed.
-	Enabled *wrappers.BoolValue `json:"enabled,omitempty"`
+	Enabled *BoolValue `json:"enabled,omitempty"`
 	// Namespace for the gateway.
 	Namespace string `json:"namespace,omitempty"`
 	// Name for the gateway.
@@ -83,7 +102,7 @@ type GatewaySpec struct {
 	// Hub for the component (overrides top level hub setting).
 	Hub string `json:"hub,omitempty"`
 	// Tag for the component (overrides top level tag setting).
-	Tag *structpb.Value `json:"tag,omitempty"`
+	Tag string `json:"tag,omitempty"`
 	// Kubernetes resource spec.
 	K8S *KubernetesResourcesSpec `json:"k8s,omitempty"`
 }
@@ -158,3 +177,65 @@ type K8SObjectOverlay_PathValue struct {
 	// All values are strings but are converted into appropriate type based on schema.
 	Value *structpb.Value `json:"value,omitempty"`
 }
+
+type BoolValue struct {
+	bool
+}
+
+func (b *BoolValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(b.GetValue())
+}
+
+func (b *BoolValue) UnmarshalJSON(bytes []byte) error {
+	bb := false
+	if err := json.Unmarshal(bytes, &bb); err != nil {
+		return err
+	}
+	*b = BoolValue{bb}
+	return nil
+}
+
+func (b *BoolValue) GetValue() bool {
+	if b == nil {
+		return false
+	}
+	return b.bool
+}
+
+var (
+	_ json.Unmarshaler = &BoolValue{}
+	_ json.Marshaler   = &BoolValue{}
+)
+
+type MeshConfig struct {
+	*meshconfig.MeshConfig
+}
+
+func (m MeshConfig) Inner() *meshconfig.MeshConfig {
+	return m.MeshConfig
+}
+
+func (m *MeshConfig) UnmarshalJSON(bytes []byte) error {
+	// ApplyMeshConfigWithoutValidation allows unknown fields, so we first check for unknown fields
+	if err := protomarshal.ApplyYAMLStrict(string(bytes), mesh.DefaultMeshConfig()); err != nil {
+		return fmt.Errorf("failed to unmarshal mesh config: %v", err)
+	}
+	mc, err := mesh.ApplyMeshConfigWithoutValidation(string(bytes), mesh.DefaultMeshConfig())
+	if err != nil {
+		return err
+	}
+	*m = MeshConfig{MeshConfig: mc}
+	return nil
+}
+
+func (m *MeshConfig) MarshalJSON() ([]byte, error) {
+	if m.MeshConfig == nil {
+		return nil, nil
+	}
+	return protomarshal.Marshal(m.MeshConfig)
+}
+
+var (
+	_ json.Unmarshaler = &MeshConfig{}
+	_ json.Marshaler   = &MeshConfig{}
+)

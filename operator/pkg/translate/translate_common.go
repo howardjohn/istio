@@ -17,8 +17,6 @@ package translate
 import (
 	"fmt"
 
-	"google.golang.org/protobuf/types/known/wrapperspb"
-
 	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	"istio.io/istio/operator/pkg/name"
 	"istio.io/istio/operator/pkg/tpath"
@@ -28,7 +26,7 @@ import (
 // IsComponentEnabledInSpec reports whether the given component is enabled in the given spec.
 // IsComponentEnabledInSpec assumes that controlPlaneSpec has been validated.
 // TODO: remove extra validations when comfort level is high enough.
-func IsComponentEnabledInSpec(componentName name.ComponentName, controlPlaneSpec *v1alpha1.IstioOperatorSpec) (bool, error) {
+func IsComponentEnabledInSpec(componentName name.ComponentName, controlPlaneSpec v1alpha1.IstioOperatorSpec) (bool, error) {
 	componentNodeI, found, err := tpath.GetFromStructPath(controlPlaneSpec, "Components."+string(componentName)+".Enabled")
 	if err != nil {
 		return false, fmt.Errorf("error in IsComponentEnabledInSpec GetFromStructPath componentEnabled for component=%s: %s",
@@ -37,14 +35,14 @@ func IsComponentEnabledInSpec(componentName name.ComponentName, controlPlaneSpec
 	if !found || componentNodeI == nil {
 		return false, nil
 	}
-	componentNode, ok := componentNodeI.(*wrapperspb.BoolValue)
+	componentNode, ok := componentNodeI.(*v1alpha1.BoolValue)
 	if !ok {
-		return false, fmt.Errorf("component %s enabled has bad type %T, expect *v1alpha1.BoolValueForPB", componentName, componentNodeI)
+		return false, fmt.Errorf("component %s enabled has bad type %T, expect *v1alpha1.BoolValues", componentName, componentNodeI)
 	}
 	if componentNode == nil {
 		return false, nil
 	}
-	return componentNode.Value, nil
+	return componentNode.GetValue(), nil
 }
 
 // IsComponentEnabledFromValue get whether component is enabled in helm value.yaml tree.
@@ -91,29 +89,27 @@ func OverlayValuesEnablement(baseYAML, fileOverlayYAML, setOverlayYAML string) (
 }
 
 // GetEnabledComponents get all the enabled components from the given istio operator spec
-func GetEnabledComponents(iopSpec *v1alpha1.IstioOperatorSpec) ([]string, error) {
+func GetEnabledComponents(iopSpec v1alpha1.IstioOperatorSpec) ([]string, error) {
 	var enabledComponents []string
-	if iopSpec.Components != nil {
-		for _, c := range name.AllCoreComponentNames {
-			enabled, err := IsComponentEnabledInSpec(c, iopSpec)
-			if err != nil {
-				return nil, fmt.Errorf("failed to check if component: %s is enabled or not: %v", string(c), err)
-			}
-			if enabled {
-				enabledComponents = append(enabledComponents, string(c))
-			}
+	for _, c := range name.AllCoreComponentNames {
+		enabled, err := IsComponentEnabledInSpec(c, iopSpec)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if component: %s is enabled or not: %v", string(c), err)
 		}
-		for _, c := range iopSpec.Components.IngressGateways {
-			if c != nil && c.Enabled.GetValue() {
-				enabledComponents = append(enabledComponents, string(name.IngressComponentName))
-				break
-			}
+		if enabled {
+			enabledComponents = append(enabledComponents, string(c))
 		}
-		for _, c := range iopSpec.Components.EgressGateways {
-			if c != nil && c.Enabled.GetValue() {
-				enabledComponents = append(enabledComponents, string(name.EgressComponentName))
-				break
-			}
+	}
+	for _, c := range iopSpec.Components.IngressGateways {
+		if c != nil && c.Enabled.GetValue() {
+			enabledComponents = append(enabledComponents, string(name.IngressComponentName))
+			break
+		}
+	}
+	for _, c := range iopSpec.Components.EgressGateways {
+		if c != nil && c.Enabled.GetValue() {
+			enabledComponents = append(enabledComponents, string(name.EgressComponentName))
+			break
 		}
 	}
 

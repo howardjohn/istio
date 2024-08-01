@@ -144,7 +144,7 @@ values:
 meshConfig:
   foo: bar
 `,
-			wantErrs: makeErrors([]string{`failed to unmarshall mesh config: unknown field "foo" in istio.mesh.v1alpha1.MeshConfig`}),
+			wantErrs: makeErrors([]string{`error unmarshaling JSON: while decoding JSON: failed to unmarshal mesh config: unknown field "foo" in istio.mesh.v1alpha1.MeshConfig`}),
 		},
 		{
 			desc: "Unknown mesh config values",
@@ -187,10 +187,13 @@ values:
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			ispec := &v1alpha1.IstioOperatorSpec{}
-			err := util.UnmarshalWithJSONPB(tt.yamlStr, ispec, false)
+			ispec := v1alpha1.IstioOperatorSpec{}
+			err := util.UnmarshalYaml(tt.yamlStr, &ispec, false)
 			if err != nil {
-				t.Fatalf("unmarshalWithJSONPB(%s): got error %s", tt.desc, err)
+				if gotErrs, wantErrs := err, tt.wantErrs; !util.EqualErrors(util.NewErrs(gotErrs), wantErrs) {
+					t.Fatalf("ProtoToValues(%s)(%v): gotErrs:%s, wantErrs:%s", tt.desc, tt.yamlStr, gotErrs, wantErrs)
+				}
+				return
 			}
 
 			errs := CheckIstioOperatorSpec(ispec)

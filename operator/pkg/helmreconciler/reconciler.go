@@ -35,7 +35,6 @@ import (
 	"istio.io/api/label"
 	revtag "istio.io/istio/istioctl/pkg/tag"
 	"istio.io/istio/istioctl/pkg/util/formatting"
-	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	istioV1Alpha1 "istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	"istio.io/istio/operator/pkg/helm"
 	"istio.io/istio/operator/pkg/name"
@@ -115,7 +114,6 @@ func NewHelmReconciler(client client.Client, kubeClient kube.Client, iop *istioV
 	if iop == nil {
 		// allows controller code to function for cases where IOP is not provided (e.g. operator remove).
 		iop = &istioV1Alpha1.IstioOperator{}
-		iop.Spec = &v1alpha1.IstioOperatorSpec{}
 	}
 	return &HelmReconciler{
 		client:           client,
@@ -339,7 +337,7 @@ func (h *HelmReconciler) analyzeWebhooks(whs []string) error {
 	sa := local.NewSourceAnalyzer(analysis.Combine("webhook", &webhook.Analyzer{
 		SkipServiceCheck:             true,
 		SkipDefaultRevisionedWebhook: DetectIfTagWebhookIsNeeded(h.iop, exists),
-	}), resource.Namespace(h.iop.Spec.GetNamespace()), resource.Namespace(istioV1Alpha1.Namespace(h.iop.Spec)), nil)
+	}), resource.Namespace(h.iop.Spec.Namespace), resource.Namespace(istioV1Alpha1.Namespace(h.iop.Spec)), nil)
 
 	// Add in-cluster webhooks
 	objects := &unstructured.UnstructuredList{}
@@ -398,7 +396,7 @@ func filterOutBasedOnResources(ms diag.Messages, resources object.K8sObjects) di
 }
 
 func (h *HelmReconciler) networkName() string {
-	return h.iop.Spec.GetValues().GetGlobal().GetNetwork()
+	return h.iop.Spec.Values.GetGlobal().GetNetwork()
 }
 
 type ProcessDefaultWebhookOptions struct {
@@ -408,7 +406,7 @@ type ProcessDefaultWebhookOptions struct {
 
 func DetectIfTagWebhookIsNeeded(iop *istioV1Alpha1.IstioOperator, exists bool) bool {
 	rev := iop.Spec.Revision
-	isDefaultInstallation := rev == "" && iop.Spec.Components.Pilot != nil && iop.Spec.Components.Pilot.Enabled.Value
+	isDefaultInstallation := rev == "" && iop.Spec.Components.Pilot != nil && iop.Spec.Components.Pilot.Enabled.GetValue()
 	operatorManageWebhooks := operatorManageWebhooks(iop)
 	return !operatorManageWebhooks && (!exists || isDefaultInstallation)
 }
@@ -480,11 +478,11 @@ func applyManifests(kubeClient kube.Client, manifests string) error {
 
 // operatorManageWebhooks returns .Values.global.operatorManageWebhooks from the Istio Operator.
 func operatorManageWebhooks(iop *istioV1Alpha1.IstioOperator) bool {
-	return iop.Spec.GetValues().GetGlobal().GetOperatorManageWebhooks().GetValue()
+	return iop.Spec.Values.GetGlobal().GetOperatorManageWebhooks().GetValue()
 }
 
 // validateEnableNamespacesByDefault checks whether there is .Values.sidecarInjectorWebhook.enableNamespacesByDefault set in the Istio Operator.
 // Should be used in installer when deciding whether to enable an automatic sidecar injection in all namespaces.
 func validateEnableNamespacesByDefault(iop *istioV1Alpha1.IstioOperator) bool {
-	return iop.Spec.GetValues().GetSidecarInjectorWebhook().GetEnableNamespacesByDefault().GetValue()
+	return iop.Spec.Values.GetSidecarInjectorWebhook().GetEnableNamespacesByDefault().GetValue()
 }

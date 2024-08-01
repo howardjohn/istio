@@ -25,9 +25,21 @@ import (
 	github_com_golang_protobuf_jsonpb "github.com/golang/protobuf/jsonpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"istio.io/istio/pkg/util/protomarshal"
 )
 
 var _ github_com_golang_protobuf_jsonpb.JSONPBUnmarshaler = &IntOrString{}
+
+// MarshalJSON is a custom marshaler for Values
+func (in *Values) MarshalJSON() ([]byte, error) {
+	return protomarshal.Marshal(in)
+}
+
+// UnmarshalJSON is a custom unmarshaler for Values
+func (in *Values) UnmarshalJSON(b []byte) error {
+	return protomarshal.UnmarshalAllowUnknown(b, in)
+}
 
 // UnmarshalJSON implements the json.Unmarshaller interface.
 func (this *IntOrString) UnmarshalJSON(value []byte) error {

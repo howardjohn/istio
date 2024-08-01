@@ -311,27 +311,25 @@ func GetTagVersion(tagInfo string) (string, error) {
 // from the given input files and --set flag overlays.
 func getProfileNSAndEnabledComponents(iop *v1alpha12.IstioOperator) (string, string, []string, error) {
 	var enabledComponents []string
-	if iop.Spec.Components != nil {
-		for _, c := range name.AllCoreComponentNames {
-			enabled, err := translate.IsComponentEnabledInSpec(c, iop.Spec)
-			if err != nil {
-				return "", "", nil, fmt.Errorf("failed to check if component: %s is enabled or not: %v", string(c), err)
-			}
-			if enabled {
-				enabledComponents = append(enabledComponents, name.UserFacingComponentName(c))
-			}
+	for _, c := range name.AllCoreComponentNames {
+		enabled, err := translate.IsComponentEnabledInSpec(c, iop.Spec)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("failed to check if component: %s is enabled or not: %v", string(c), err)
 		}
-		for _, c := range iop.Spec.Components.IngressGateways {
-			if c.Enabled.GetValue() {
-				enabledComponents = append(enabledComponents, name.UserFacingComponentName(name.IngressComponentName))
-				break
-			}
+		if enabled {
+			enabledComponents = append(enabledComponents, name.UserFacingComponentName(c))
 		}
-		for _, c := range iop.Spec.Components.EgressGateways {
-			if c.Enabled.GetValue() {
-				enabledComponents = append(enabledComponents, name.UserFacingComponentName(name.EgressComponentName))
-				break
-			}
+	}
+	for _, c := range iop.Spec.Components.IngressGateways {
+		if c.Enabled.GetValue() {
+			enabledComponents = append(enabledComponents, name.UserFacingComponentName(name.IngressComponentName))
+			break
+		}
+	}
+	for _, c := range iop.Spec.Components.EgressGateways {
+		if c.Enabled.GetValue() {
+			enabledComponents = append(enabledComponents, name.UserFacingComponentName(name.EgressComponentName))
+			break
 		}
 	}
 
@@ -366,7 +364,7 @@ func detectDefaultWebhookChange(p Printer, client kube.CLIClient, iop *v1alpha12
 	}
 	// If there is no default webhook but a revisioned default webhook exists,
 	// and we are installing a new IOP with default semantics, the default webhook shifts.
-	if exists && len(mwhs.Items) == 0 && iop.Spec.GetRevision() == "" {
+	if exists && len(mwhs.Items) == 0 && iop.Spec.Revision == "" {
 		p.Println("The default revision has been updated to point to this installation.")
 	}
 	return nil

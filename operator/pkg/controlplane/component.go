@@ -45,7 +45,7 @@ var scope = log.RegisterScope("installer", "installer")
 // Options defines options for a component.
 type options struct {
 	// installSpec is the global IstioOperatorSpec.
-	InstallSpec *v1alpha1.IstioOperatorSpec
+	InstallSpec v1alpha1.IstioOperatorSpec
 	// translator is the translator for this component.
 	Translator *translate.Translator
 	// Namespace is the namespace for this component.

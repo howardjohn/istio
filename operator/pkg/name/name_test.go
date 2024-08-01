@@ -283,7 +283,7 @@ func TestUserFacingComponentName(t *testing.T) {
 func TestNamespace(t *testing.T) {
 	type args struct {
 		componentName    ComponentName
-		controlPlaneSpec *v1alpha1.IstioOperatorSpec
+		controlPlaneSpec v1alpha1.IstioOperatorSpec
 	}
 	tests := []struct {
 		name    string
@@ -295,7 +295,7 @@ func TestNamespace(t *testing.T) {
 			name: "DefaultNamespace and componentNamespace are unset",
 			args: args{
 				componentName: CNIComponentName,
-				controlPlaneSpec: &v1alpha1.IstioOperatorSpec{
+				controlPlaneSpec: v1alpha1.IstioOperatorSpec{
 					Hub: "docker.io",
 				},
 			},
@@ -306,10 +306,10 @@ func TestNamespace(t *testing.T) {
 			name: "DefaultNamespace is set and componentNamespace in empty",
 			args: args{
 				componentName: CNIComponentName,
-				controlPlaneSpec: &v1alpha1.IstioOperatorSpec{
+				controlPlaneSpec: v1alpha1.IstioOperatorSpec{
 					Hub:       "docker.io",
 					Namespace: "istio-system",
-					Components: &v1alpha1.IstioComponentSetSpec{
+					Components: v1alpha1.IstioComponentSetSpec{
 						Cni: &v1alpha1.ComponentSpec{
 							Namespace: "",
 						},
@@ -323,10 +323,10 @@ func TestNamespace(t *testing.T) {
 			name: "DefaultNamespace is set and componentNamespace is unset",
 			args: args{
 				componentName: CNIComponentName,
-				controlPlaneSpec: &v1alpha1.IstioOperatorSpec{
+				controlPlaneSpec: v1alpha1.IstioOperatorSpec{
 					Hub:       "docker.io",
 					Namespace: "istio-system",
-					Components: &v1alpha1.IstioComponentSetSpec{
+					Components: v1alpha1.IstioComponentSetSpec{
 						Cni: &v1alpha1.ComponentSpec{},
 					},
 				},
@@ -338,10 +338,10 @@ func TestNamespace(t *testing.T) {
 			name: "DefaultNamespace and componentNamespace are set and not empty",
 			args: args{
 				componentName: CNIComponentName,
-				controlPlaneSpec: &v1alpha1.IstioOperatorSpec{
+				controlPlaneSpec: v1alpha1.IstioOperatorSpec{
 					Hub:       "docker.io",
 					Namespace: "istio-system",
-					Components: &v1alpha1.IstioComponentSetSpec{
+					Components: v1alpha1.IstioComponentSetSpec{
 						Cni: &v1alpha1.ComponentSpec{
 							Namespace: "istio-test",
 						},

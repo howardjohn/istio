@@ -97,12 +97,9 @@ components:
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			var iop *v1alpha1.IstioOperatorSpec
-			if tt.values != "" {
-				iop = &v1alpha1.IstioOperatorSpec{}
-				if err := util.UnmarshalWithJSONPB(tt.values, iop, true); err != nil {
-					t.Fatal(err)
-				}
+			iop := v1alpha1.IstioOperatorSpec{}
+			if err := util.UnmarshalYaml(tt.values, &iop, true); err != nil {
+				t.Fatal(err)
 			}
 
 			got := skipReplicaCountWithAutoscaleEnabled(iop, tt.component)
@@ -167,18 +164,15 @@ components:
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			var iop *v1alpha1.IstioOperatorSpec
-			if tt.iopString != "" {
-				iop = &v1alpha1.IstioOperatorSpec{}
-				if err := util.UnmarshalWithJSONPB(tt.iopString, iop, true); err != nil {
-					t.Fatal(err)
-				}
+			iop := v1alpha1.IstioOperatorSpec{}
+			if err := util.UnmarshalYaml(tt.iopString, &iop, true); err != nil {
+				t.Fatal(err)
 			}
 			translator := NewTranslator()
 			serviceObj, err := object.ParseYAMLToK8sObject([]byte(serviceString))
 			assert.NoError(t, err)
 			obj, err := translator.fixMergedObjectWithCustomServicePortOverlay(serviceObj,
-				iop.Components.IngressGateways[0].GetK8S().GetService(), serviceObj)
+				iop.Components.IngressGateways[0].K8S.Service, serviceObj)
 			assert.NoError(t, err)
 			val := obj.UnstructuredObject().Object["spec"].(map[string]interface{})["ports"].([]interface{})[0]
 			apVal, found, _ := tpath.GetFromStructPath(val, "appProtocol")

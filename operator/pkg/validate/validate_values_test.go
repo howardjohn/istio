@@ -141,7 +141,7 @@ global:
 			root := &v1alpha1.Values{}
 			err := yaml.Unmarshal([]byte(tt.yamlStr), &root)
 			assert.NoError(t, err)
-			errs := CheckIstioOperatorSpec(&v1alpha1.IstioOperatorSpec{Values: root})
+			errs := CheckIstioOperatorSpec(v1alpha1.IstioOperatorSpec{Values: root})
 			if gotErr, wantErr := errs, tt.wantErrs; !util.EqualErrors(gotErr, wantErr) {
 				t.Errorf("CheckValues(%s)(%v): gotErr:\n%s, wantErr:\n%s", tt.desc, tt.yamlStr, gotErr, wantErr)
 			}
@@ -186,7 +186,6 @@ func TestValidateValuesFromProfile(t *testing.T) {
 }
 
 func TestValidateValuesFromValuesYAMLs(t *testing.T) {
-	valuesYAML := ""
 	var allFiles []string
 	manifestDir := filepath.Join(repoRootDir, "manifests/charts")
 	for _, sd := range []string{"base", "gateways"} {
@@ -202,14 +201,13 @@ func TestValidateValuesFromValuesYAMLs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err.Error())
 		}
-		valuesYAML, err = util.OverlayYAML(valuesYAML, string(b))
-		if err != nil {
-			t.Fatal(err.Error())
-		}
-
+		mv := map[string]any{}
+		assert.NoError(t, yaml.Unmarshal(b, &mv))
+		valuesYAML, err := yaml.Marshal(mv["defaults"])
+		assert.NoError(t, err)
 		root := &v1alpha1.Values{}
-		assert.NoError(t, yaml.Unmarshal([]byte(valuesYAML), &root))
-		if err := CheckIstioOperatorSpec(&v1alpha1.IstioOperatorSpec{Values: root}); err != nil {
+		assert.NoError(t, yaml.Unmarshal(valuesYAML, &root))
+		if err := CheckIstioOperatorSpec(v1alpha1.IstioOperatorSpec{Values: root}); err != nil {
 			t.Fatalf("file %s failed validation with: %s", f, err)
 		}
 	}

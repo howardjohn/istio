@@ -35,7 +35,7 @@ type deprecatedSettings struct {
 }
 
 // ValidateConfig  calls validation func for every defined element in Values
-func ValidateConfig(iopls *v1alpha1.IstioOperatorSpec) (util.Errors, string) {
+func ValidateConfig(iopls v1alpha1.IstioOperatorSpec) (util.Errors, string) {
 	var validationErrors util.Errors
 	var warningMessages []string
 	iopvalString := util.ToYAMLWithJSONPB(iopls.Values)
@@ -75,7 +75,7 @@ func firstCharsToLower(s string) string {
 		s)
 }
 
-func checkDeprecatedSettings(iop *v1alpha1.IstioOperatorSpec) (util.Errors, []string) {
+func checkDeprecatedSettings(iop v1alpha1.IstioOperatorSpec) (util.Errors, []string) {
 	var errs util.Errors
 	messages := []string{}
 	warningSettings := []deprecatedSettings{
@@ -108,10 +108,10 @@ func checkDeprecatedSettings(iop *v1alpha1.IstioOperatorSpec) (util.Errors, []st
 	return errs, messages
 }
 
-type FeatureValidator func(*v1alpha1.Values, *v1alpha1.IstioOperatorSpec) (util.Errors, []string)
+type FeatureValidator func(*v1alpha1.Values, v1alpha1.IstioOperatorSpec) (util.Errors, []string)
 
 // validateFeatures check whether the config semantically make sense. For example, feature X and feature Y can't be enabled together.
-func validateFeatures(values *v1alpha1.Values, spec *v1alpha1.IstioOperatorSpec) (errs util.Errors, warnings []string) {
+func validateFeatures(values *v1alpha1.Values, spec v1alpha1.IstioOperatorSpec) (errs util.Errors, warnings []string) {
 	validators := []FeatureValidator{
 		CheckServicePorts,
 		CheckAutoScaleAndReplicaCount,
@@ -127,8 +127,8 @@ func validateFeatures(values *v1alpha1.Values, spec *v1alpha1.IstioOperatorSpec)
 }
 
 // CheckAutoScaleAndReplicaCount warns when autoscaleEnabled is true and k8s replicaCount is set.
-func CheckAutoScaleAndReplicaCount(values *v1alpha1.Values, spec *v1alpha1.IstioOperatorSpec) (errs util.Errors, warnings []string) {
-	if values.GetPilot().GetAutoscaleEnabled().GetValue() && spec.Components.Pilot.GetK8S().GetReplicaCount() > 1 {
+func CheckAutoScaleAndReplicaCount(values *v1alpha1.Values, spec v1alpha1.IstioOperatorSpec) (errs util.Errors, warnings []string) {
+	if values.GetPilot().GetAutoscaleEnabled().GetValue() && spec.Components.Pilot.K8S.ReplicaCount > 1 {
 		warnings = append(warnings,
 			"components.pilot.k8s.replicaCount should not be set when values.pilot.autoscaleEnabled is true")
 	}
@@ -136,18 +136,18 @@ func CheckAutoScaleAndReplicaCount(values *v1alpha1.Values, spec *v1alpha1.Istio
 	validateGateways := func(gateways []*v1alpha1.GatewaySpec, gwType string) {
 		const format = "components.%sGateways[name=%s].k8s.replicaCount should not be set when values.gateways.istio-%sgateway.autoscaleEnabled is true"
 		for _, gw := range gateways {
-			if gw.GetK8S().GetReplicaCount() != 0 {
+			if gw.K8S.ReplicaCount != 0 {
 				warnings = append(warnings, fmt.Sprintf(format, gwType, gw.Name, gwType))
 			}
 		}
 	}
 
 	if values.GetGateways().GetIstioIngressgateway().GetAutoscaleEnabled().GetValue() {
-		validateGateways(spec.GetComponents().GetIngressGateways(), "ingress")
+		validateGateways(spec.Components.IngressGateways, "ingress")
 	}
 
 	if values.GetGateways().GetIstioEgressgateway().GetAutoscaleEnabled().GetValue() {
-		validateGateways(spec.GetComponents().GetEgressGateways(), "egress")
+		validateGateways(spec.Components.EgressGateways, "egress")
 	}
 
 	return
@@ -156,12 +156,12 @@ func CheckAutoScaleAndReplicaCount(values *v1alpha1.Values, spec *v1alpha1.Istio
 // CheckServicePorts validates Service ports. Specifically, this currently
 // asserts that all ports will bind to a port number greater than 1024 when not
 // running as root.
-func CheckServicePorts(values *v1alpha1.Values, spec *v1alpha1.IstioOperatorSpec) (errs util.Errors, warnings []string) {
+func CheckServicePorts(values *v1alpha1.Values, spec v1alpha1.IstioOperatorSpec) (errs util.Errors, warnings []string) {
 	if !values.GetGateways().GetIstioIngressgateway().GetRunAsRoot().GetValue() {
-		errs = util.AppendErrs(errs, validateGateways(spec.GetComponents().GetIngressGateways(), "istio-ingressgateway"))
+		errs = util.AppendErrs(errs, validateGateways(spec.Components.IngressGateways, "istio-ingressgateway"))
 	}
 	if !values.GetGateways().GetIstioEgressgateway().GetRunAsRoot().GetValue() {
-		errs = util.AppendErrs(errs, validateGateways(spec.GetComponents().GetEgressGateways(), "istio-egressgateway"))
+		errs = util.AppendErrs(errs, validateGateways(spec.Components.EgressGateways, "istio-egressgateway"))
 	}
 	for _, raw := range values.GetGateways().GetIstioIngressgateway().GetIngressPorts() {
 		p := raw.AsMap()
@@ -196,17 +196,17 @@ func validateGateways(gw []*v1alpha1.GatewaySpec, name string) util.Errors {
 	format := "port %v/%v in gateway %v invalid: targetPort is set to %d, which requires root. Set targetPort to be greater than 1024 or configure values.gateways.%s.runAsRoot=true"
 	var errs util.Errors
 	for _, gw := range gw {
-		for _, p := range gw.GetK8S().GetService().GetPorts() {
+		if gw.K8S == nil || gw.K8S.Service == nil {
+			continue
+		}
+		for _, p := range gw.K8S.Service.Ports {
 			tp := 0
-			if p == nil {
-				continue
-			}
-			if p.TargetPort != nil && p.TargetPort.Type == int64(intstr.String) {
+			if p.TargetPort.Type == intstr.String {
 				// Do not validate named ports
 				continue
 			}
-			if p.TargetPort != nil && p.TargetPort.Type == int64(intstr.Int) {
-				tp = int(p.TargetPort.IntVal.GetValue())
+			if p.TargetPort.Type == intstr.Int {
+				tp = int(p.TargetPort.IntVal)
 			}
 			if tp == 0 && p.Port > 1024 {
 				// Target port defaults to port. If its >1024, it is safe.

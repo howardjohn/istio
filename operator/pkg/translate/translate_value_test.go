@@ -23,7 +23,6 @@ import (
 	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
 	"istio.io/istio/operator/pkg/util"
 	"istio.io/istio/operator/pkg/util/testhelpers"
-	"istio.io/istio/pkg/util/protomarshal"
 )
 
 func TestValueToProto(t *testing.T) {
@@ -90,7 +89,7 @@ components:
          operator: Exists
        resources:
           requests:
-            cpu: 1000m
+            cpu: "1"
             memory: 1G
        strategy:
          rollingUpdate:
@@ -143,7 +142,7 @@ components:
     k8s:
       resources:
         requests:
-          cpu: 1000m
+          cpu: "1"
           memory: 1G
       strategy:
         rollingUpdate:
@@ -190,13 +189,12 @@ values:
 				t.Errorf("ValuesToProto(%s)(%v): gotErr:%s, wantErr:%s", tt.desc, tt.valueYAML, gotErr, wantErr)
 			}
 			if tt.wantErr == "" {
-				byteArray, err := protomarshal.Marshal(gotSpec)
+				cpYaml, err := yaml.Marshal(gotSpec)
 				if err != nil {
 					t.Errorf("failed to marshal translated IstioOperatorSpec: %s", err)
 				}
-				cpYaml, _ := yaml.JSONToYAML(byteArray)
-				if want := tt.want; !util.IsYAMLEqual(string(byteArray), want) {
-					t.Errorf("ValuesToProto(%s): got:\n%s\n\nwant:\n%s\nDiff:\n%s\n", tt.desc, string(cpYaml), want, testhelpers.YAMLDiff(string(byteArray), want))
+				if want := tt.want; !util.IsYAMLEqual(string(cpYaml), want) {
+					t.Errorf("ValuesToProto(%s): got:\n%s\n\nwant:\n%s\nDiff:\n%s\n", tt.desc, string(cpYaml), want, testhelpers.YAMLDiff(string(cpYaml), want))
 				}
 
 			}

@@ -116,7 +116,7 @@ func TestHelmReconciler_ApplyObject(t *testing.T) {
 						Name:      "test-operator",
 						Namespace: "istio-operator-test",
 					},
-					Spec: &v1alpha12.IstioOperatorSpec{},
+					Spec: v1alpha12.IstioOperatorSpec{},
 				},
 			}
 			if err := h.ServerSideApply(obj.UnstructuredObject()); (err != nil) != tt.wantErr {

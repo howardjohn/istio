@@ -15,8 +15,6 @@
 package controlplane
 
 import (
-	"sort"
-
 	"k8s.io/apimachinery/pkg/version"
 
 	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
@@ -33,7 +31,7 @@ type IstioControlPlane struct {
 	components []*istioComponent
 }
 
-func Render(client kube.Client, iop *v1alpha1.IstioOperatorSpec) (name.ManifestMap, error) {
+func Render(client kube.Client, iop v1alpha1.IstioOperatorSpec) (name.ManifestMap, error) {
 	var ver *version.Info
 	if client != nil {
 		var err error
@@ -52,7 +50,7 @@ func Render(client kube.Client, iop *v1alpha1.IstioOperatorSpec) (name.ManifestM
 }
 
 // NewIstioControlPlane creates a new IstioControlPlane and returns a pointer to it.
-func NewIstioControlPlane(installSpec *v1alpha1.IstioOperatorSpec, translator *translate.Translator, ver *version.Info) (*IstioControlPlane, error) {
+func NewIstioControlPlane(installSpec v1alpha1.IstioOperatorSpec, translator *translate.Translator, ver *version.Info) (*IstioControlPlane, error) {
 	out := &IstioControlPlane{}
 	opts := &options{
 		InstallSpec: installSpec,
@@ -69,28 +67,17 @@ func NewIstioControlPlane(installSpec *v1alpha1.IstioOperatorSpec, translator *t
 		out.components = append(out.components, newCoreComponent(c, &o))
 	}
 
-	if installSpec.Components != nil {
-		for idx, c := range installSpec.Components.IngressGateways {
-			o := *opts
-			o.Namespace = defaultIfEmpty(c.Namespace, iop.Namespace(installSpec))
-			out.components = append(out.components, newIngressComponent(c.Name, idx, c, &o))
-		}
-		for idx, c := range installSpec.Components.EgressGateways {
-			o := *opts
-			o.Namespace = defaultIfEmpty(c.Namespace, iop.Namespace(installSpec))
-			out.components = append(out.components, newEgressComponent(c.Name, idx, c, &o))
-		}
+	for idx, c := range installSpec.Components.IngressGateways {
+		o := *opts
+		o.Namespace = defaultIfEmpty(c.Namespace, iop.Namespace(installSpec))
+		out.components = append(out.components, newIngressComponent(c.Name, idx, c, &o))
+	}
+	for idx, c := range installSpec.Components.EgressGateways {
+		o := *opts
+		o.Namespace = defaultIfEmpty(c.Namespace, iop.Namespace(installSpec))
+		out.components = append(out.components, newEgressComponent(c.Name, idx, c, &o))
 	}
 	return out, nil
-}
-
-func orderedKeys(m map[string]*v1alpha1.ExternalComponentSpec) []string {
-	var keys []string
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func defaultIfEmpty(val, dflt string) string {

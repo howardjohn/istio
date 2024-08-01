@@ -78,8 +78,8 @@ components:
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			iopSpec := &v1alpha1.IstioOperatorSpec{}
-			err := util.UnmarshalWithJSONPB(tt.yamlStr, iopSpec, false)
+			iopSpec := v1alpha1.IstioOperatorSpec{}
+			err := util.UnmarshalYaml(tt.yamlStr, &iopSpec, false)
 			if err != nil {
 				t.Fatalf("unmarshalWithJSONPB(%s): got error %s", tt.desc, err)
 			}

@@ -73,6 +73,11 @@ func getFromStructPath(node any, path util.Path) (any, bool, error) {
 		if !util.IsStruct(structElems) {
 			return nil, false, fmt.Errorf("getFromStructPath path %s, expected struct ptr, got %T", path, node)
 		}
+	case reflect.Struct:
+		structElems = reflect.ValueOf(node)
+		if !util.IsStruct(structElems) {
+			return nil, false, fmt.Errorf("getFromStructPath path %s, expected struct ptr, got %T", path, node)
+		}
 	default:
 		return nil, false, fmt.Errorf("getFromStructPath path %s, unsupported type %T", path, node)
 	}

@@ -175,7 +175,7 @@ func (t *ReverseTranslator) TranslateFromValueToSpec(values []byte, force bool) 
 	}
 
 	cpSpec := &v1alpha1.IstioOperatorSpec{}
-	err = util.UnmarshalWithJSONPB(string(outputVal), cpSpec, force)
+	err = util.UnmarshalYaml(string(outputVal), cpSpec, force)
 	if err != nil {
 		return nil, fmt.Errorf("error when unmarshalling into control plane spec %v, \nyaml:\n %s", err, outputVal)
 	}

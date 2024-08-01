@@ -190,6 +190,23 @@ func toMap(yamlText string) (map[string]any, error) {
 // ApplyMeshConfig returns a new MeshConfig decoded from the
 // input YAML with the provided defaults applied to omitted configuration values.
 func ApplyMeshConfig(yaml string, defaultConfig *meshconfig.MeshConfig) (*meshconfig.MeshConfig, error) {
+	defaultConfig, err := ApplyMeshConfigWithoutValidation(yaml, defaultConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	warn, err := agent.ValidateMeshConfig(defaultConfig)
+	if err != nil {
+		return nil, err
+	}
+	if warn != nil {
+		log.Warnf("warnings occurred during mesh validation: %v", warn)
+	}
+
+	return defaultConfig, nil
+}
+
+func ApplyMeshConfigWithoutValidation(yaml string, defaultConfig *meshconfig.MeshConfig) (*meshconfig.MeshConfig, error) {
 	// We want to keep semantics that all fields are overrides, except proxy config is a merge. This allows
 	// decent customization while also not requiring users to redefine the entire proxy config if they want to override
 	// Note: if we want to add more structure in the future, we will likely need to revisit this idea.
@@ -251,14 +268,6 @@ func ApplyMeshConfig(yaml string, defaultConfig *meshconfig.MeshConfig) (*meshco
 	}
 
 	defaultConfig.TrustDomainAliases = sets.SortedList(sets.New(append(defaultConfig.TrustDomainAliases, prevTrustDomainAliases...)...))
-
-	warn, err := agent.ValidateMeshConfig(defaultConfig)
-	if err != nil {
-		return nil, err
-	}
-	if warn != nil {
-		log.Warnf("warnings occurred during mesh validation: %v", warn)
-	}
 
 	return defaultConfig, nil
 }

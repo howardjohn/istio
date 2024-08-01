@@ -443,7 +443,7 @@ func getIOPConfigs() (string, *meshconfig.MeshConfig, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		iop, err = validate.UnmarshalIOP(y)
+		iop, err = validate.UnmarshalIOP(y, true)
 		if err != nil {
 			return "", nil, err
 		}

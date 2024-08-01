@@ -23,65 +23,65 @@ import (
 )
 
 var (
-	httpsPort = &v1.ServicePort{
+	httpsPort = v1.ServicePort{
 		Name:       "https",
 		Protocol:   v1.ProtocolTCP,
 		Port:       443,
 		TargetPort: intstr.IntOrString{IntVal: 8443},
 	}
-	quicPort = &v1.ServicePort{
+	quicPort = v1.ServicePort{
 		Name:       "http3-quic",
 		Protocol:   v1.ProtocolUDP,
 		Port:       443,
 		TargetPort: intstr.IntOrString{IntVal: 8443},
 	}
-	httpPort = &v1.ServicePort{
+	httpPort = v1.ServicePort{
 		Name:       "http-port",
 		Protocol:   v1.ProtocolTCP,
 		Port:       80,
 		TargetPort: intstr.IntOrString{IntVal: 8080},
 	}
-	httpNoProtoPort = &v1.ServicePort{
+	httpNoProtoPort = v1.ServicePort{
 		Name:       "http-port",
 		Port:       80,
 		TargetPort: intstr.IntOrString{IntVal: 8080},
 	}
-	mysqlPort = &v1.ServicePort{
+	mysqlPort = v1.ServicePort{
 		Name:     "mysql-port",
 		Protocol: v1.ProtocolTCP,
 		Port:     3306,
 	}
-	istioHealthcheckPort = &v1.ServicePort{
+	istioHealthcheckPort = v1.ServicePort{
 		Name:     "status-port",
 		Protocol: v1.ProtocolTCP,
 		Port:     15021,
 	}
-	istioMetricsPort = &v1.ServicePort{
+	istioMetricsPort = v1.ServicePort{
 		Name:     "metrics-port",
 		Protocol: v1.ProtocolTCP,
 		Port:     15020,
 	}
-	httpBaseBarPort = &v1.ServicePort{
+	httpBaseBarPort = v1.ServicePort{
 		Name:     "http-bar-base",
 		Protocol: v1.ProtocolTCP,
 		Port:     9000,
 	}
-	httpOverlayBarPort = &v1.ServicePort{
+	httpOverlayBarPort = v1.ServicePort{
 		Name:     "http-bar-overlay",
 		Protocol: v1.ProtocolTCP,
 		Port:     9000,
 	}
-	httpOverlayDiffProtocolBarPort = &v1.ServicePort{
+	httpOverlayDiffProtocolBarPort = v1.ServicePort{
 		Name:     "http3-bar-overlay",
 		Protocol: v1.ProtocolUDP,
 		Port:     9000,
 	}
-	httpFooPort = &v1.ServicePort{
+	httpFooPort = v1.ServicePort{
 		Name:     "http-foo",
 		Protocol: v1.ProtocolTCP,
 		Port:     8080,
 	}
-	httpFooProtocolOmittedPort = &v1.ServicePort{
+	httpFooProtocolOmittedPort = v1.ServicePort{
 		Name: "http-foo",
 		Port: 8080,
 	}
@@ -90,9 +90,9 @@ var (
 func TestStrategicPortMergeByPortAndProtocol(t *testing.T) {
 	for _, tt := range []struct {
 		name                string
-		basePorts           []*v1.ServicePort
-		overlayPorts        []*v1.ServicePort
-		expectedMergedPorts []*v1.ServicePort
+		basePorts           []v1.ServicePort
+		overlayPorts        []v1.ServicePort
+		expectedMergedPorts []v1.ServicePort
 	}{
 		{
 			name:                "both base and overlay are nil",
@@ -102,81 +102,81 @@ func TestStrategicPortMergeByPortAndProtocol(t *testing.T) {
 		},
 		{
 			name:                "overlay is nil",
-			basePorts:           []*v1.ServicePort{httpPort, httpsPort, quicPort},
+			basePorts:           []v1.ServicePort{httpPort, httpsPort, quicPort},
 			overlayPorts:        nil,
-			expectedMergedPorts: []*v1.ServicePort{httpPort, httpsPort, quicPort},
+			expectedMergedPorts: []v1.ServicePort{httpPort, httpsPort, quicPort},
 		},
 		{
 			name:                "base is nil",
 			basePorts:           nil,
-			overlayPorts:        []*v1.ServicePort{httpPort, httpsPort, quicPort},
-			expectedMergedPorts: []*v1.ServicePort{httpPort, httpsPort, quicPort},
+			overlayPorts:        []v1.ServicePort{httpPort, httpsPort, quicPort},
+			expectedMergedPorts: []v1.ServicePort{httpPort, httpsPort, quicPort},
 		},
 		{
 			name:                "same base and overlay",
-			basePorts:           []*v1.ServicePort{httpPort, httpsPort},
-			overlayPorts:        []*v1.ServicePort{httpsPort, httpPort},
-			expectedMergedPorts: []*v1.ServicePort{httpPort, httpsPort},
+			basePorts:           []v1.ServicePort{httpPort, httpsPort},
+			overlayPorts:        []v1.ServicePort{httpsPort, httpPort},
+			expectedMergedPorts: []v1.ServicePort{httpPort, httpsPort},
 		},
 		{
 			name:                "base and overlay for the same port, different protocol",
-			basePorts:           []*v1.ServicePort{httpPort, httpsPort, mysqlPort},
-			overlayPorts:        []*v1.ServicePort{quicPort},
-			expectedMergedPorts: []*v1.ServicePort{httpPort, httpsPort, mysqlPort, quicPort},
+			basePorts:           []v1.ServicePort{httpPort, httpsPort, mysqlPort},
+			overlayPorts:        []v1.ServicePort{quicPort},
+			expectedMergedPorts: []v1.ServicePort{httpPort, httpsPort, mysqlPort, quicPort},
 		},
 		{
 			name:                "base and overlay with different ports",
-			basePorts:           []*v1.ServicePort{httpPort},
-			overlayPorts:        []*v1.ServicePort{httpsPort},
-			expectedMergedPorts: []*v1.ServicePort{httpPort, httpsPort},
+			basePorts:           []v1.ServicePort{httpPort},
+			overlayPorts:        []v1.ServicePort{httpsPort},
+			expectedMergedPorts: []v1.ServicePort{httpPort, httpsPort},
 		},
 		{
 			name:                "implicit ports",
-			basePorts:           []*v1.ServicePort{httpPort},
-			overlayPorts:        []*v1.ServicePort{httpNoProtoPort},
-			expectedMergedPorts: []*v1.ServicePort{httpPort},
+			basePorts:           []v1.ServicePort{httpPort},
+			overlayPorts:        []v1.ServicePort{httpNoProtoPort},
+			expectedMergedPorts: []v1.ServicePort{httpPort},
 		},
 		{
 			name:                "status and metrics port are present",
-			basePorts:           []*v1.ServicePort{istioHealthcheckPort, istioMetricsPort, httpsPort},
-			overlayPorts:        []*v1.ServicePort{httpsPort, httpPort},
-			expectedMergedPorts: []*v1.ServicePort{istioHealthcheckPort, istioMetricsPort, httpsPort, httpPort},
+			basePorts:           []v1.ServicePort{istioHealthcheckPort, istioMetricsPort, httpsPort},
+			overlayPorts:        []v1.ServicePort{httpsPort, httpPort},
+			expectedMergedPorts: []v1.ServicePort{istioHealthcheckPort, istioMetricsPort, httpsPort, httpPort},
 		},
 		{
 			name:                "status port is present",
-			basePorts:           []*v1.ServicePort{istioHealthcheckPort, httpsPort, httpPort},
-			overlayPorts:        []*v1.ServicePort{httpsPort, httpPort},
-			expectedMergedPorts: []*v1.ServicePort{istioHealthcheckPort, httpsPort, httpPort},
+			basePorts:           []v1.ServicePort{istioHealthcheckPort, httpsPort, httpPort},
+			overlayPorts:        []v1.ServicePort{httpsPort, httpPort},
+			expectedMergedPorts: []v1.ServicePort{istioHealthcheckPort, httpsPort, httpPort},
 		},
 		{
 			name:                "metrics port is present",
-			basePorts:           []*v1.ServicePort{istioMetricsPort, httpsPort, httpPort},
-			overlayPorts:        []*v1.ServicePort{httpsPort, httpPort},
-			expectedMergedPorts: []*v1.ServicePort{istioMetricsPort, httpsPort, httpPort},
+			basePorts:           []v1.ServicePort{istioMetricsPort, httpsPort, httpPort},
+			overlayPorts:        []v1.ServicePort{httpsPort, httpPort},
+			expectedMergedPorts: []v1.ServicePort{istioMetricsPort, httpsPort, httpPort},
 		},
 		{
 			name:                "overlay with port name changed",
-			basePorts:           []*v1.ServicePort{httpBaseBarPort},
-			overlayPorts:        []*v1.ServicePort{httpOverlayBarPort},
-			expectedMergedPorts: []*v1.ServicePort{httpOverlayBarPort},
+			basePorts:           []v1.ServicePort{httpBaseBarPort},
+			overlayPorts:        []v1.ServicePort{httpOverlayBarPort},
+			expectedMergedPorts: []v1.ServicePort{httpOverlayBarPort},
 		},
 		{
 			name:                "overlay with different protocol",
-			basePorts:           []*v1.ServicePort{httpBaseBarPort},
-			overlayPorts:        []*v1.ServicePort{httpOverlayDiffProtocolBarPort},
-			expectedMergedPorts: []*v1.ServicePort{httpBaseBarPort, httpOverlayDiffProtocolBarPort},
+			basePorts:           []v1.ServicePort{httpBaseBarPort},
+			overlayPorts:        []v1.ServicePort{httpOverlayDiffProtocolBarPort},
+			expectedMergedPorts: []v1.ServicePort{httpBaseBarPort, httpOverlayDiffProtocolBarPort},
 		},
 		{
 			name:                "same base and overlay with protocol omitted for overlay",
-			basePorts:           []*v1.ServicePort{httpFooPort},
-			overlayPorts:        []*v1.ServicePort{httpFooProtocolOmittedPort},
-			expectedMergedPorts: []*v1.ServicePort{httpFooPort},
+			basePorts:           []v1.ServicePort{httpFooPort},
+			overlayPorts:        []v1.ServicePort{httpFooProtocolOmittedPort},
+			expectedMergedPorts: []v1.ServicePort{httpFooPort},
 		},
 		{
 			name:                "same base and overlay with protocol omitted for base",
-			basePorts:           []*v1.ServicePort{httpFooProtocolOmittedPort},
-			overlayPorts:        []*v1.ServicePort{httpFooPort},
-			expectedMergedPorts: []*v1.ServicePort{httpFooPort},
+			basePorts:           []v1.ServicePort{httpFooProtocolOmittedPort},
+			overlayPorts:        []v1.ServicePort{httpFooPort},
+			expectedMergedPorts: []v1.ServicePort{httpFooPort},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

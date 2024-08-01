@@ -15,7 +15,7 @@
 package v1alpha1
 
 // Namespace returns the namespace of the containing CR.
-func Namespace(iops *IstioOperatorSpec) string {
+func Namespace(iops IstioOperatorSpec) string {
 	if iops.Namespace != "" {
 		return iops.Namespace
 	}

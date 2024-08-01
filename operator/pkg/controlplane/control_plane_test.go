@@ -15,7 +15,6 @@
 package controlplane
 
 import (
-	"reflect"
 	"testing"
 
 	"istio.io/istio/operator/pkg/apis/istio/v1alpha1"
@@ -23,54 +22,19 @@ import (
 	"istio.io/istio/operator/pkg/translate"
 )
 
-func TestOrderedKeys(t *testing.T) {
-	tests := []struct {
-		desc string
-		in   map[string]*v1alpha1.ExternalComponentSpec
-		want []string
-	}{
-		{
-			desc: "not-ordered",
-			in: map[string]*v1alpha1.ExternalComponentSpec{
-				"graphql":   nil,
-				"Abacus":    nil,
-				"Astrology": nil,
-				"gRPC":      nil,
-				"blackjack": nil,
-			},
-			want: []string{
-				"Abacus",
-				"Astrology",
-				"blackjack",
-				"gRPC",
-				"graphql",
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.desc, func(t *testing.T) {
-			if got := orderedKeys(tt.in); !(reflect.DeepEqual(got, tt.want)) {
-				t.Errorf("%s: got %+v want %+v", tt.desc, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestNewIstioOperator(t *testing.T) {
 	coreComponentOptions := &options{
-		InstallSpec: &v1alpha1.IstioOperatorSpec{},
+		InstallSpec: v1alpha1.IstioOperatorSpec{},
 		Translator:  &translate.Translator{},
 	}
 	tests := []struct {
 		desc              string
-		inInstallSpec     *v1alpha1.IstioOperatorSpec
 		inTranslator      *translate.Translator
 		wantIstioOperator *IstioControlPlane
 		wantErr           error
 	}{
 		{
-			desc:          "core-components",
-			inInstallSpec: &v1alpha1.IstioOperatorSpec{},
+			desc: "core-components",
 			inTranslator: &translate.Translator{
 				ComponentMaps: map[name.ComponentName]*translate.ComponentMaps{
 					"Pilot": {
@@ -108,10 +72,12 @@ func TestNewIstioOperator(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			gotOperator, err := NewIstioControlPlane(tt.inInstallSpec, tt.inTranslator, nil)
-			if ((err != nil && tt.wantErr == nil) || (err == nil && tt.wantErr != nil)) || !gotOperator.componentsEqual(tt.wantIstioOperator.components) {
-				t.Errorf("%s: wanted components & err %+v %v, got components & err %+v %v",
-					tt.desc, tt.wantIstioOperator.components, tt.wantErr, gotOperator.components, err)
+			gotOperator, err := NewIstioControlPlane(v1alpha1.IstioOperatorSpec{}, tt.inTranslator, nil)
+			if (err != nil && tt.wantErr == nil) || (err == nil && tt.wantErr != nil) {
+				t.Fatalf("%s: wanted err %v, got err %v", tt.desc, tt.wantErr, err)
+			}
+			if !gotOperator.componentsEqual(tt.wantIstioOperator.components) {
+				t.Fatalf("not equal %v vs %v", gotOperator, tt.wantIstioOperator)
 			}
 		})
 	}

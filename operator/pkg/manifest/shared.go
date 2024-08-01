@@ -225,7 +225,7 @@ func ParseYAMLFiles(inFilenames []string, force bool, l clog.Logger) (overlayYAM
 		return "", "", err
 	}
 	var fileOverlayIOP *iopv1alpha1.IstioOperator
-	fileOverlayIOP, err = validate.UnmarshalIOP(y)
+	fileOverlayIOP, err = validate.UnmarshalIOP(y, !force)
 	if err != nil {
 		return "", "", err
 	}
@@ -235,7 +235,7 @@ func ParseYAMLFiles(inFilenames []string, force bool, l clog.Logger) (overlayYAM
 		}
 		l.LogAndErrorf("Validation errors (continuing because of --force):\n%s", err)
 	}
-	if fileOverlayIOP.Spec != nil && fileOverlayIOP.Spec.Profile != "" {
+	if fileOverlayIOP.Spec.Profile != "" {
 		profile = fileOverlayIOP.Spec.Profile
 	}
 	return y, profile, nil
@@ -375,7 +375,7 @@ func makeTreeFromSetList(setOverlay []string) (string, error) {
 			return "", err
 		}
 		iops := &v1alpha1.IstioOperatorSpec{}
-		if err := util.UnmarshalWithJSONPB(string(testTree), iops, false); err != nil {
+		if err := util.UnmarshalYaml(string(testTree), iops, false); err != nil {
 			return "", fmt.Errorf("bad path=value %s: %v", kv, err)
 		}
 	}
@@ -403,12 +403,9 @@ func unmarshalAndValidateIOP(iopsYAML string, force, allowUnknownField bool, l c
 
 // getInstallPackagePath returns the installPackagePath in the given IstioOperator YAML string.
 func getInstallPackagePath(iopYAML string) (string, error) {
-	iop, err := validate.UnmarshalIOP(iopYAML)
+	iop, err := validate.UnmarshalIOP(iopYAML, false)
 	if err != nil {
 		return "", err
-	}
-	if iop.Spec == nil {
-		return "", nil
 	}
 	return iop.Spec.InstallPackagePath, nil
 }

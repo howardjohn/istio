@@ -103,8 +103,8 @@ func TestOverlayIOPExhaustiveness(t *testing.T) {
 
 func TestOverlayIOPDefaultMeshConfig(t *testing.T) {
 	iop := &v1alpha1.IstioOperator{
-		Spec: &v1alpha12.IstioOperatorSpec{
-			MeshConfig: mesh.DefaultMeshConfig(),
+		Spec: v1alpha12.IstioOperatorSpec{
+			MeshConfig: &v1alpha1.MeshConfig{MeshConfig: mesh.DefaultMeshConfig()},
 		},
 	}
 
