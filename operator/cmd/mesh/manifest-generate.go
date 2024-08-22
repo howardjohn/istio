@@ -17,6 +17,8 @@ package mesh
 import (
 	"cmp"
 	"fmt"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"istio.io/istio/operator/pkg/apis"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -134,6 +136,44 @@ func ManifestGenerate(kubeClient kube.CLIClient, mgArgs *ManifestGenerateArgs, l
 		l.Print(manifest + YAMLSeparator)
 	}
 	return nil
+}
+
+func inspect() {
+	m := (&apis.Values{}).ProtoReflect().Descriptor()
+	v, err := recurseDeprecatedTypes(m, "values")
+	if err != nil {
+		panic(err.Error())
+	}
+	for _,vv := range v {
+		fmt.Println(vv)
+	}
+}
+func recurseDeprecatedTypes(desc protoreflect.MessageDescriptor, base string) ([]string, error) {
+	var topError error
+	var res []string
+	if desc == nil {
+		return nil, nil
+	}
+	fields := desc.Fields()
+	for f := range fields.Len() {
+		field := fields.Get(f)
+		if field.JSONName() == "structValue" || field.JSONName() == "listValue" {
+			continue
+		}
+		switch field.Kind() {
+		case protoreflect.MessageKind:
+
+			newTypes, err := recurseDeprecatedTypes(field.Message(), base+"."+field.JSONName())
+			if err != nil {
+				topError = err
+			} else {
+				res = append(res, newTypes...)
+			}
+		case protoreflect.StringKind:
+			res = append(res, base+"."+field.JSONName())
+		}
+	}
+	return res, topError
 }
 
 func sortManifests(raw []manifest.ManifestSet) []string {

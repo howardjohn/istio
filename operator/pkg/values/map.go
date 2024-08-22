@@ -17,6 +17,10 @@ package values
 import (
 	"encoding/json"
 	"fmt"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"istio.io/istio/operator/pkg/apis"
+	"istio.io/istio/pkg/lazy"
+	"istio.io/istio/pkg/util/sets"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -421,7 +425,48 @@ var alwaysString = []string{
 	"spec.compatibilityVersion",
 }
 
+var dynamicAlwaysString = lazy.New(func() (sets.String, error) {
+	m := (&apis.Values{}).ProtoReflect().Descriptor()
+	v, err := recurseDeprecatedTypes(m, "values")
+	if err != nil {
+		return nil, err
+	}
+	return sets.New(v...), nil
+})
+
+func recurseDeprecatedTypes(desc protoreflect.MessageDescriptor, base string) ([]string, error) {
+	var topError error
+	var res []string
+	if desc == nil {
+		return nil, nil
+	}
+	fields := desc.Fields()
+	for f := range fields.Len() {
+		field := fields.Get(f)
+		if field.JSONName() == "structValue" || field.JSONName() == "listValue" {
+			continue
+		}
+		switch field.Kind() {
+		case protoreflect.MessageKind:
+
+			newTypes, err := recurseDeprecatedTypes(field.Message(), base+"."+field.JSONName())
+			if err != nil {
+				topError = err
+			} else {
+				res = append(res, newTypes...)
+			}
+		case protoreflect.StringKind:
+			res = append(res, base+"."+field.JSONName())
+		}
+	}
+	return res, topError
+}
+
 func isAlwaysString(s string) bool {
+	// TODO something like values.global.proxy.resources.limits.cpu=200 is a map
+	if as, _ := dynamicAlwaysString.Get(); as.Contains(s) {
+		return true
+	}
 	for _, a := range alwaysString {
 		if strings.HasPrefix(s, a) {
 			return true
