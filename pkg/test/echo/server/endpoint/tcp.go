@@ -124,6 +124,7 @@ func (s *tcpInstance) Start(onReady OnReadyFunc) error {
 
 // Handles incoming connection.
 func (s *tcpInstance) echo(id uuid.UUID, conn net.Conn) {
+	time.Sleep(time.Second)
 	s.ReportRequest()
 	common.Metrics.TCPRequests.With(common.PortLabel.Value(strconv.Itoa(s.Port.Port))).Increment()
 

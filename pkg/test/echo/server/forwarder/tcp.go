@@ -113,6 +113,7 @@ func (c *tcpProtocol) makeRequest(ctx context.Context, cfg *Config, requestID in
 		fwLog.Warnf("TCP write failed: %v", err)
 		return msgBuilder.String(), err
 	}
+	return "", nil
 	var resBuffer bytes.Buffer
 	buf := make([]byte, 1024+len(message))
 	for {
