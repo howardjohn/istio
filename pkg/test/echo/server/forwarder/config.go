@@ -320,6 +320,7 @@ func newTLSConfig(c *Config) (*tls.Config, error) {
 }
 
 func newHBONETLSConfig(c *Config) (*tls.Config, error) {
+	return nil, nil
 	r := c.Request.Hbone
 	if r == nil {
 		return nil, nil
