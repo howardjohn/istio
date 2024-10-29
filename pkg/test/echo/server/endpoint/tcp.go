@@ -23,7 +23,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/pires/go-proxyproto"
@@ -97,22 +96,7 @@ func (s *tcpInstance) Start(onReady OnReadyFunc) error {
 			id := uuid.New()
 			epLog.WithLabels("remote", conn.RemoteAddr(), "id", id).Infof("TCP Request")
 
-			done := make(chan struct{})
-			go func() {
-				s.echo(id, conn)
-				close(done)
-			}()
-
-			go func() {
-				select {
-				case <-done:
-					return
-				case <-time.After(requestTimeout):
-					epLog.WithLabels("id", id).Warnf("TCP forcing connection closed after request timeout")
-					_ = forceClose(conn)
-					return
-				}
-			}()
+			go s.echo(id, conn)
 		}
 	}()
 

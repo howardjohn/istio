@@ -18,10 +18,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -57,9 +62,9 @@ var (
 	v4Only                  bool
 	v6Only                  bool
 	forceDNSLookup          bool
-
-	clientCert string
-	clientKey  string
+	flood                   bool
+	clientCert              string
+	clientKey               string
 
 	caFile string
 
@@ -85,6 +90,13 @@ where the network configuration doesn't support gRPC to the source pod.'
 		PersistentPreRunE: configureLogging,
 		Run: func(cmd *cobra.Command, args []string) {
 			expectSet = cmd.Flags().Changed("expect")
+			if flood {
+				if err := sendFlood(args[0]); err != nil {
+					log.Fatalf("Error %s\n", err) // nolint: revive
+					os.Exit(-1)
+				}
+				return
+			}
 			// Create a request from the flags.
 			request, err := getRequest(args[0])
 			if err != nil {
@@ -117,6 +129,97 @@ where the network configuration doesn't support gRPC to the source pod.'
 	}
 )
 
+func sendFlood(s string) error {
+	mu := sync.Mutex{}
+	dialer := &net.Dialer{
+		Timeout:   2 * time.Second,
+		KeepAlive: 3 * time.Second,
+	}
+	active := map[net.Conn]struct{}{}
+	closed := make(chan struct{})
+	go cmd.WaitSignal(closed)
+	go func() {
+		for {
+			time.Sleep(time.Second)
+			mu.Lock()
+			closed := 0
+			for con := range active {
+				if err := connCheck(con); err != nil {
+					log.Debugf("connection %v->%v closed: %v", con.LocalAddr(), con.RemoteAddr(), err)
+					delete(active, con)
+					closed++
+				}
+			}
+			if closed > 0 {
+				log.Warnf("closed %d/%d connections", closed, len(active)+closed)
+			}
+			mu.Unlock()
+		}
+	}()
+
+	baseDelay := time.Millisecond * 1
+	delay := baseDelay
+	for range 10000 {
+		select {
+		case <-time.After(delay):
+		case <-closed:
+			return nil
+		}
+		conn, err := dialer.Dial("tcp", s)
+		if err != nil {
+			delay *= 2
+			if delay > time.Second*5 {
+				delay = time.Second * 5
+			}
+			log.Infof("connection failed: %v", err)
+			continue
+		}
+		delay = baseDelay
+		mu.Lock()
+		log.Infof("connect %d: %v->%v", len(active), conn.LocalAddr(), conn.RemoteAddr())
+		active[conn] = struct{}{}
+		mu.Unlock()
+	}
+	<-closed
+	return nil
+}
+
+var errUnexpectedRead = errors.New("unexpected read from socket")
+
+func connCheck(conn net.Conn) error {
+	var sysErr error
+
+	sysConn, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil
+	}
+	rawConn, err := sysConn.SyscallConn()
+	if err != nil {
+		return err
+	}
+
+	err = rawConn.Read(func(fd uintptr) bool {
+		var buf [1]byte
+		n, err := syscall.Read(int(fd), buf[:])
+		switch {
+		case n == 0 && err == nil:
+			sysErr = io.EOF
+		case n > 0:
+			sysErr = errUnexpectedRead
+		case err == syscall.EAGAIN || err == syscall.EWOULDBLOCK:
+			sysErr = nil
+		default:
+			sysErr = err
+		}
+		return true
+	})
+	if err != nil {
+		return err
+	}
+
+	return sysErr
+}
+
 func configureLogging(_ *cobra.Command, _ []string) error {
 	if err := log.Configure(loggingOptions); err != nil {
 		return err
@@ -148,6 +251,8 @@ func init() {
 		"Treat as a server first protocol; do not send request until magic string is received")
 	rootCmd.PersistentFlags().BoolVarP(&followRedirects, "follow-redirects", "L", false,
 		"If enabled, will follow 3xx redirects with the Location header")
+	rootCmd.PersistentFlags().BoolVarP(&flood, "flood", "F", flood,
+		"If enabled, will just maximize available TCP connections")
 	rootCmd.PersistentFlags().BoolVar(&newConnectionPerRequest, "new-connection-per-request", false,
 		"If enabled, a new connection will be made to the server for each individual request. "+
 			"If false, an attempt will be made to re-use the connection for the life of the forward request. "+
