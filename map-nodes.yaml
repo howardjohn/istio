@@ -1,0 +1,56 @@
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: "ambient-node-tainter.istio.io"
+spec:
+  policyName: "ambient-node-tainter.istio.io"
+---
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: "ambient-node-tainter.istio.io"
+spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups:   [""]
+        apiVersions: ["v1"]
+        operations:  ["CREATE"]
+        resources:   ["nodes"]
+
+  matchConditions:
+    - name: does-not-already-have-taint
+      expression: "!has(object.spec.taints) || !object.spec.taints.exists(ic, ic.key == 'cni.istio.io/not-ready')"
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  mutations:
+  - patchType: "JSONPatch"
+    jsonPatch:
+      expression: >
+        [
+          // make sure taints hadn't chained since we last read the node
+          JSONPatch{
+              op: "test",
+              path:      "/spec/taints",
+              value:     object.spec.taints,
+          },
+          // Add our taint
+          JSONPatch{
+              op:        "replace",
+              path:      "/spec/taints",
+              value:     object.spec.taints + [{'key': 'cni.istio.io/not-ready', 'value': 'true', 'effect': 'NoSchedule'}],
+          }
+        ]
+#  - patchType: "ApplyConfiguration"
+#    applyConfiguration:
+#      expression: >
+#        Object{
+#          spec: Object.spec{
+#            taints: [
+#              Object.spec.taints{
+#                key: 'cni.istio.io/not-ready',
+#                value: 'true',
+#                effect: 'NoSchedule',
+#              }
+#            ]
+#          }
+#        }
