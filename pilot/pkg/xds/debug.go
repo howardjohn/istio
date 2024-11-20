@@ -1083,6 +1083,10 @@ func (s *DiscoveryServer) ambientz(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *DiscoveryServer) krtz(w http.ResponseWriter, req *http.Request) {
+	b, err := krt.GlobalDebugHandler.Mermaid()
+	_ = err
+	w.Write(b)
+	return
 	writeJSON(w, krt.GlobalDebugHandler, req)
 }
 

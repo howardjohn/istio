@@ -16,6 +16,9 @@ package krt
 
 import (
 	"encoding/json"
+	"fmt"
+	"istio.io/istio/pkg/util/sets"
+	"strings"
 	"sync"
 )
 
@@ -29,6 +32,76 @@ func (p *DebugHandler) MarshalJSON() ([]byte, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return json.Marshal(p.debugCollections)
+}
+
+type Node struct {
+	Id   int
+	Type int
+	Name string
+}
+
+func (n Node) String() string { return fmt.Sprintf("node%d", n.Id) }
+func (n Node) Descriptor() string {
+	switch n.Type {
+	case 1:
+		return fmt.Sprintf("%s[[%q]]", n.String(), n.Name)
+	default:
+		return fmt.Sprintf("%s[%q]", n.String(), n.Name)
+	}
+}
+
+func (p *DebugHandler) Mermaid() ([]byte, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	id := 0
+	primaryDeps := map[Node]sets.Set[Node]{}
+	secondaryDeps := map[Node]sets.Set[Node]{}
+	nodes := map[string]Node{}
+	rawNode := func(s string, typ int) Node {
+		if v, f := nodes[s]; f {
+			return v
+		}
+		id++
+		n := Node{Id: id, Type: typ, Name: s}
+		nodes[s] = n
+		return n
+	}
+	node := func(s string) Node {
+		return rawNode(s, 0)
+	}
+	manyCollectionNode := func(s string) Node {
+		return rawNode(s, 1)
+	}
+	for _, c := range p.debugCollections {
+		d := c.dump()
+		if d.InputCollection == "" {
+			continue
+		}
+		this := manyCollectionNode(c.name)
+		primary := node(d.InputCollection)
+		sets.InsertOrNew(primaryDeps, this, primary)
+		for _, i := range d.Inputs {
+			for _, dep := range i.Dependencies {
+				sets.InsertOrNew(secondaryDeps, this, node(dep))
+			}
+		}
+	}
+	sb := &strings.Builder{}
+	fmt.Fprintf(sb, "flowchart LR\n")
+	for n, np := range primaryDeps {
+		for npp := range np {
+			fmt.Fprintf(sb, "  %s-->%s\n", n, npp)
+		}
+	}
+	for n, np := range secondaryDeps {
+		for npp := range np {
+			fmt.Fprintf(sb, "  %s-.->%s\n", n, npp)
+		}
+	}
+	for _, node := range nodes {
+		fmt.Fprintf(sb, "  %s\n", node.Descriptor())
+	}
+	return []byte(sb.String()), nil
 }
 
 var GlobalDebugHandler = new(DebugHandler)

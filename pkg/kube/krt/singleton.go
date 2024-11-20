@@ -203,7 +203,7 @@ func NewSingleton[O any](hf TransformationEmpty[O], opts ...CollectionOption) Si
 	// dummyCollection just returns a single "I" that is ignored.
 
 	// Disable debugging on the internal static collection, else we end up with duplicates
-	staticOpts := append(slices.Clone(opts), WithDebugging(nil))
+	staticOpts := append(slices.Clone(opts), WithDebugging(nil), WithName(""))
 	dummyCollection := NewStatic[dummyValue](&dummyValue{}, true, staticOpts...).AsCollection()
 	col := NewCollection[dummyValue, O](dummyCollection, func(ctx HandlerContext, _ dummyValue) *O {
 		return hf(ctx)
@@ -215,7 +215,7 @@ func NewSingleton[O any](hf TransformationEmpty[O], opts ...CollectionOption) Si
 // only rely on out-of-band data via RecomputeTrigger, for instance.
 func NewManyFromNothing[O any](hf TransformationEmptyToMulti[O], opts ...CollectionOption) Collection[O] {
 	// Disable debugging on the internal static collection, else we end up with duplicates
-	staticOpts := append(slices.Clone(opts), WithDebugging(nil))
+	staticOpts := append(slices.Clone(opts), WithDebugging(nil), WithName(""))
 	dummyCollection := NewStatic[dummyValue](&dummyValue{}, true, staticOpts...).AsCollection()
 	col := NewManyCollection[dummyValue, O](dummyCollection, func(ctx HandlerContext, _ dummyValue) []O {
 		return hf(ctx)
