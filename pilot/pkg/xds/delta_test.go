@@ -78,7 +78,7 @@ func TestDeltaCDS(t *testing.T) {
 		assert.Equal(t, sets.New(got...), sets.New(names...).Merge(base))
 	}
 	s := xds.NewFakeDiscoveryServer(t, xds.FakeOptions{})
-	spamDebugEndpointsToDetectRace(t, s)
+	spamDebugEndpointsToDetectRace(s)
 	addTestClientEndpoints(s.MemRegistry)
 	s.MemRegistry.AddHTTPService(edsIncSvc, edsIncVip, 8080)
 	s.MemRegistry.SetEndpoints(edsIncSvc, "",
@@ -327,6 +327,10 @@ func TestDeltaReconnectRequests(t *testing.T) {
 	if resn := sets.New(res.RemovedResources...); !resn.Contains(updateCluster) {
 		t.Fatalf("unexpected remove resources: %v", resn)
 	}
+}
+
+func init() {
+	features.EnableAmbient = true
 }
 
 func TestDeltaWDS(t *testing.T) {
