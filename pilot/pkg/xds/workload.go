@@ -126,8 +126,6 @@ func (e WorkloadGenerator) GenerateDeltas(
 			proto := addr.Marshalled
 			if proto == nil {
 				proto = protoconv.MessageToAny(addr)
-			} else {
-				log.Errorf("howardjohn: MARSHALLED!")
 			}
 			resources = append(resources, &discovery.Resource{
 				Name:     n,

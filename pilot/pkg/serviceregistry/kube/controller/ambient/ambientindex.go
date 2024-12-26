@@ -91,6 +91,7 @@ type waypointsCollection struct {
 
 type servicesCollection struct {
 	krt.Collection[model.ServiceInfo]
+	Marshalled               krt.Collection[model.AddressInfo]
 	ByAddress                krt.Index[networkAddress, model.ServiceInfo]
 	ByOwningWaypointHostname krt.Index[NamespaceHostname, model.ServiceInfo]
 	ByOwningWaypointIP       krt.Index[networkAddress, model.ServiceInfo]
@@ -311,15 +312,6 @@ func New(options Options) Index {
 
 		return []networkAddress{netaddr}
 	})
-	WorkloadServices.RegisterBatch(krt.BatchedEventFilter(
-		func(a model.ServiceInfo) *workloadapi.Service {
-			// Only trigger push if the XDS object changed; the rest is just for computation of others
-			return a.Service
-		},
-		PushXds(a.XDSUpdater, func(i model.ServiceInfo) model.ConfigKey {
-			return model.ConfigKey{Kind: kind.Address, Name: i.ResourceName()}
-		})), false)
-
 	Workloads := a.WorkloadsCollection(
 		Pods,
 		Nodes,
@@ -411,8 +403,28 @@ func New(options Options) Index {
 			Marshalled: protoconv.MessageToAny(a),
 		}
 	})
-
 	MarshalledWorkloads.RegisterBatch(krt.BatchedEventFilter(
+		func(a model.AddressInfo) *workloadapi.Address {
+			// Only trigger push if the XDS object changed; the rest is just for computation of others
+			return a.Address
+		},
+		PushXds(a.XDSUpdater, func(i model.AddressInfo) model.ConfigKey {
+			return model.ConfigKey{Kind: kind.Address, Name: i.ResourceName()}
+		})), false)
+
+
+	MarshalledServices := krt.NewCollection(WorkloadServices, func(ctx krt.HandlerContext, i model.ServiceInfo) *model.AddressInfo {
+		a := &workloadapi.Address{
+			Type: &workloadapi.Address_Service{
+				Service: i.Service,
+			},
+		}
+		return &model.AddressInfo{
+			Address:    a,
+			Marshalled: protoconv.MessageToAny(a),
+		}
+	})
+	MarshalledServices.RegisterBatch(krt.BatchedEventFilter(
 		func(a model.AddressInfo) *workloadapi.Address {
 			// Only trigger push if the XDS object changed; the rest is just for computation of others
 			return a.Address
@@ -430,6 +442,7 @@ func New(options Options) Index {
 	}
 	a.services = servicesCollection{
 		Collection:               WorkloadServices,
+		Marshalled:               MarshalledServices,
 		ByAddress:                ServiceAddressIndex,
 		ByOwningWaypointHostname: ServiceInfosByOwningWaypointHostname,
 		ByOwningWaypointIP:       ServiceInfosByOwningWaypointIP,
@@ -537,9 +550,7 @@ func (a *index) lookupService(key string) *model.ServiceInfo {
 // All return all known workloads. Result is un-ordered
 func (a *index) All() []model.AddressInfo {
 	res := a.workloads.Marshalled.List()
-	for _, s := range a.services.List() {
-		res = append(res, serviceToAddressInfo(s.Service))
-	}
+	res = append(res, a.services.Marshalled.List()...)
 	return res
 }
 
