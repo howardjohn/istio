@@ -510,14 +510,14 @@ func (s *DiscoveryServer) pushDeltaXds(con *Connection, w *model.WatchedResource
 		Nonce:             nonce(req.Push.PushVersion),
 		Resources:         res,
 	}
-	currentResources := sets.New(slices.Map(res, func(r *discovery.Resource) string {
-		return r.Name
-	})...)
 	if usedDelta {
 		resp.RemovedResources = deletedRes
 	} else if req.Full {
 		// similar to sotw
-		removed := w.ResourceNames.Difference(currentResources)
+		removed := w.ResourceNames.Copy()
+		for _, r := range res {
+			removed.Delete(r.Name)
+		}
 		resp.RemovedResources = sets.SortedList(removed)
 	}
 	var newResourceNames sets.String
@@ -525,11 +525,13 @@ func (s *DiscoveryServer) pushDeltaXds(con *Connection, w *model.WatchedResource
 		// Set the new watched resources. Do not write to w directly, as it can be a copy from the 'filtered' logic above
 		if usedDelta {
 			// Apply the delta
-			newResourceNames = w.ResourceNames.
-				Difference(sets.New(resp.RemovedResources...)).
-				Merge(currentResources)
+			newResourceNames = w.ResourceNames.Copy().
+				DeleteAll(resp.RemovedResources...)
+			for _, r := range res {
+				newResourceNames.Insert(r.Name)
+			}
 		} else {
-			newResourceNames = currentResources
+			newResourceNames = resourceNamesSet(res)
 		}
 	}
 	if neverRemoveDelta(w.TypeUrl) {
@@ -584,6 +586,12 @@ func (s *DiscoveryServer) pushDeltaXds(con *Connection, w *model.WatchedResource
 	}
 
 	return nil
+}
+
+func resourceNamesSet(res model.Resources) sets.Set[string] {
+	return sets.New(slices.Map(res, func(r *discovery.Resource) string {
+		return r.Name
+	})...)
 }
 
 // requiresResourceNamesModification checks if a generator needs mutable access to w.ResourceNames.

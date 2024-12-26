@@ -32,6 +32,7 @@ import (
 	"istio.io/api/security/v1beta1"
 	metav1beta1 "istio.io/api/type/v1beta1"
 	securityclient "istio.io/client-go/pkg/apis/security/v1"
+	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	v3 "istio.io/istio/pilot/pkg/xds/v3"
 	"istio.io/istio/pilot/test/xds"
@@ -40,7 +41,7 @@ import (
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/kube/kclient/clienttest"
 	"istio.io/istio/pkg/log"
-	"istio.io/istio/pkg/log"
+	"istio.io/istio/pkg/test"
 	"istio.io/istio/pkg/test/util/assert"
 	"istio.io/istio/pkg/util/sets"
 )
@@ -180,7 +181,7 @@ func TestWorkload(t *testing.T) {
 			DebounceTime: time.Millisecond * 25,
 		})
 		ads := s.ConnectDeltaADS().WithTimeout(time.Second * 5).WithType(v3.AddressType).WithMetadata(model.NodeMetadata{NodeName: "node"})
-		spamDebugEndpointsToDetectRace(s)
+		spamDebugEndpointsToDetectRace(t, s)
 
 		ads.Request(&discovery.DeltaDiscoveryRequest{
 			ResourceNamesSubscribe:   []string{"*"},
@@ -259,7 +260,7 @@ func TestWorkload(t *testing.T) {
 			DebounceTime: time.Millisecond * 25,
 		})
 		ads := s.ConnectDeltaADS().WithTimeout(time.Second * 5).WithType(v3.AddressType).WithMetadata(model.NodeMetadata{NodeName: "node"})
-		spamDebugEndpointsToDetectRace(s)
+		spamDebugEndpointsToDetectRace(t, s)
 
 		ads.Request(&discovery.DeltaDiscoveryRequest{
 			ResourceNamesSubscribe: []string{"*"},
@@ -293,7 +294,7 @@ func TestWorkload(t *testing.T) {
 
 // Historically, the debug interface has been a common source of race conditions in the discovery server
 // spamDebugEndpointsToDetectRace hits all the endpoints, attempting to trigger any latent race conditions.
-func spamDebugEndpointsToDetectRace(s *xds.FakeDiscoveryServer) {
+func spamDebugEndpointsToDetectRace(t *testing.T, s *xds.FakeDiscoveryServer) {
 	stop := test.NewStop(t)
 	go func() {
 		for _, proxySpecific := range []bool{true, false} {
