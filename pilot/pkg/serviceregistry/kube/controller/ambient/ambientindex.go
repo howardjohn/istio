@@ -15,6 +15,7 @@
 package ambient
 
 import (
+	"istio.io/istio/pilot/pkg/util/protoconv"
 	"net/netip"
 	"strings"
 	"sync/atomic"
@@ -77,6 +78,7 @@ func (n NamespaceHostname) String() string {
 
 type workloadsCollection struct {
 	krt.Collection[model.WorkloadInfo]
+	Marshalled               krt.Collection[model.AddressInfo]
 	ByAddress                krt.Index[networkAddress, model.WorkloadInfo]
 	ByServiceKey             krt.Index[string, model.WorkloadInfo]
 	ByOwningWaypointHostname krt.Index[NamespaceHostname, model.WorkloadInfo]
@@ -398,8 +400,29 @@ func New(options Options) Index {
 		)
 	}
 
+	MarshalledWorkloads := krt.NewCollection(Workloads, func(ctx krt.HandlerContext, i model.WorkloadInfo) *model.AddressInfo {
+		a := &workloadapi.Address{
+			Type: &workloadapi.Address_Workload{
+				Workload: i.Workload,
+			},
+		}
+		return &model.AddressInfo{
+			Address:    a,
+			Marshalled: protoconv.MessageToAny(a),
+		}
+	})
+
+	MarshalledWorkloads.RegisterBatch(krt.BatchedEventFilter(
+		func(a model.AddressInfo) *workloadapi.Address {
+			// Only trigger push if the XDS object changed; the rest is just for computation of others
+			return a.Address
+		},
+		PushXds(a.XDSUpdater, func(i model.AddressInfo) model.ConfigKey {
+			return model.ConfigKey{Kind: kind.Address, Name: i.ResourceName()}
+		})), false)
 	a.workloads = workloadsCollection{
 		Collection:               Workloads,
+		Marshalled:               MarshalledWorkloads,
 		ByAddress:                WorkloadAddressIndex,
 		ByServiceKey:             WorkloadServiceIndex,
 		ByOwningWaypointHostname: WorkloadWaypointIndexHostname,
@@ -468,8 +491,8 @@ func translateKubernetesCondition(conds []metav1.Condition) map[string]model.Con
 // Lookup finds all addresses associated with a given key. Many different key formats are supported; see inline comments.
 func (a *index) Lookup(key string) []model.AddressInfo {
 	// 1. Workload UID
-	if w := a.workloads.GetKey(key); w != nil {
-		return []model.AddressInfo{workloadToAddressInfo(w.Workload)}
+	if w := a.workloads.Marshalled.GetKey(key); w != nil {
+		return []model.AddressInfo{*w}
 	}
 
 	network, ip, found := strings.Cut(key, "/")
@@ -513,7 +536,7 @@ func (a *index) lookupService(key string) *model.ServiceInfo {
 
 // All return all known workloads. Result is un-ordered
 func (a *index) All() []model.AddressInfo {
-	res := dedupeWorkloads(a.workloads.List())
+	res := a.workloads.Marshalled.List()
 	for _, s := range a.services.List() {
 		res = append(res, serviceToAddressInfo(s.Service))
 	}

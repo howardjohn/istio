@@ -24,6 +24,7 @@ package model
 
 import (
 	"fmt"
+	"google.golang.org/protobuf/types/known/anypb"
 	"net/netip"
 	"sort"
 	"strconv"
@@ -958,6 +959,11 @@ var _ AmbientIndexes = NoopAmbientIndexes{}
 
 type AddressInfo struct {
 	*workloadapi.Address
+	Marshalled *anypb.Any
+}
+
+func (i AddressInfo) Equals(other AddressInfo) bool {
+	return proto.Equal(i.Address, other.Address)
 }
 
 func (i AddressInfo) Aliases() []string {
