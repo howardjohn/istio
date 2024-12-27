@@ -469,7 +469,7 @@ func translateKubernetesCondition(conds []metav1.Condition) map[string]model.Con
 func (a *index) Lookup(key string) []model.AddressInfo {
 	// 1. Workload UID
 	if w := a.workloads.GetKey(key); w != nil {
-		return []model.AddressInfo{workloadToAddressInfo(w.Workload)}
+		return []model.AddressInfo{workloadToAddressInfo(*w)}
 	}
 
 	network, ip, found := strings.Cut(key, "/")
@@ -486,9 +486,9 @@ func (a *index) Lookup(key string) []model.AddressInfo {
 
 	// 3. Service
 	if svc := a.lookupService(key); svc != nil {
-		res := []model.AddressInfo{serviceToAddressInfo(svc.Service)}
+		res := []model.AddressInfo{serviceToAddressInfo(*svc)}
 		for _, w := range a.workloads.ByServiceKey.Lookup(svc.ResourceName()) {
-			res = append(res, workloadToAddressInfo(w.Workload))
+			res = append(res, workloadToAddressInfo(w))
 		}
 		return res
 	}
@@ -515,7 +515,7 @@ func (a *index) lookupService(key string) *model.ServiceInfo {
 func (a *index) All() []model.AddressInfo {
 	res := dedupeWorkloads(a.workloads.List())
 	for _, s := range a.services.List() {
-		res = append(res, serviceToAddressInfo(s.Service))
+		res = append(res, serviceToAddressInfo(s))
 	}
 	return res
 }
@@ -544,7 +544,7 @@ func dedupeWorkloads(workloads []model.WorkloadInfo) []model.AddressInfo {
 			}
 		}
 		if write {
-			res = append(res, workloadToAddressInfo(wl.Workload))
+			res = append(res, workloadToAddressInfo(wl))
 		}
 	}
 	return res

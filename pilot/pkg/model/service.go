@@ -33,6 +33,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 	"k8s.io/apimachinery/pkg/types"
 
 	"istio.io/api/label"
@@ -958,6 +959,11 @@ var _ AmbientIndexes = NoopAmbientIndexes{}
 
 type AddressInfo struct {
 	*workloadapi.Address
+	Marshalled *anypb.Any
+}
+
+func (i AddressInfo) Equals(other AddressInfo) bool {
+	return proto.Equal(i.Address, other.Address)
 }
 
 func (i AddressInfo) Aliases() []string {
@@ -1014,8 +1020,9 @@ type ServiceInfo struct {
 	// PortNames provides a mapping of ServicePort -> port names. Note these are only used internally, not sent over XDS
 	PortNames map[int32]ServicePortName
 	// Source is the type that introduced this service.
-	Source   TypedObject
-	Waypoint WaypointBindingStatus
+	Source     TypedObject
+	Waypoint   WaypointBindingStatus
+	Marshalled *anypb.Any
 }
 
 func (i ServiceInfo) GetStatusTarget() TypedObject {
@@ -1128,6 +1135,7 @@ type WorkloadInfo struct {
 	Source kind.Kind
 	// CreationTime is the time when the workload was created. Note this is used internally only.
 	CreationTime time.Time
+	Marshalled   *anypb.Any
 }
 
 func (i WorkloadInfo) Equals(other WorkloadInfo) bool {

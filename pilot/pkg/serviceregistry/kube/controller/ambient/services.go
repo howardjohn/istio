@@ -27,6 +27,7 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/serviceentry"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
+	"istio.io/istio/pilot/pkg/util/protoconv"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/schema/kind"
@@ -87,12 +88,14 @@ func (a *index) serviceServiceBuilder(
 		waypointStatus.Error = wperr
 
 		a.networkUpdateTrigger.MarkDependant(ctx) // Mark we depend on out of band a.Network
+		svc := a.constructService(s, waypoint)
 		return &model.ServiceInfo{
-			Service:       a.constructService(s, waypoint),
+			Service:       svc,
 			PortNames:     portNames,
 			LabelSelector: model.NewSelector(s.Spec.Selector),
 			Source:        MakeSource(s),
 			Waypoint:      waypointStatus,
+			Marshalled:    protoconv.MessageToAny(svc),
 		}
 	}
 }
@@ -139,6 +142,7 @@ func (a *index) serviceEntriesInfo(s *networkingclient.ServiceEntry, w *Waypoint
 			LabelSelector: sel,
 			Source:        MakeSource(s),
 			Waypoint:      waypoint,
+			Marshalled:    protoconv.MessageToAny(e),
 		}
 	})
 }
