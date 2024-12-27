@@ -66,6 +66,7 @@ type networkManager struct {
 
 	// implements NetworkGatewaysWatcher; we need to call c.NotifyGatewayHandlers when our gateways change
 	model.NetworkGatewaysHandler
+	forceNetwork network.ID
 }
 
 func initNetworkManager(c *Controller, options Options) *networkManager {
@@ -75,6 +76,7 @@ func initNetworkManager(c *Controller, options Options) *networkManager {
 		// zero values are a workaround structcheck issue: https://github.com/golangci/golangci-lint/issues/826
 		ranger:                         nil,
 		network:                        "",
+		forceNetwork:                   options.ForceNetwork,
 		networkFromMeshConfig:          "",
 		registryServiceNameGateways:    make(map[host.Name][]model.NetworkGateway),
 		networkGatewaysBySvc:           make(map[host.Name]model.NetworkGatewaySet),
@@ -324,7 +326,7 @@ func (n *networkManager) getGatewayDetails(svc *model.Service) []model.NetworkGa
 			log.Warnf("could not parse %q for %s on %s/%s; defaulting to %d",
 				gwPortStr, label.NetworkingGatewayPort.Name, svc.Attributes.Namespace, svc.Attributes.Name, DefaultNetworkGatewayPort)
 		}
-		return []model.NetworkGateway{{Port: DefaultNetworkGatewayPort, Network: network.ID(nw)}}
+		return []model.NetworkGateway{{Port: DefaultNetworkGatewayPort, Network: n.forceNetwork}}
 	}
 
 	// meshNetworks registryServiceName+fromRegistry

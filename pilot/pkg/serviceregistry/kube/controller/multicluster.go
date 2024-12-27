@@ -36,6 +36,7 @@ import (
 	"istio.io/istio/pkg/config/schema/collections"
 	kubelib "istio.io/istio/pkg/kube"
 	"istio.io/istio/pkg/kube/multicluster"
+	"istio.io/istio/pkg/network"
 	"istio.io/istio/pkg/webhooks"
 )
 
@@ -120,6 +121,7 @@ func NewMulticluster(
 		if !configCluster {
 			options.SyncTimeout = features.RemoteClusterTimeout
 		}
+		options.ForceNetwork = network.ID(cluster.ID)
 		log.Infof("Initializing Kubernetes service registry %q", options.ClusterID)
 		options.ConfigCluster = configCluster
 		kubeRegistry := NewController(client, options)

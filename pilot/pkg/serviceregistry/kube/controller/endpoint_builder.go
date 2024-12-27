@@ -17,7 +17,6 @@ package controller
 import (
 	v1 "k8s.io/api/core/v1"
 
-	"istio.io/api/label"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
@@ -120,11 +119,12 @@ func (b *EndpointBuilder) buildIstioEndpoint(
 	}
 
 	// in case pod is not found when init EndpointBuilder.
-	networkID := network.ID(b.labels[label.TopologyNetwork.Name])
-	if networkID == "" {
-		networkID = b.endpointNetwork(endpointAddress)
-		b.labels[label.TopologyNetwork.Name] = string(networkID)
-	}
+	networkID := b.controller.Network("", nil)
+	//networkID := network.ID(b.labels[label.TopologyNetwork.Name])
+	//if networkID == "" {
+	//	networkID = b.endpointNetwork(endpointAddress)
+	//	b.labels[label.TopologyNetwork.Name] = string(networkID)
+	//}
 
 	return &model.IstioEndpoint{
 		Labels:                b.labels,

@@ -146,6 +146,7 @@ type Options struct {
 	// StatusWritingEnabled determines if status writing is enabled. This may be set to `nil`, in which case status
 	// writing will never be enabled
 	StatusWritingEnabled *activenotifier.ActiveNotifier
+	ForceNetwork         network.ID
 }
 
 // kubernetesNode represents a kubernetes node that is reachable externally
@@ -356,6 +357,7 @@ func (c *Controller) MCSServices() []model.MCSServiceInfo {
 }
 
 func (c *Controller) Network(endpointIP string, labels labels.Instance) network.ID {
+	return c.opts.ForceNetwork
 	// 1. check the pod/workloadEntry label
 	if nw := labels[label.TopologyNetwork.Name]; nw != "" {
 		return network.ID(nw)
