@@ -27,6 +27,7 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/serviceentry"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
+	"istio.io/istio/pilot/pkg/util/protoconv"
 	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/schema/kind"
@@ -87,12 +88,14 @@ func (a *index) serviceServiceBuilder(
 		waypointStatus.Error = wperr
 
 		a.networkUpdateTrigger.MarkDependant(ctx) // Mark we depend on out of band a.Network
+		svc := a.constructService(s, waypoint)
 		return &model.ServiceInfo{
-			Service:       a.constructService(s, waypoint),
-			PortNames:     portNames,
-			LabelSelector: model.NewSelector(s.Spec.Selector),
-			Source:        MakeSource(s),
-			Waypoint:      waypointStatus,
+			Service:           svc,
+			PortNames:         portNames,
+			LabelSelector:     model.NewSelector(s.Spec.Selector),
+			Source:            MakeSource(s),
+			Waypoint:          waypointStatus,
+			MarshalledAddress: protoconv.MessageToAny(serviceToAddress(svc)),
 		}
 	}
 }
@@ -134,11 +137,12 @@ func (a *index) serviceEntriesInfo(s *networkingclient.ServiceEntry, w *Waypoint
 	}
 	return slices.Map(a.constructServiceEntries(s, w), func(e *workloadapi.Service) model.ServiceInfo {
 		return model.ServiceInfo{
-			Service:       e,
-			PortNames:     portNames,
-			LabelSelector: sel,
-			Source:        MakeSource(s),
-			Waypoint:      waypoint,
+			Service:           e,
+			PortNames:         portNames,
+			LabelSelector:     sel,
+			Source:            MakeSource(s),
+			Waypoint:          waypoint,
+			MarshalledAddress: protoconv.MessageToAny(serviceToAddress(e)),
 		}
 	})
 }

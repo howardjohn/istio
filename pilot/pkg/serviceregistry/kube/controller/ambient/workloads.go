@@ -34,6 +34,7 @@ import (
 	"istio.io/istio/pilot/pkg/serviceregistry/kube"
 	"istio.io/istio/pilot/pkg/serviceregistry/serviceentry"
 	labelutil "istio.io/istio/pilot/pkg/serviceregistry/util/label"
+	"istio.io/istio/pilot/pkg/util/protoconv"
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/schema/gvk"
@@ -184,7 +185,13 @@ func (a *index) workloadEntryWorkloadBuilder(
 		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(wle.Labels, w.WorkloadName)
 
 		setTunnelProtocol(wle.Labels, wle.Annotations, w)
-		return &model.WorkloadInfo{Workload: w, Labels: wle.Labels, Source: kind.WorkloadEntry, CreationTime: wle.CreationTimestamp.Time}
+		return &model.WorkloadInfo{
+			Workload:          w,
+			Labels:            wle.Labels,
+			Source:            kind.WorkloadEntry,
+			CreationTime:      wle.CreationTimestamp.Time,
+			MarshalledAddress: protoconv.MessageToAny(workloadToAddress(w)),
+		}
 	}
 }
 
@@ -298,7 +305,13 @@ func (a *index) podWorkloadBuilder(
 		w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(p.Labels, w.WorkloadName)
 
 		setTunnelProtocol(p.Labels, p.Annotations, w)
-		return &model.WorkloadInfo{Workload: w, Labels: p.Labels, Source: kind.Pod, CreationTime: p.CreationTimestamp.Time}
+		return &model.WorkloadInfo{
+			Workload:          w,
+			Labels:            p.Labels,
+			Source:            kind.Pod,
+			CreationTime:      p.CreationTimestamp.Time,
+			MarshalledAddress: protoconv.MessageToAny(workloadToAddress(w)),
+		}
 	}
 }
 
@@ -489,7 +502,13 @@ func (a *index) serviceEntryWorkloadBuilder(
 			w.CanonicalName, w.CanonicalRevision = kubelabels.CanonicalService(se.Labels, w.WorkloadName)
 
 			setTunnelProtocol(se.Labels, se.Annotations, w)
-			res = append(res, model.WorkloadInfo{Workload: w, Labels: se.Labels, Source: kind.WorkloadEntry, CreationTime: se.CreationTimestamp.Time})
+			res = append(res, model.WorkloadInfo{
+				Workload:          w,
+				Labels:            se.Labels,
+				Source:            kind.WorkloadEntry,
+				CreationTime:      se.CreationTimestamp.Time,
+				MarshalledAddress: protoconv.MessageToAny(workloadToAddress(w)),
+			})
 		}
 		return res
 	}
@@ -618,10 +637,11 @@ func (a *index) endpointSlicesBuilder(
 				Locality:              nil, // Not supported. We could maybe, there is a "zone", but it doesn't seem to be well supported
 			}
 			res = append(res, model.WorkloadInfo{
-				Workload:     w,
-				Labels:       nil,
-				Source:       kind.EndpointSlice,
-				CreationTime: es.CreationTimestamp.Time,
+				Workload:          w,
+				Labels:            nil,
+				Source:            kind.EndpointSlice,
+				CreationTime:      es.CreationTimestamp.Time,
+				MarshalledAddress: protoconv.MessageToAny(workloadToAddress(w)),
 			})
 		}
 

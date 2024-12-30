@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/types/known/anypb"
 	"k8s.io/apimachinery/pkg/types"
 
 	"istio.io/api/label"
@@ -958,6 +959,11 @@ var _ AmbientIndexes = NoopAmbientIndexes{}
 
 type AddressInfo struct {
 	*workloadapi.Address
+	Marshalled *anypb.Any
+}
+
+func (i AddressInfo) Equals(other AddressInfo) bool {
+	return protoconv.Equals(i.Address, other.Address)
 }
 
 func (i AddressInfo) Aliases() []string {
@@ -1016,6 +1022,9 @@ type ServiceInfo struct {
 	// Source is the type that introduced this service.
 	Source   TypedObject
 	Waypoint WaypointBindingStatus
+	// MarshalledAddress contains the pre-marshalled representation.
+	// Note: this is an Address -- not a Service.
+	MarshalledAddress *anypb.Any
 }
 
 func (i ServiceInfo) GetStatusTarget() TypedObject {
@@ -1128,6 +1137,9 @@ type WorkloadInfo struct {
 	Source kind.Kind
 	// CreationTime is the time when the workload was created. Note this is used internally only.
 	CreationTime time.Time
+	// MarshalledAddress contains the pre-marshalled representation.
+	// Note: this is an Address -- not a Workload.
+	MarshalledAddress *anypb.Any
 }
 
 func (i WorkloadInfo) Equals(other WorkloadInfo) bool {
