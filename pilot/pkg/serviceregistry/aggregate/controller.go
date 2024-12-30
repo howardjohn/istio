@@ -115,16 +115,23 @@ func (c *Controller) AddressInformation(addresses sets.String) ([]model.AddressI
 		return i, nil
 	}
 	removed := sets.String{}
+	foundRegistryCount := 0
 	for _, p := range c.GetRegistries() {
 		wis, r := p.AddressInformation(addresses)
 		i = append(i, wis...)
 		removed.Merge(r)
+		if len(wis) > 0 || len(r) > 0 {
+			foundRegistryCount += 1
+		}
 	}
-	// We may have 'removed' it in one registry but found it in another
-	for _, wl := range i {
-		// TODO(@hzxuzhonghu) This is not right for workload, we may search workload by ip, but the resource name is uid.
-		if removed.Contains(wl.ResourceName()) {
-			removed.Delete(wl.ResourceName())
+	if foundRegistryCount > 1 {
+		// We may have 'removed' it in one registry but found it in another
+		// As an optimization, we skip this in the common case of only one registry
+		for _, wl := range i {
+			// TODO(@hzxuzhonghu) This is not right for workload, we may search workload by ip, but the resource name is uid.
+			if removed.Contains(wl.ResourceName()) {
+				removed.Delete(wl.ResourceName())
+			}
 		}
 	}
 	return i, removed
