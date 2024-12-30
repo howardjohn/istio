@@ -239,3 +239,4 @@ func ShallowClone[T ComparableMessage](src T) T {
 func Clone[T proto.Message](obj T) T {
 	return proto.Clone(obj).(T)
 }
+

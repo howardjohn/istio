@@ -35,6 +35,8 @@ import (
 	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/xds"
+	// Ensure we get the more efficient vtproto gRPC encoder
+	_ "istio.io/istio/pkg/util/protomarshal"
 )
 
 var deltaLog = istiolog.RegisterScope("delta", "delta xds debugging")
