@@ -23,6 +23,7 @@
 package model
 
 import (
+	"bytes"
 	"fmt"
 	"net/netip"
 	"sort"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -1114,7 +1116,7 @@ func (i ServiceInfo) NamespacedName() types.NamespacedName {
 }
 
 func (i ServiceInfo) Equals(other ServiceInfo) bool {
-	return protoconv.Equals(i.Service, other.Service) &&
+	return EqualUsingPremarshalled(i.Service, i.MarshalledAddress, other.Service, other.MarshalledAddress) &&
 		maps.Equal(i.LabelSelector.Labels, other.LabelSelector.Labels) &&
 		maps.Equal(i.PortNames, other.PortNames) &&
 		i.Source == other.Source &&
@@ -1143,7 +1145,7 @@ type WorkloadInfo struct {
 }
 
 func (i WorkloadInfo) Equals(other WorkloadInfo) bool {
-	return protoconv.Equals(i.Workload, other.Workload) &&
+	return EqualUsingPremarshalled(i.Workload, i.MarshalledAddress, other.Workload, other.MarshalledAddress) &&
 		maps.Equal(i.Labels, other.Labels) &&
 		i.Source == other.Source &&
 		i.CreationTime == other.CreationTime
@@ -1771,4 +1773,14 @@ func (ep *IstioEndpoint) Equals(other *IstioEndpoint) bool {
 	}
 
 	return true
+}
+
+func EqualUsingPremarshalled[T proto.Message](a T, am *anypb.Any, b T, bm *anypb.Any) bool {
+	// If they are both pre-marshalled, use the marshalled representation. This is orders of magnitude faster
+	if am != nil && bm != nil {
+		return bytes.Equal(am.Value, bm.Value)
+	}
+
+	// Fallback to equals
+	return protoconv.Equals(a, b)
 }
