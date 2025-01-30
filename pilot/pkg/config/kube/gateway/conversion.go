@@ -2027,6 +2027,10 @@ type parentKey struct {
 	Namespace string
 }
 
+func (p parentKey) String() string {
+	return p.Kind.String() + "/" + p.Namespace + "/" + p.Name
+}
+
 type parentReference struct {
 	parentKey
 
