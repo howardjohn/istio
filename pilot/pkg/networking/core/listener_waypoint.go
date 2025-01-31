@@ -300,27 +300,18 @@ func (lb *ListenerBuilder) buildWaypointInternal(wls []model.WorkloadInfo, svcs 
 			var tcpChain, httpChain *listener.FilterChain
 			origDst := svc.GetAddressForProxy(lb.node) + ":" + portString
 			httpClusterName := model.BuildSubsetKey(model.TrafficDirectionInboundVIP, "http", svc.Hostname, port.Port)
+			var baseFilters []*listener.Filter
 			if len(svcAddresses) > 0 && features.EnableAmbientMultiNetwork {
-				setOrigDstForCluster := []*listener.Filter{getOrigDstSfs(origDst, false)}
-				tcpChain = &listener.FilterChain{
-					Filters: append(setOrigDstForCluster, lb.buildInboundNetworkFilters(cc)...),
-					Name:    cc.clusterName,
-				}
-				cc.clusterName = httpClusterName
-				httpChain = &listener.FilterChain{
-					Filters: append(setOrigDstForCluster, lb.buildWaypointInboundHTTPFilters(svc, cc)...),
-					Name:    cc.clusterName,
-				}
-			} else {
-				tcpChain = &listener.FilterChain{
-					Filters: lb.buildInboundNetworkFilters(cc),
-					Name:    cc.clusterName,
-				}
-				cc.clusterName = httpClusterName
-				httpChain = &listener.FilterChain{
-					Filters: lb.buildWaypointInboundHTTPFilters(svc, cc),
-					Name:    cc.clusterName,
-				}
+				baseFilters = []*listener.Filter{getOrigDstSfs(origDst, false)}
+			}
+			tcpChain = &listener.FilterChain{
+				Filters: append(slices.Clone(baseFilters), lb.buildInboundNetworkFilters(cc)...),
+				Name:    cc.clusterName,
+			}
+			cc.clusterName = httpClusterName
+			httpChain = &listener.FilterChain{
+				Filters: append(slices.Clone(baseFilters), lb.buildWaypointInboundHTTPFilters(svc, cc)...),
+				Name:    cc.clusterName,
 			}
 			if port.Protocol.IsUnsupported() {
 				// If we need to sniff, insert two chains and the protocol detector
