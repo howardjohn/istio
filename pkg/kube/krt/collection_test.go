@@ -582,3 +582,86 @@ func TestCollectionDiscardResult(t *testing.T) {
 		tt.WaitOrdered("add/static", "update/static")
 	})
 }
+
+type SimpleServiceStatus struct {
+	ValidName      bool
+	TotalEndpoints int
+}
+
+func TestCollectionStatus(t *testing.T) {
+	stop := test.NewStop(t)
+	opts := testOptions(t)
+	c := kube.NewFakeClient()
+	pods := krt.NewInformer[*corev1.Pod](c, opts.WithName("Pods")...)
+	services := krt.NewInformer[*corev1.Service](c, opts.WithName("Services")...)
+	c.RunAndWait(stop)
+	pc := clienttest.Wrap(t, kclient.New[*corev1.Pod](c))
+	sc := clienttest.Wrap(t, kclient.New[*corev1.Service](c))
+	SimplePods := SimplePodCollection(pods, opts)
+	SimpleServices := SimpleServiceCollection(services, opts)
+	Status, SimpleEndpoints := krt.NewStatusCollection[SimpleService, SimpleServiceStatus, SimpleEndpoint](SimpleServices,
+		func(ctx krt.HandlerContext, svc SimpleService) (*SimpleServiceStatus, []SimpleEndpoint) {
+			pods := krt.Fetch(ctx, SimplePods, krt.FilterLabel(svc.Selector))
+			status := SimpleServiceStatus{
+				ValidName:      len(svc.Name) == 5, // arbitrary rule for tests
+				TotalEndpoints: len(pods),
+			}
+			return &status, slices.Map(pods, func(pod SimplePod) SimpleEndpoint {
+				return SimpleEndpoint{
+					Pod:       pod.Name,
+					Service:   svc.Name,
+					Namespace: svc.Namespace,
+					IP:        pod.IP,
+				}
+			})
+		}, opts.WithName("SimpleEndpoints")...)
+
+	tt := assert.NewTracker[string](t)
+	Status.Register(TrackerHandler[krt.ObjectWithStatus[SimpleService, SimpleServiceStatus]](tt))
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod",
+			Namespace: "namespace",
+			Labels:    map[string]string{"app": "foo"},
+		},
+	}
+	pc.Create(pod)
+	assert.Equal(t, fetcherSorted(SimpleEndpoints)(), nil)
+	tt.Empty()
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc",
+			Namespace: "namespace",
+		},
+		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "foo"}},
+	}
+	sc.Create(svc)
+	assert.Equal(t, fetcherSorted(SimpleEndpoints)(), nil)
+	tt.WaitOrdered("add/namespace/svc")
+	assert.Equal(t, Status.GetKey("namespace/svc").Status, SimpleServiceStatus{TotalEndpoints: 0})
+
+	pod.Status = corev1.PodStatus{PodIP: "1.2.3.4"}
+	pc.UpdateStatus(pod)
+	assert.EventuallyEqual(t, fetcherSorted(SimpleEndpoints), []SimpleEndpoint{{pod.Name, svc.Name, pod.Namespace, "1.2.3.4"}})
+	tt.WaitOrdered("update/namespace/svc")
+	assert.Equal(t, Status.GetKey("namespace/svc").Status, SimpleServiceStatus{TotalEndpoints: 1})
+
+	pod.Status.PodIP = "1.2.3.5"
+	pc.UpdateStatus(pod)
+	assert.EventuallyEqual(t, fetcherSorted(SimpleEndpoints), []SimpleEndpoint{{pod.Name, svc.Name, pod.Namespace, "1.2.3.5"}})
+	// There should NOT be an event caused by the change, as there is no change to report.
+	tt.Empty()
+	assert.Equal(t, Status.GetKey("namespace/svc").Status, SimpleServiceStatus{TotalEndpoints: 1})
+
+	pc.Delete(pod.Name, pod.Namespace)
+	assert.EventuallyEqual(t, fetcherSorted(SimpleEndpoints), nil)
+
+	tt.WaitOrdered("update/namespace/svc")
+	assert.Equal(t, Status.GetKey("namespace/svc").Status, SimpleServiceStatus{TotalEndpoints: 0})
+
+	sc.Delete(svc.Name, svc.Namespace)
+	tt.WaitOrdered("delete/namespace/svc")
+	assert.Equal(t, Status.GetKey("namespace/svc"), nil)
+}

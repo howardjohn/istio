@@ -165,6 +165,8 @@ type manyCollection[I, O any] struct {
 	stop         <-chan struct{}
 	queue        queue.Instance
 
+	onEvent func(o []Event[I])
+
 	syncer Syncer
 }
 
@@ -485,7 +487,49 @@ func NewCollection[I, O any](c Collection[I], hf TransformationSingle[I, O], opt
 	if o.name == "" {
 		o.name = fmt.Sprintf("Collection[%v,%v]", ptr.TypeName[I](), ptr.TypeName[O]())
 	}
-	return newManyCollection[I, O](c, hm, o)
+	return newManyCollection[I, O](c, hm, o, nil)
+}
+
+type ObjectWithStatus[I any, IStatus any] struct {
+	obj    I
+	Status IStatus
+}
+
+func (c ObjectWithStatus[I, IStatus]) ResourceName() string {
+	return GetKey(c.obj)
+}
+
+func (c ObjectWithStatus[I, IStatus]) Equals(o ObjectWithStatus[I, IStatus]) bool {
+	return equal(c.Status, o.Status)
+}
+
+func NewStatusCollection[I, IStatus, O any](c Collection[I], hf TransformationMultiStatus[I, IStatus, O], opts ...CollectionOption) (Collection[ObjectWithStatus[I, IStatus]], Collection[O]) {
+	o := buildCollectionOptions(opts...)
+	if o.name == "" {
+		o.name = fmt.Sprintf("NewStatusCollection[%v,%v,%v]", ptr.TypeName[I](), ptr.TypeName[IStatus](), ptr.TypeName[O]())
+	}
+	status := NewStaticCollection[ObjectWithStatus[I, IStatus]](nil, opts...)
+	primary := newManyCollection[I, O](c, func(ctx HandlerContext, i I) []O {
+		st, objs := hf(ctx, i)
+		if st == nil {
+			status.DeleteObject(GetKey(i))
+		} else {
+			cs := ObjectWithStatus[I, IStatus]{
+				obj:    i,
+				Status: *st,
+			}
+			status.ConditionalUpdateObject(cs)
+		}
+		return objs
+	}, o, func(i []Event[I]) {
+		for _, e := range i {
+			if e.Event == controllers.EventDelete {
+				status.DeleteObject(GetKey(e.Latest()))
+			}
+		}
+	})
+
+	return status, primary
 }
 
 // NewManyCollection transforms a Collection[I] to a Collection[O] by applying the provided transformation function.
@@ -496,10 +540,10 @@ func NewManyCollection[I, O any](c Collection[I], hf TransformationMulti[I, O], 
 	if o.name == "" {
 		o.name = fmt.Sprintf("ManyCollection[%v,%v]", ptr.TypeName[I](), ptr.TypeName[O]())
 	}
-	return newManyCollection[I, O](c, hf, o)
+	return newManyCollection[I, O](c, hf, o, nil)
 }
 
-func newManyCollection[I, O any](cc Collection[I], hf TransformationMulti[I, O], opts collectionOptions) Collection[O] {
+func newManyCollection[I, O any](cc Collection[I], hf TransformationMulti[I, O], opts collectionOptions, onEvent func([]Event[I])) Collection[O] {
 	c := cc.(internalCollection[I])
 
 	h := &manyCollection[I, O]{
@@ -523,6 +567,7 @@ func newManyCollection[I, O any](cc Collection[I], hf TransformationMulti[I, O],
 		augmentation:  opts.augmentation,
 		synced:        make(chan struct{}),
 		stop:          opts.stop,
+		onEvent:       onEvent,
 	}
 	h.syncer = channelSyncer{
 		name:   h.collectionName,
@@ -552,6 +597,9 @@ func (h *manyCollection[I, O]) runQueue() {
 	}
 	// Now register to our primary collection. On any event, we will enqueue the update.
 	syncer := c.RegisterBatch(func(o []Event[I], initialSync bool) {
+		if h.onEvent != nil {
+			h.onEvent(o)
+		}
 		h.queue.Push(func() error {
 			h.onPrimaryInputEvent(o)
 			return nil
