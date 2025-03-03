@@ -213,7 +213,8 @@ type Client struct {
 	errChan chan error
 
 	// closed is set to true when the client is closed
-	closed *atomic.Bool
+	closed       *atomic.Bool
+	innerToOuter map[string]string
 }
 
 func (c *Client) trigger(ctx *handlerContext, typeURL string, r *discovery.Resource, event Event) error {
@@ -347,6 +348,7 @@ func NewDelta(discoveryAddr string, config *DeltaADSConfig, opts ...Option) *Cli
 		synced:            make(chan struct{}),
 		pendingWatches:    sets.New[resourceKey](),
 		lastReceivedNonce: map[string]string{},
+		innerToOuter:      map[string]string{},
 		closed:            atomic.NewBool(false),
 	}
 	for _, o := range opts {
@@ -386,6 +388,11 @@ func Register[T proto.Message](f func(ctx HandlerContext, resourceName string, r
 // Watch registers an initial watch for a type based on the type reflected by the proto message.
 func Watch[T proto.Message](resourceName string) Option {
 	return initWatch(typeName[T](), resourceName)
+}
+
+// Watch registers an initial watch for a type based on the type reflected by the proto message.
+func WatchType(outerType string, resourceName string) Option {
+	return initWatch(outerType, resourceName)
 }
 
 func initWatch(typeURL string, resourceName string) Option {
@@ -455,7 +462,7 @@ func (c *Client) handleDeltaResponse(d *discovery.DeltaDiscoveryResponse) error 
 	for _, r := range d.Resources {
 		if d.TypeUrl != r.Resource.TypeUrl {
 			c.log.Errorf("Invalid response: mismatch of type url: %v vs %v", d.TypeUrl, r.Resource.TypeUrl)
-			continue
+			// continue
 		}
 		err := c.trigger(ctx, d.TypeUrl, r, EventAdd)
 		if err != nil {
@@ -463,7 +470,7 @@ func (c *Client) handleDeltaResponse(d *discovery.DeltaDiscoveryResponse) error 
 		}
 		parentKey := resourceKey{
 			Name:    r.Name,
-			TypeURL: r.Resource.TypeUrl,
+			TypeURL: d.TypeUrl,
 		}
 		c.markReceived(parentKey)
 		c.establishResource(parentKey)
