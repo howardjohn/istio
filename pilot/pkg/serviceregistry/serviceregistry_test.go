@@ -61,6 +61,11 @@ import (
 )
 
 func setupTest(t *testing.T) (model.ConfigStoreController, kubernetes.Interface, *xdsfake.Updater) {
+	c, k, x, _ := setupTestWithSERegistry(t)
+	return c, k, x
+}
+
+func setupTestWithSERegistry(t *testing.T) (model.ConfigStoreController, kubernetes.Interface, *xdsfake.Updater, *serviceentry.Controller) {
 	t.Helper()
 	client := kubeclient.NewFakeClient()
 
@@ -92,7 +97,7 @@ func setupTest(t *testing.T) (model.ConfigStoreController, kubernetes.Interface,
 	go kc.Run(stop)
 	go se.Run(stop)
 
-	return configController, client.Kube(), xdsUpdater
+	return configController, client.Kube(), xdsUpdater, se
 }
 
 // TestWorkloadInstances is effectively an integration test of composing the Kubernetes service registry with the
@@ -1094,6 +1099,67 @@ func TestWorkloadInstances(t *testing.T) {
 		expectServiceEndpoints(t, fx, expectedSvc, 80, instances)
 	})
 
+	t.Run("multiple ServiceEntry selects Pod", func(t *testing.T) {
+		store, kube, fx, se := setupTestWithSERegistry(t)
+		se2 := serviceEntry.DeepCopy()
+		se2.Name = "other"
+		se2.Spec.(*networking.ServiceEntry).Hosts = []string{"other-service.namespace.svc.cluster.local"}
+		makePod(t, kube, pod)
+		time.Sleep(time.Millisecond*100)
+		makeIstioObject(t, store, serviceEntry)
+
+		instances := []EndpointResponse{{
+			Address: pod.Status.PodIP,
+			Port:    80,
+		}}
+		expectServiceEndpoints(t, fx, expectedSvc, 80, instances)
+		node := &model.Proxy{
+			IPAddresses: []string{pod.Status.PodIP},
+			Metadata: &model.NodeMetadata{Namespace: serviceEntry.Namespace},
+		}
+		t.Log(slices.Map(se.GetProxyServiceTargets(node), func(e model.ServiceTarget) string {
+			return e.Service.Hostname.String()
+		}))
+
+		makeIstioObject(t, store, se2)
+		expectedSvc2 := &model.Service{
+			Hostname: "other-.namespace.svc.cluster.local",
+			Ports: []*model.Port{{
+				Name:     "http",
+				Port:     80,
+				Protocol: "http",
+			}, {
+				Name:     "http2",
+				Port:     90,
+				Protocol: "http",
+			}, {
+				Name:     "tcp",
+				Port:     70,
+				Protocol: "tcp",
+			}},
+			Attributes: model.ServiceAttributes{
+				Namespace:      namespace,
+				Name:           "other",
+				LabelSelectors: labels,
+			},
+		}
+		time.Sleep(time.Second)
+		//t.Log(se.GetProxyServiceTargets(node))
+		//expectServiceEndpoints(t, fx, expectedSvc2, 80, instances)
+		t.Log(slices.Map(se.GetProxyServiceTargets(node), func(e model.ServiceTarget) string {
+			return e.Service.Hostname.String()
+		}))
+		_ = expectedSvc2
+
+		assert.NoError(t, store.Delete(gvk.ServiceEntry, se2.Name, se2.Namespace, nil))
+		time.Sleep(time.Second)
+		//t.Log(se.GetProxyServiceTargets(node))
+		//expectServiceEndpoints(t, fx, expectedSvc2, 80, instances)
+		t.Log(slices.Map(se.GetProxyServiceTargets(node), func(e model.ServiceTarget) string {
+			return e.Service.Hostname.String()
+		}))
+	})
+
 	t.Run("ServiceEntry selects WorkloadEntry", func(t *testing.T) {
 		store, _, fx := setupTest(t)
 		makeIstioObject(t, store, config.Config{
@@ -1746,6 +1812,7 @@ func expectServiceEndpointsFromIndex(t *testing.T, ei *model.EndpointIndex, svc 
 		if endpoints == nil {
 			endpoints = []*model.IstioEndpoint{} // To simplify tests a bit
 		}
+
 		got := slices.Map(endpoints, func(e *model.IstioEndpoint) EndpointResponse {
 			return EndpointResponse{
 				Address: e.Addresses[0],

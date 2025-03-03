@@ -409,6 +409,11 @@ func (s *Controller) serviceEntryHandler(old, curr config.Config, event model.Ev
 	}
 
 	serviceInstancesByConfig, serviceInstances := s.buildServiceInstances(curr, cs)
+	log.Errorf("howardjohn: %v", len(serviceInstancesByConfig[configKey{
+		kind:      podConfigType,
+		name:      "pod",
+		namespace: "namespace",
+	}]))
 	oldInstances := s.serviceInstances.getServiceEntryInstances(key)
 	for configKey, old := range oldInstances {
 		s.serviceInstances.deleteInstanceKeys(configKeyWithParent{configKey: configKey, parent: key}, old)
