@@ -443,6 +443,8 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 				gatewayRoutes[gatewayName] = make(map[string][]*route.Route)
 			}
 
+			infPoolConfig := istio_route.CheckAndGetInferencePoolConfig(virtualService)
+
 			vskey := virtualService.Name + "/" + virtualService.Namespace
 
 			if routes, exists = gatewayRoutes[gatewayName][vskey]; !exists {
@@ -450,6 +452,7 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 					IsTLS:                     server.Tls != nil,
 					IsHTTP3AltSvcHeaderNeeded: isH3DiscoveryNeeded,
 					Mesh:                      push.Mesh,
+					InferencePoolExtensionRef: infPoolConfig,
 				}
 				hashByDestination := istio_route.GetConsistentHashForVirtualService(push, node, virtualService)
 				routes, err = istio_route.BuildHTTPRoutesForVirtualService(node, virtualService, nameToServiceMap,
