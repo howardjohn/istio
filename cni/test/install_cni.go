@@ -199,16 +199,18 @@ func checkBinDir(t *testing.T, tempCNIBinDir, op string, files ...string) error 
 	t.Helper()
 	for _, f := range files {
 		if _, err := os.Stat(tempCNIBinDir + "/" + f); !os.IsNotExist(err) {
-			if op == "add" {
+			switch op {
+			case "add":
 				t.Logf("PASS: File %v was added to %v", f, tempCNIBinDir)
 				return nil
-			} else if op == "del" {
+			case "del":
 				return fmt.Errorf("FAIL: File %v was not removed from %v", f, tempCNIBinDir)
 			}
 		} else {
-			if op == "add" {
+			switch op {
+			case "add":
 				return fmt.Errorf("FAIL: File %v was not added to %v", f, tempCNIBinDir)
-			} else if op == "del" {
+			case "del":
 				t.Logf("PASS: File %v was removed from %v", f, tempCNIBinDir)
 				return nil
 			}

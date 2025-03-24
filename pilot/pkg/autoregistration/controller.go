@@ -547,7 +547,7 @@ func (c *Controller) shouldCleanupEntry(wle config.Config) bool {
 	// don't clean up if WorkloadEntry is neither auto-registered
 	// nor health-checked
 	if !isAutoRegisteredWorkloadEntry(&wle) &&
-		!(isHealthCheckedWorkloadEntry(&wle) && health.HasHealthCondition(&wle)) {
+		(!isHealthCheckedWorkloadEntry(&wle) || !health.HasHealthCondition(&wle)) {
 		return false
 	}
 

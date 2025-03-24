@@ -132,10 +132,10 @@ func TestNodeMetadata(t *testing.T) {
 				t.Fatalf("failed to unmarshal: %v", err)
 			}
 
-			assert.Equal(t, (*meshconfig.ProxyConfig)(meta.NodeMetadata.ProxyConfig), (*meshconfig.ProxyConfig)(tt.inOut.NodeMetadata.ProxyConfig))
+			assert.Equal(t, (*meshconfig.ProxyConfig)(meta.ProxyConfig), (*meshconfig.ProxyConfig)(tt.inOut.ProxyConfig))
 			// cmp cannot handle the type-alias in the metadata, so check them separately.
-			meta.NodeMetadata.ProxyConfig = nil
-			tt.inOut.NodeMetadata.ProxyConfig = nil
+			meta.ProxyConfig = nil
+			tt.inOut.ProxyConfig = nil
 			assert.Equal(t, meta, tt.inOut)
 		})
 	}

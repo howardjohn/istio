@@ -21,8 +21,9 @@ import (
 	"context"
 	"net/netip"
 
-	"istio.io/istio/pkg/kube"
 	corev1 "k8s.io/api/core/v1"
+
+	"istio.io/istio/pkg/kube"
 )
 
 type meshDataplane struct{}

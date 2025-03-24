@@ -201,7 +201,7 @@ func (cb *ClusterBuilder) buildSubsetCluster(
 	if isPassthrough {
 		clusterType = cluster.Cluster_ORIGINAL_DST
 	}
-	if !(isPassthrough || clusterType == cluster.Cluster_EDS) {
+	if !isPassthrough && clusterType != cluster.Cluster_EDS {
 		lbEndpoints = endpointBuilder.WithSubset(subset.Name).FromServiceEndpoints()
 	}
 

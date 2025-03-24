@@ -171,9 +171,9 @@ func (c *Cache) generateFileName(key CacheKey) string {
 }
 
 func sanitize(c string) string {
-	return strings.Replace(
-		strings.Replace(c, "/", "", -1),
-		".", "_", -1)
+	return strings.ReplaceAll(
+		strings.ReplaceAll(c, "/", ""),
+		".", "_")
 }
 
 func toKey(d Descriptor) CacheKey {

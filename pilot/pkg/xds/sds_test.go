@@ -394,13 +394,13 @@ func TestGenerateSDS(t *testing.T) {
 			})
 			cc := s.KubeClient().Kube().(*fake.Clientset)
 
-			cc.Fake.Lock()
+			cc.Lock()
 			if tt.accessReviewResponse != nil {
-				cc.Fake.PrependReactor("create", "subjectaccessreviews", tt.accessReviewResponse)
+				cc.PrependReactor("create", "subjectaccessreviews", tt.accessReviewResponse)
 			} else {
 				xds.DisableAuthorizationForSecret(cc)
 			}
-			cc.Fake.Unlock()
+			cc.Unlock()
 
 			gen := s.Discovery.Generators[v3.SecretType]
 			tt.request.Start = time.Now()

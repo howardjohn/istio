@@ -469,7 +469,7 @@ func (t *Telemetries) applicableTelemetries(proxy *Proxy, svc *Service) computed
 }
 
 func appendApplicableTelemetries(ct *computedTelemetries, tel Telemetry, spec *tpb.Telemetry) *computedTelemetries {
-	ct.telemetryKey.Workload = types.NamespacedName{Name: tel.Name, Namespace: tel.Namespace}
+	ct.Workload = types.NamespacedName{Name: tel.Name, Namespace: tel.Namespace}
 	ct.Metrics = append(ct.Metrics, spec.GetMetrics()...)
 	if len(tel.Spec.GetAccessLogging()) != 0 {
 		ct.Logging = append(ct.Logging, &computedAccessLogging{
@@ -1060,10 +1060,10 @@ func (ct *computedTelemetries) Equal(other *computedTelemetries) bool {
 		}
 	}
 	sort.SliceStable(ct.Logging, func(i, j int) bool {
-		return ct.Logging[i].telemetryKey.Root.Name < ct.Logging[j].telemetryKey.Root.Name
+		return ct.Logging[i].Root.Name < ct.Logging[j].Root.Name
 	})
 	sort.SliceStable(other.Logging, func(i, j int) bool {
-		return other.Logging[i].telemetryKey.Root.Name < other.Logging[j].telemetryKey.Root.Name
+		return other.Logging[i].Root.Name < other.Logging[j].Root.Name
 	})
 	for i := range ct.Logging {
 		if ct.Logging[i].telemetryKey != other.Logging[i].telemetryKey {

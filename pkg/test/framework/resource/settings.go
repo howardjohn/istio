@@ -216,8 +216,8 @@ func (s *Settings) OnlyWorkloadClassesAsSet() sets.String {
 
 // RunDir is the name of the dir to output, for this particular run.
 func (s *Settings) RunDir() string {
-	u := strings.Replace(s.RunID.String(), "-", "", -1)
-	t := strings.Replace(s.TestID, "_", "-", -1)
+	u := strings.ReplaceAll(s.RunID.String(), "-", "")
+	t := strings.ReplaceAll(s.TestID, "_", "-")
 	// We want at least 6 characters of uuid padding
 	padding := maxTestIDLength - len(t)
 	if padding < 0 {

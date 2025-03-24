@@ -579,16 +579,16 @@ func BuildFieldPathMap(yamlNode *yamlv3.Node, startLineNum int, curPath string, 
 		valueNode := nodeContent[i+1]
 		pathKeyForMap := fmt.Sprintf("%s.%s", curPath, keyNode.Value)
 
-		switch {
-		case valueNode.Kind == yamlv3.ScalarNode:
+		switch valueNode.Kind {
+		case yamlv3.ScalarNode:
 			// Can build map because the value node has no content anymore
 			// minus one because startLineNum starts at line 1, and yamlv3.Node.line also starts at line 1
 			fieldPathMap[fmt.Sprintf("{%s}", pathKeyForMap)] = valueNode.Line + startLineNum - 1
 
-		case valueNode.Kind == yamlv3.MappingNode:
+		case yamlv3.MappingNode:
 			BuildFieldPathMap(valueNode, startLineNum, pathKeyForMap, fieldPathMap)
 
-		case valueNode.Kind == yamlv3.SequenceNode:
+		case yamlv3.SequenceNode:
 			for j, node := range valueNode.Content {
 				pathWithIndex := fmt.Sprintf("%s[%d]", pathKeyForMap, j)
 

@@ -255,7 +255,7 @@ func registerBooleanParameter(name string, value bool, usage string) {
 }
 
 func registerEnvironment[T env.Parseable](name string, defaultValue T, usage string) {
-	envName := strings.Replace(strings.ToUpper(name), "-", "_", -1)
+	envName := strings.ReplaceAll(strings.ToUpper(name), "-", "_")
 	// Note: we do not rely on istio env package to retrieve configuration. We relies on viper.
 	// This is just to make sure the reference doc tool can generate doc with these vars as env variable at istio.io.
 	env.Register(envName, defaultValue, usage)

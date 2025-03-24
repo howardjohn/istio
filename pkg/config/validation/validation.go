@@ -574,14 +574,15 @@ func validateTLSOptions(tls *networking.ServerTLSSettings) (v Validation) {
 		// remotely. ServerCertificate and CaCertificates fields are not required.
 		return
 	}
-	if tls.Mode == networking.ServerTLSSettings_SIMPLE {
+	switch tls.Mode {
+	case networking.ServerTLSSettings_SIMPLE:
 		if tls.ServerCertificate == "" {
 			v = AppendValidation(v, fmt.Errorf("SIMPLE TLS requires a server certificate"))
 		}
 		if tls.PrivateKey == "" {
 			v = AppendValidation(v, fmt.Errorf("SIMPLE TLS requires a private key"))
 		}
-	} else if tls.Mode == networking.ServerTLSSettings_MUTUAL || tls.Mode == networking.ServerTLSSettings_OPTIONAL_MUTUAL {
+	case networking.ServerTLSSettings_MUTUAL, networking.ServerTLSSettings_OPTIONAL_MUTUAL:
 		if tls.ServerCertificate == "" {
 			v = AppendValidation(v, fmt.Errorf("MUTUAL TLS requires a server certificate"))
 		}
@@ -3234,7 +3235,7 @@ func validateWasmPluginSHA(plugin *extensions.WasmPlugin) error {
 		return fmt.Errorf("sha256 field must be 64 characters long")
 	}
 	for _, r := range plugin.Sha256 {
-		if !('a' <= r && r <= 'f' || '0' <= r && r <= '9') {
+		if ('a' > r || r > 'f') && ('0' > r || r > '9') {
 			return fmt.Errorf("sha256 field must match [a-f0-9]{64} pattern")
 		}
 	}

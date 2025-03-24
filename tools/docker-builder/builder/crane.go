@@ -350,7 +350,7 @@ func CreateProgress(name string) chan v1.Update {
 	go func() {
 		lastLog := time.Time{}
 		for u := range updates {
-			if time.Since(lastLog) < time.Second && !(u.Total == u.Complete) {
+			if time.Since(lastLog) < time.Second && (u.Total != u.Complete) {
 				// Limit to 1 log per-image per-second, unless it is the final log
 				continue
 			}

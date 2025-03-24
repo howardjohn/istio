@@ -569,11 +569,11 @@ func objectToPod(t testing.TB, obj runtime.Object) *corev1.Pod {
 		// Deployment is special since its a double nested resource
 		rsgvk := schema.GroupVersionKind{Kind: "ReplicaSet", Group: "apps", Version: "v1"}
 		o.Spec.Template.ObjectMeta = simulateOwnerRef(o.Spec.Template.ObjectMeta, o.Name+"-fake", rsgvk)
-		o.Spec.Template.ObjectMeta.GenerateName += "-"
-		if o.Spec.Template.ObjectMeta.Labels == nil {
-			o.Spec.Template.ObjectMeta.Labels = map[string]string{}
+		o.Spec.Template.GenerateName += "-"
+		if o.Spec.Template.Labels == nil {
+			o.Spec.Template.Labels = map[string]string{}
 		}
-		o.Spec.Template.ObjectMeta.Labels["pod-template-hash"] = "fake"
+		o.Spec.Template.Labels["pod-template-hash"] = "fake"
 		return &corev1.Pod{
 			ObjectMeta: o.Spec.Template.ObjectMeta,
 			Spec:       o.Spec.Template.Spec,
@@ -806,7 +806,7 @@ func makeTestData(t testing.TB, skip bool, apiVersion string) []byte {
 	}
 
 	if skip {
-		pod.ObjectMeta.Annotations[annotation.SidecarInject.Name] = "false"
+		pod.Annotations[annotation.SidecarInject.Name] = "false"
 	}
 
 	raw, err := json.Marshal(&pod)

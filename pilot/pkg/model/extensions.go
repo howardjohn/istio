@@ -112,11 +112,11 @@ func (p *WasmPluginWrapper) NamespacedName() types.NamespacedName {
 }
 
 func (p *WasmPluginWrapper) MatchType(pluginType WasmPluginType) bool {
-	return pluginType == WasmPluginTypeAny || pluginType == fromPluginType(p.WasmPlugin.Type)
+	return pluginType == WasmPluginTypeAny || pluginType == fromPluginType(p.Type)
 }
 
 func (p *WasmPluginWrapper) BuildHTTPWasmFilter(proxy *Proxy) *httpwasm.Wasm {
-	if !(p.Type == extensions.PluginType_HTTP || p.Type == extensions.PluginType_UNSPECIFIED_PLUGIN_TYPE) {
+	if p.Type != extensions.PluginType_HTTP && p.Type != extensions.PluginType_UNSPECIFIED_PLUGIN_TYPE {
 		return nil
 	}
 	return &httpwasm.Wasm{

@@ -578,8 +578,8 @@ func buildHTTPVirtualServices(
 
 func serviceEntryHosts(ses []config.Config, name, namespace string) []string {
 	for _, obj := range ses {
-		if obj.Meta.Name == name {
-			ns := obj.Meta.Namespace
+		if obj.Name == name {
+			ns := obj.Namespace
 			if ns == "" {
 				ns = metav1.NamespaceDefault
 			}
@@ -944,7 +944,8 @@ func referenceAllowed(
 	hostnames []k8s.Hostname,
 	namespace string,
 ) (*ParentError, *WaypointError) {
-	if parentRef.Kind == gvk.Service {
+	switch parentRef.Kind {
+	case gvk.Service:
 		var svc *model.Service
 
 		// check that the referenced svc exists
@@ -970,7 +971,7 @@ func referenceAllowed(
 				}
 			}
 		}
-	} else if parentRef.Kind == gvk.ServiceEntry {
+	case gvk.ServiceEntry:
 		// check that the referenced svc entry exists
 		// TODO (conradhanson) - improve se lookup efficiency (existing index?)
 		svcEntry := slices.FindFunc(ctx.ServiceEntry, func(cfg config.Config) bool {
@@ -1001,7 +1002,7 @@ func referenceAllowed(
 				}
 			}
 		}
-	} else {
+	default:
 		// First, check section and port apply. This must come first
 		if parentRef.Port != 0 && parentRef.Port != parent.Port {
 			return &ParentError{

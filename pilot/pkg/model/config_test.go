@@ -213,7 +213,7 @@ func TestLabelsEquals(t *testing.T) {
 func TestConfigKey(t *testing.T) {
 	cfg := mock_config.Make("ns", 2)
 	want := "test.istio.io/v1/MockConfig/ns/mock-config2"
-	if key := cfg.Meta.Key(); key != want {
+	if key := cfg.Key(); key != want {
 		t.Fatalf("config.Key() => got %q, want %q", key, want)
 	}
 }

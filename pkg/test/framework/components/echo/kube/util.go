@@ -34,7 +34,7 @@ func (s podSelector) String() string {
 }
 
 func (s podSelector) MatchesPod(pod *corev1.Pod) bool {
-	return pod.ObjectMeta.Labels[s.Label] == s.Value
+	return pod.Labels[s.Label] == s.Value
 }
 
 func newPodSelector(cfg echo.Config) podSelector {

@@ -1819,7 +1819,7 @@ func (s *ambientTestServer) labelPod(t *testing.T, name, ns string, labels map[s
 	if p == nil {
 		return
 	}
-	p.ObjectMeta.Labels = labels
+	p.Labels = labels
 	s.pc.Update(p)
 }
 
@@ -1832,7 +1832,7 @@ func (s *ambientTestServer) labelService(t *testing.T, name, ns string, labels m
 	if svc == nil {
 		return
 	}
-	svc.ObjectMeta.Labels = labels
+	svc.Labels = labels
 	s.sc.Update(svc)
 }
 
@@ -1934,7 +1934,7 @@ func (s *ambientTestServer) assertAddresses(t *testing.T, lookup string, names .
 		for _, address := range addresses {
 			// Validate we pre-marshal everything
 			assert.Equal(t, address.Marshaled != nil, true)
-			switch addr := address.Address.Type.(type) {
+			switch addr := address.Type.(type) {
 			case *workloadapi.Address_Workload:
 				have.Insert(addr.Workload.Name)
 			case *workloadapi.Address_Service:
@@ -1952,7 +1952,7 @@ func (s *ambientTestServer) assertWorkloads(t *testing.T, lookup string, state w
 		workloads := s.lookup(lookup)
 		have := sets.New[string]()
 		for _, wl := range workloads {
-			switch addr := wl.Address.Type.(type) {
+			switch addr := wl.Type.(type) {
 			case *workloadapi.Address_Workload:
 				if addr.Workload.Status == state {
 					have.Insert(addr.Workload.Name)

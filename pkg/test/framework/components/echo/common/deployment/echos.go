@@ -183,10 +183,7 @@ func (c *Config) fillDefaults(ctx resource.Context) error {
 func (c *Config) DefaultEchoConfigs(t resource.Context) []echo.Config {
 	var defaultConfigs []echo.Config
 
-	disableAutomountSAToken := true
-	if t.Settings().Revisions.Minimum() < "1.16" {
-		disableAutomountSAToken = false
-	}
+	disableAutomountSAToken := t.Settings().Revisions.Minimum() >= "1.16"
 
 	a := echo.Config{
 		Service:                 ASvc,

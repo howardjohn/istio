@@ -242,7 +242,7 @@ func (s *meshDataplane) syncHostIPSets(ambientPods []*corev1.Pod) error {
 func (s *meshDataplane) addPodToHostNSIpset(pod *corev1.Pod, podIPs []netip.Addr) ([]netip.Addr, error) {
 	// Add the pod UID as an ipset entry comment, so we can (more) easily find and delete
 	// all relevant entries for a pod later.
-	podUID := string(pod.ObjectMeta.UID)
+	podUID := string(pod.UID)
 	ipProto := uint8(unix.IPPROTO_TCP)
 	log := log.WithLabels("ns", pod.Namespace, "name", pod.Name, "podUID", podUID, "ipset", s.hostsideProbeIPSet.Prefix)
 
@@ -293,7 +293,7 @@ func createHostsideProbeIpset(isV6 bool) (ipset.IPSet, error) {
 // Note that unlike when we add the IP to the set, on removal we will simply
 // skip removing the IP if the IP matches, but the UID comment does not match our pod.
 func removePodFromHostNSIpset(pod *corev1.Pod, hostsideProbeSet *ipset.IPSet) error {
-	podUID := string(pod.ObjectMeta.UID)
+	podUID := string(pod.UID)
 	log := log.WithLabels("ns", pod.Namespace, "name", pod.Name, "podUID", podUID, "ipset", hostsideProbeSet.Prefix)
 
 	podIPs := util.GetPodIPsIfPresent(pod)

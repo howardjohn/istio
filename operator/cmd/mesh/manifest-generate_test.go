@@ -275,7 +275,7 @@ func TestManifestGenerateGateways(t *testing.T) {
 		g.Expect(objs.kind(gvk.ServiceAccount.Kind).nameMatches(".*gateway.*").size()).Should(Equal(3))
 
 		dobj := mustGetDeployment(g, objs, "istio-ingressgateway")
-		d := dobj.Unstructured.Object
+		d := dobj.Object
 		c := getContainer(dobj, "istio-proxy")
 		g.Expect(d).Should(HavePathValueContain(PathValue{"spec.template.metadata.labels", toMap("service.istio.io/canonical-revision:21")}))
 		g.Expect(d).Should(HavePathValueContain(PathValue{"metadata.labels", toMap("aaa:aaa-val,bbb:bbb-val")}))
@@ -283,16 +283,16 @@ func TestManifestGenerateGateways(t *testing.T) {
 		g.Expect(c).Should(HavePathValueEqual(PathValue{"resources.requests.memory", "999Mi"}))
 
 		dobj = mustGetDeployment(g, objs, "user-ingressgateway")
-		d = dobj.Unstructured.Object
+		d = dobj.Object
 		c = getContainer(dobj, "istio-proxy")
 		g.Expect(d).Should(HavePathValueContain(PathValue{"metadata.labels", toMap("ccc:ccc-val,ddd:ddd-val")}))
 		g.Expect(c).Should(HavePathValueEqual(PathValue{"resources.requests.cpu", "555m"}))
 		g.Expect(c).Should(HavePathValueEqual(PathValue{"resources.requests.memory", "888Mi"}))
 
 		dobj = mustGetDeployment(g, objs, "ilb-gateway")
-		d = dobj.Unstructured.Object
+		d = dobj.Object
 		c = getContainer(dobj, "istio-proxy")
-		s := mustGetService(g, objs, "ilb-gateway").Unstructured.Object
+		s := mustGetService(g, objs, "ilb-gateway").Object
 		g.Expect(d).Should(HavePathValueContain(PathValue{"metadata.labels", toMap("app:istio-ingressgateway,istio:ingressgateway,release: istio")}))
 		g.Expect(c).Should(HavePathValueEqual(PathValue{"resources.requests.cpu", "333m"}))
 		g.Expect(c).Should(HavePathValueEqual(PathValue{"env.[name:PILOT_CERT_PROVIDER].value", "foobar"}))
@@ -302,7 +302,7 @@ func TestManifestGenerateGateways(t *testing.T) {
 		g.Expect(s).Should(HavePathValueContain(PathValue{"spec.ports.[2]", portVal("tcp-dns", 5353, -1)}))
 
 		for _, o := range objs.kind(manifest.HorizontalPodAutoscaler).objSlice {
-			ou := o.Unstructured.Object
+			ou := o.Object
 			g.Expect(ou).Should(HavePathValueEqual(PathValue{"spec.minReplicas", int64(1)}))
 			g.Expect(ou).Should(HavePathValueEqual(PathValue{"spec.maxReplicas", int64(5)}))
 		}
@@ -405,10 +405,10 @@ func TestManifestGenerateIstiodRemote(t *testing.T) {
 		g.Expect(objs.kind(gvk.Service.Kind).nameEquals(istiodServiceName)).Should(Not(BeNil()))
 		g.Expect(objs.kind(gvk.ServiceAccount.Kind).nameEquals("istio-reader-service-account")).Should(Not(BeNil()))
 
-		mwc := mustGetMutatingWebhookConfiguration(g, objs, "istio-sidecar-injector").Unstructured.Object
+		mwc := mustGetMutatingWebhookConfiguration(g, objs, "istio-sidecar-injector").Object
 		g.Expect(mwc).Should(HavePathValueEqual(PathValue{"webhooks.[0].clientConfig.url", "https://xxx:15017/inject"}))
 
-		ep := mustGetEndpoint(g, objs, istiodServiceName).Unstructured.Object
+		ep := mustGetEndpoint(g, objs, istiodServiceName).Object
 		g.Expect(ep).Should(HavePathValueEqual(PathValue{"subsets.[0].addresses.[0]", endpointSubsetAddressVal("", "169.10.112.88", "")}))
 		g.Expect(ep).Should(HavePathValueContain(PathValue{"subsets.[0].ports.[0]", portVal("tcp-istiod", 15012, -1)}))
 
@@ -491,7 +491,7 @@ func TestManifestGenerateFlagsSetValues(t *testing.T) {
 	c := getContainer(dobj, "istio-proxy")
 	g.Expect(c).Should(HavePathValueEqual(PathValue{"image", "gcr.io/istio-testing/myproxy:latest"}))
 
-	cm := objs.kind("ConfigMap").nameEquals("istio-sidecar-injector").Unstructured.Object
+	cm := objs.kind("ConfigMap").nameEquals("istio-sidecar-injector").Object
 	// TODO: change values to some nicer format rather than text block.
 	g.Expect(cm).Should(HavePathValueMatchRegex(PathValue{"data.values", `.*"includeIPRanges"\: "172\.30\.0\.0/16,172\.21\.0\.0/16".*`}))
 }

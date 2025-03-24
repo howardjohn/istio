@@ -121,7 +121,7 @@ func (m recursiveWatcher) watchRecursive(path string) error {
 			return err
 		}
 		if fi.IsDir() {
-			if err = m.Watcher.Add(walkPath); err != nil {
+			if err = m.Add(walkPath); err != nil {
 				return err
 			}
 		}
@@ -187,7 +187,7 @@ func (m *Monitor) checkAndUpdate() {
 			newIndex++
 		} else {
 			// version may change without content changing
-			oldConfig.Meta.ResourceVersion = newConfig.Meta.ResourceVersion
+			oldConfig.ResourceVersion = newConfig.ResourceVersion
 			if !reflect.DeepEqual(oldConfig, newConfig) {
 				m.updateConfig(newConfig)
 			}

@@ -320,7 +320,7 @@ func (s *DiscoveryServer) Syncz(w http.ResponseWriter, req *http.Request) {
 // registryz providees debug support for registry - adding and listing model items.
 // Can be combined with the push debug interface to reproduce changes.
 func (s *DiscoveryServer) registryz(w http.ResponseWriter, req *http.Request) {
-	all := s.Env.ServiceDiscovery.Services()
+	all := s.Env.Services()
 	writeJSON(w, all, req)
 }
 
@@ -396,7 +396,7 @@ func (s *DiscoveryServer) configz(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	s.Env.ConfigStore.Schemas().ForEach(func(schema resource.Schema) bool {
-		cfg := s.Env.ConfigStore.List(schema.GroupVersionKind(), "")
+		cfg := s.Env.List(schema.GroupVersionKind(), "")
 		for _, c := range cfg {
 			configs = append(configs, kubernetesConfig{c})
 		}
@@ -902,7 +902,7 @@ func (s *DiscoveryServer) Debug(w http.ResponseWriter, req *http.Request) {
 func (s *DiscoveryServer) list(w http.ResponseWriter, req *http.Request) {
 	var cmdNames []string
 	for k := range s.debugHandlers {
-		key := strings.Replace(k, "/debug/", "", -1)
+		key := strings.ReplaceAll(k, "/debug/", "")
 		// exclude current list command
 		if key == "list" {
 			continue
@@ -974,7 +974,7 @@ func (s *DiscoveryServer) instancesz(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *DiscoveryServer) ambientz(w http.ResponseWriter, req *http.Request) {
-	addresses, _ := s.Env.ServiceDiscovery.AddressInformation(nil)
+	addresses, _ := s.Env.AddressInformation(nil)
 	res := struct {
 		Workloads []jsonMarshalProto `json:"workloads"`
 		Services  []jsonMarshalProto `json:"services"`
@@ -1021,7 +1021,7 @@ func (s *DiscoveryServer) ambientz(w http.ResponseWriter, req *http.Request) {
 			res.Services = append(res.Services, jsonMarshalProto{s})
 		}
 	}
-	for _, policy := range s.Env.ServiceDiscovery.Policies(nil) {
+	for _, policy := range s.Env.Policies(nil) {
 		res.Policies = append(res.Policies, jsonMarshalProto{policy.Authorization})
 	}
 	writeJSON(w, res, req)

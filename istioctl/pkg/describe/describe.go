@@ -127,8 +127,8 @@ the configuration objects that affect that pod.`,
 
 			writer := cmd.OutOrStdout()
 
-			podLabels := klabels.Set(pod.ObjectMeta.Labels)
-			annotations := klabels.Set(pod.ObjectMeta.Annotations)
+			podLabels := klabels.Set(pod.Labels)
+			annotations := klabels.Set(pod.Annotations)
 			opts.Revision = GetRevisionFromPodAnnotation(annotations)
 
 			printPod(writer, pod, opts.Revision)
@@ -162,7 +162,7 @@ the configuration objects that affect that pod.`,
 
 			configClient := client.Istio()
 
-			podsLabels := []klabels.Set{klabels.Set(pod.ObjectMeta.Labels)}
+			podsLabels := []klabels.Set{klabels.Set(pod.Labels)}
 			fmt.Fprintf(writer, "--------------------\n")
 			err = describePodServices(writer, kubeClient, configClient, pod, matchingServices, podsLabels)
 			if err != nil {
@@ -171,7 +171,7 @@ the configuration objects that affect that pod.`,
 
 			// render PeerAuthentication info
 			fmt.Fprintf(writer, "--------------------\n")
-			err = describePeerAuthentication(writer, kubeClient, configClient, ns, klabels.Set(pod.ObjectMeta.Labels), ctx.IstioNamespace())
+			err = describePeerAuthentication(writer, kubeClient, configClient, ns, klabels.Set(pod.Labels), ctx.IstioNamespace())
 			if err != nil {
 				return err
 			}
@@ -339,7 +339,7 @@ func recordShortPolicies(lb *v1alpha3.LoadBalancerSettings,
 
 // httpRouteMatchSvc returns true if it matches and a slice of facts about the match
 func httpRouteMatchSvc(vs *clientnetworking.VirtualService, route *v1alpha3.HTTPRoute, svc corev1.Service, matchingSubsets []string, nonmatchingSubsets []string, dr *clientnetworking.DestinationRule) (bool, []string) { // nolint: lll
-	svcHost := extendFQDN(fmt.Sprintf("%s.%s", svc.ObjectMeta.Name, svc.ObjectMeta.Namespace))
+	svcHost := extendFQDN(fmt.Sprintf("%s.%s", svc.Name, svc.Namespace))
 	facts := []string{}
 	mismatchNotes := []string{}
 	match := false
@@ -413,7 +413,7 @@ func httpRouteMatchSvc(vs *clientnetworking.VirtualService, route *v1alpha3.HTTP
 func tcpRouteMatchSvc(vs *clientnetworking.VirtualService, route *v1alpha3.TCPRoute, svc corev1.Service) (bool, []string) {
 	match := false
 	facts := []string{}
-	svcHost := extendFQDN(fmt.Sprintf("%s.%s", svc.ObjectMeta.Name, svc.ObjectMeta.Namespace))
+	svcHost := extendFQDN(fmt.Sprintf("%s.%s", svc.Name, svc.Namespace))
 	for _, dest := range route.Route {
 		fqdn := string(model.ResolveShortnameToFQDN(dest.Destination.Host, config.Meta{Namespace: vs.Namespace}))
 		if extendFQDN(fqdn) == svcHost {
@@ -762,7 +762,7 @@ func routeDestinationMatchesSvc(vhRoute *route.Route, svc corev1.Service, vh *ro
 	for _, domain := range vh.Domains {
 		ss := re.FindStringSubmatch(domain)
 		if ss != nil {
-			if ss[1] == svc.ObjectMeta.Name && ss[2] == svc.ObjectMeta.Namespace {
+			if ss[1] == svc.Name && ss[2] == svc.Namespace {
 				return true
 			}
 		}
@@ -783,7 +783,7 @@ func routeDestinationMatchesSvc(vhRoute *route.Route, svc corev1.Service, vh *ro
 
 	ss := re.FindStringSubmatch(clusterName)
 	if ss != nil {
-		if ss[1] == svc.ObjectMeta.Name && ss[2] == svc.ObjectMeta.Namespace {
+		if ss[1] == svc.Name && ss[2] == svc.Namespace {
 			return true
 		}
 	}
@@ -820,7 +820,7 @@ func getIstioDestinationRuleNameForSvc(cd *configdump.Wrapper, svc corev1.Servic
 
 // getIstioDestinationRulePathForSvc returns something like "/apis/networking/v1alpha3/namespaces/default/destination-rule/reviews"
 func getIstioDestinationRulePathForSvc(cd *configdump.Wrapper, svc corev1.Service, port int32) (string, error) {
-	svcHost := extendFQDN(fmt.Sprintf("%s.%s", svc.ObjectMeta.Name, svc.ObjectMeta.Namespace))
+	svcHost := extendFQDN(fmt.Sprintf("%s.%s", svc.Name, svc.Namespace))
 	filter := istio_envoy_configdump.ClusterFilter{
 		FQDN: host.Name(svcHost),
 		Port: int(port),
@@ -1280,7 +1280,7 @@ the configuration objects that affect that service.`,
 			// if NONE of the pods match a VirtualService
 			podsLabels := make([]klabels.Set, len(matchingPods))
 			for i, pod := range matchingPods {
-				podsLabels[i] = klabels.Set(pod.ObjectMeta.Labels)
+				podsLabels[i] = klabels.Set(pod.Labels)
 			}
 
 			// Describe based on the Envoy config for this first pod only
@@ -1309,7 +1309,7 @@ the configuration objects that affect that service.`,
 }
 
 func describePodServices(writer io.Writer, kubeClient kube.CLIClient, configClient istioclient.Interface, pod *corev1.Pod, matchingServices []corev1.Service, podsLabels []klabels.Set) error { // nolint: lll
-	byConfigDump, err := kubeClient.EnvoyDo(context.TODO(), pod.ObjectMeta.Name, pod.ObjectMeta.Namespace, "GET", "config_dump")
+	byConfigDump, err := kubeClient.EnvoyDo(context.TODO(), pod.Name, pod.Namespace, "GET", "config_dump")
 	if err != nil {
 		if ignoreUnmeshed {
 			return nil
@@ -1321,7 +1321,7 @@ func describePodServices(writer io.Writer, kubeClient kube.CLIClient, configClie
 	cd := configdump.Wrapper{}
 	err = cd.UnmarshalJSON(byConfigDump)
 	if err != nil {
-		return fmt.Errorf("can't parse sidecar config_dump for %v: %v", err, pod.ObjectMeta.Name)
+		return fmt.Errorf("can't parse sidecar config_dump for %v: %v", err, pod.Name)
 	}
 
 	for row, svc := range matchingServices {
@@ -1479,10 +1479,10 @@ func printConfigs(writer io.Writer, configs []*config.Config) {
 	if len(configs) == 0 {
 		return
 	}
-	fmt.Fprintf(writer, "Applied %s:\n", configs[0].Meta.GroupVersionKind.Kind)
+	fmt.Fprintf(writer, "Applied %s:\n", configs[0].GroupVersionKind.Kind)
 	var cfgNames string
 	for i, cfg := range configs {
-		cfgNames += cfg.Meta.Name + "." + cfg.Meta.Namespace
+		cfgNames += cfg.Name + "." + cfg.Namespace
 		if i < len(configs)-1 {
 			cfgNames += ", "
 		}

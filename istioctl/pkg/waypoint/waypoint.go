@@ -68,9 +68,10 @@ func Cmd(ctx cli.Context) *cobra.Command {
 			ns = ""
 		}
 		// If a user sets the waypoint name to an empty string, set it to the default namespace waypoint name.
-		if waypointName == "" {
+		switch waypointName {
+		case "":
 			waypointName = constants.DefaultNamespaceWaypoint
-		} else if waypointName == "none" {
+		case "none":
 			return nil, fmt.Errorf("invalid name provided for waypoint, 'none' is a reserved value")
 		}
 		gw := gateway.Gateway{
@@ -335,7 +336,7 @@ func Cmd(ctx cli.Context) *cobra.Command {
 			if (deleteAll || revision != "") && len(args) > 0 {
 				return fmt.Errorf("cannot specify waypoint names when deleting all waypoints")
 			}
-			if !(deleteAll || revision != "") && len(args) == 0 {
+			if (!deleteAll && revision == "") && len(args) == 0 {
 				return fmt.Errorf("must specify a waypoint name or delete all using --all or delete specific revision using --revision")
 			}
 			return nil

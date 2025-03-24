@@ -2101,11 +2101,11 @@ func TestSetDestinationRuleWithWorkloadSelector(t *testing.T) {
 			serviceNs:       "test",
 			serviceHostname: testhost,
 			expectedDrCount: 3,
-			expectedDrName:  []string{app1DestinationRule.Meta.Name, app2DestinationRule.Meta.Name, namespaceDestinationRule.Meta.Name},
+			expectedDrName:  []string{app1DestinationRule.Name, app2DestinationRule.Name, namespaceDestinationRule.Name},
 			expectedNamespacedFrom: map[string][]types.NamespacedName{
-				app1DestinationRule.Meta.Name:      {app1DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
-				app2DestinationRule.Meta.Name:      {app2DestinationRule.NamespacedName(), app3DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
-				namespaceDestinationRule.Meta.Name: {namespaceDestinationRule.NamespacedName()},
+				app1DestinationRule.Name:      {app1DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
+				app2DestinationRule.Name:      {app2DestinationRule.NamespacedName(), app3DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
+				namespaceDestinationRule.Name: {namespaceDestinationRule.NamespacedName()},
 			},
 		},
 		{
@@ -2114,7 +2114,7 @@ func TestSetDestinationRuleWithWorkloadSelector(t *testing.T) {
 			serviceNs:              "test",
 			serviceHostname:        testhost,
 			expectedDrCount:        1,
-			expectedDrName:         []string{namespaceDestinationRule.Meta.Name},
+			expectedDrName:         []string{namespaceDestinationRule.Name},
 			expectedNamespacedFrom: map[string][]types.NamespacedName{},
 		},
 		{
@@ -2123,11 +2123,11 @@ func TestSetDestinationRuleWithWorkloadSelector(t *testing.T) {
 			serviceNs:       "test",
 			serviceHostname: testhost,
 			expectedDrCount: 3,
-			expectedDrName:  []string{app1DestinationRule.Meta.Name, app2DestinationRule.Meta.Name, namespaceDestinationRule.Meta.Name},
+			expectedDrName:  []string{app1DestinationRule.Name, app2DestinationRule.Name, namespaceDestinationRule.Name},
 			expectedNamespacedFrom: map[string][]types.NamespacedName{
-				app1DestinationRule.Meta.Name:      {app1DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
-				app2DestinationRule.Meta.Name:      {app2DestinationRule.NamespacedName(), app3DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
-				namespaceDestinationRule.Meta.Name: {namespaceDestinationRule.NamespacedName()},
+				app1DestinationRule.Name:      {app1DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
+				app2DestinationRule.Name:      {app2DestinationRule.NamespacedName(), app3DestinationRule.NamespacedName(), namespaceDestinationRule.NamespacedName()},
+				namespaceDestinationRule.Name: {namespaceDestinationRule.NamespacedName()},
 			},
 		},
 	}
@@ -2157,7 +2157,7 @@ func TestSetDestinationRuleWithWorkloadSelector(t *testing.T) {
 				for _, dr := range destRules[host.Name(testhost)] {
 
 					// Check if the 'from' values match the expectedFrom map
-					expectedFrom := tt.expectedNamespacedFrom[dr.rule.Meta.Name]
+					expectedFrom := tt.expectedNamespacedFrom[dr.rule.Name]
 					if !reflect.DeepEqual(dr.from, expectedFrom) {
 						t.Errorf("Unexpected 'from' value for destination rule %s. Got: %v, Expected: %v", dr.rule.NamespacedName(), dr.from, expectedFrom)
 					}
@@ -3514,7 +3514,7 @@ func TestResolveServiceAliases(t *testing.T) {
 					Aliases: slices.Map(e.Attributes.Aliases, func(e NamespacedHostname) host.Name {
 						return e.Hostname
 					}),
-					ExternalName: e.Attributes.K8sAttributes.ExternalName,
+					ExternalName: e.Attributes.ExternalName,
 				}
 			})
 			assert.Equal(t, tt.output, out)

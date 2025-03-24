@@ -222,16 +222,17 @@ func tryUnmarshal(resource *anypb.Any) (*core.TypedExtensionConfig, *httpwasm.Wa
 			return nil, nil, nil, fmt.Errorf("failed to unmarshal typed config for wasm filter: %w", err)
 		}
 
-		if typedStruct.TypeUrl == model.WasmHTTPFilterType {
+		switch typedStruct.TypeUrl {
+		case model.WasmHTTPFilterType:
 			if err := protomarshal.StructToMessageSlow(typedStruct.Value, wasmHTTPFilterConfig); err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to convert extension config struct %+v to Wasm Network filter", typedStruct)
 			}
-		} else if typedStruct.TypeUrl == model.WasmNetworkFilterType {
+		case model.WasmNetworkFilterType:
 			wasmNetwork = true
 			if err := protomarshal.StructToMessageSlow(typedStruct.Value, wasmNetworkFilterConfig); err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to convert extension config struct %+v to Wasm HTTP filter", typedStruct)
 			}
-		} else {
+		default:
 			// This is not a Wasm filter.
 			wasmLog.Debugf("typed extension config %+v does not contain wasm http filter", typedStruct)
 			return nil, nil, nil, nil

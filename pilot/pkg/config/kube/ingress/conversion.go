@@ -107,7 +107,7 @@ func ConvertIngressVirtualService(ingress knetworking.Ingress, domainSuffix stri
 		}
 
 		host := rule.Host
-		namePrefix := strings.Replace(host, ".", "-", -1)
+		namePrefix := strings.ReplaceAll(host, ".", "-")
 		if host == "" {
 			host = "*"
 		}

@@ -54,11 +54,12 @@ func TestWasmCache(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&tsNumRequest, 1)
 
-		if r.URL.Path == "/different-url" {
+		switch r.URL.Path {
+		case "/different-url":
 			w.Write(append(httpData, []byte("different data")...))
-		} else if r.URL.Path == "/invalid-wasm-header" {
+		case "/invalid-wasm-header":
 			w.Write(invalidHTTPData)
-		} else {
+		default:
 			w.Write(httpData)
 		}
 	}))
@@ -741,7 +742,7 @@ func TestWasmCache(t *testing.T) {
 
 			cache.mux.Lock()
 			if cacheHitKey != nil {
-				if entry, ok := cache.modules[*cacheHitKey]; ok && entry.last == initTime {
+				if entry, ok := cache.modules[*cacheHitKey]; ok && entry.last.Equal(initTime) {
 					t.Errorf("Wasm module cache entry's last access time not updated after get operation, key: %v", *cacheHitKey)
 				}
 			}

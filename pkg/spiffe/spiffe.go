@@ -88,7 +88,7 @@ type bundleDoc struct {
 }
 
 func sanitizeTrustDomain(td string) string {
-	return strings.Replace(td, "@", ".", -1)
+	return strings.ReplaceAll(td, "@", ".")
 }
 
 // GenSpiffeURI returns the formatted uri(SPIFFE format for now) for the certificate.

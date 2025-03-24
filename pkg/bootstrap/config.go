@@ -224,7 +224,7 @@ func substituteValues(patterns []string, varName string, values []string) []stri
 		}
 
 		for _, val := range values {
-			ret = append(ret, strings.Replace(pattern, varName, val, -1))
+			ret = append(ret, strings.ReplaceAll(pattern, varName, val))
 		}
 	}
 	return ret

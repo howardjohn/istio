@@ -268,8 +268,8 @@ func convertPeerAuthentication(rootNamespace string, cfg, nsCfg, rootCfg *securi
 	// to ztunnel in case a workload needs it.
 	foundNonStrictPortmTLS := false
 	for port, mtls := range maps.SeqStable(pa.PortLevelMtls) {
-		switch portMtlsMode := mtls.GetMode(); {
-		case portMtlsMode == v1beta1.PeerAuthentication_MutualTLS_STRICT:
+		switch portMtlsMode := mtls.GetMode(); portMtlsMode {
+		case v1beta1.PeerAuthentication_MutualTLS_STRICT:
 			// If either:
 			// 1. The workload-level policy is STRICT
 			// 2. The workload level policy is nil/unset and the namespace-level policy is STRICT
@@ -301,7 +301,7 @@ func convertPeerAuthentication(rootNamespace string, cfg, nsCfg, rootCfg *securi
 					},
 				},
 			})
-		case portMtlsMode == v1beta1.PeerAuthentication_MutualTLS_PERMISSIVE, portMtlsMode == v1beta1.PeerAuthentication_MutualTLS_DISABLE:
+		case v1beta1.PeerAuthentication_MutualTLS_PERMISSIVE, v1beta1.PeerAuthentication_MutualTLS_DISABLE:
 			// Check top-level mode
 			if mode == v1beta1.PeerAuthentication_MutualTLS_PERMISSIVE || mode == v1beta1.PeerAuthentication_MutualTLS_DISABLE {
 				// we don't care; log and continue

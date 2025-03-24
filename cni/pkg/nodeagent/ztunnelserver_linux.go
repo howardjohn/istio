@@ -246,7 +246,7 @@ func (z *ztunnelServer) PodAdded(ctx context.Context, pod *v1.Pod, netns Netns) 
 		return fmt.Errorf("no ztunnel connection")
 	}
 
-	uid := string(pod.ObjectMeta.UID)
+	uid := string(pod.UID)
 
 	add := &zdsapi.AddWorkload{
 		WorkloadInfo: podToWorkload(pod),

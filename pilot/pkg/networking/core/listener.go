@@ -155,10 +155,8 @@ func BuildListenerTLSContext(serverTLSSettings *networking.ServerTLSSettings,
 		// TODO(https://github.com/envoyproxy/envoy/issues/23809) support this in Envoy
 		ctx.RequireClientCertificate = proto.BoolFalse
 	}
-	credentialSocketExist := false
-	if proxy.Metadata != nil && proxy.Metadata.Raw[secconst.CredentialMetaDataName] == "true" {
-		credentialSocketExist = true
-	}
+	credentialSocketExist := proxy.Metadata != nil && proxy.Metadata.Raw[secconst.CredentialMetaDataName] == "true"
+
 	validateClient := ctx.RequireClientCertificate.Value || serverTLSSettings.Mode == networking.ServerTLSSettings_OPTIONAL_MUTUAL
 
 	switch {

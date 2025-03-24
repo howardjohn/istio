@@ -393,7 +393,7 @@ func TestErrorHandler(t *testing.T) {
 	mt := monitortest.New(t)
 	c := kube.NewFakeClient()
 	// Prevent List from succeeding
-	c.Kube().(*fake.Clientset).Fake.PrependReactor("*", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
+	c.Kube().(*fake.Clientset).PrependReactor("*", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, fmt.Errorf("nope, out of luck")
 	})
 	c.RunAndWait(test.NewStop(t))

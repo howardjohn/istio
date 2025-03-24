@@ -53,13 +53,13 @@ type kubeController struct {
 
 func (k *kubeController) Close() {
 	close(k.stop)
-	clusterID := k.Controller.clusterID
+	clusterID := k.clusterID
 	k.MeshServiceController.UnRegisterHandlersForCluster(clusterID)
 	k.MeshServiceController.DeleteRegistry(clusterID, provider.Kubernetes)
 	if k.workloadEntryController != nil {
 		k.MeshServiceController.DeleteRegistry(clusterID, provider.External)
 	}
-	if err := k.Controller.Cleanup(); err != nil {
+	if err := k.Cleanup(); err != nil {
 		log.Warnf("failed cleaning up services in %s: %v", clusterID, err)
 	}
 	if k.opts.XDSUpdater != nil {

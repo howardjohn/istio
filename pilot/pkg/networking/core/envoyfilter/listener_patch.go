@@ -108,11 +108,12 @@ func patchListener(patchContext networking.EnvoyFilter_PatchContext,
 			continue
 		}
 		IncrementEnvoyFilterMetric(lp.Key(), Listener, true)
-		if lp.Operation == networking.EnvoyFilter_Patch_REMOVE {
+		switch lp.Operation {
+		case networking.EnvoyFilter_Patch_REMOVE:
 			// empty name means this listener will be removed, we can return directly.
 			lis.Name = ""
 			return
-		} else if lp.Operation == networking.EnvoyFilter_Patch_MERGE {
+		case networking.EnvoyFilter_Patch_MERGE:
 			merge.Merge(lis, lp.Value)
 		}
 	}

@@ -186,7 +186,7 @@ func (c *Controller) matchesFilter(pod *corev1.Pod) bool {
 	// Only check pods that have the sidecar annotation; the rest can be
 	// ignored.
 	if c.cfg.SidecarAnnotation != "" {
-		if _, ok := pod.ObjectMeta.Annotations[c.cfg.SidecarAnnotation]; !ok {
+		if _, ok := pod.Annotations[c.cfg.SidecarAnnotation]; !ok {
 			return false
 		}
 	}

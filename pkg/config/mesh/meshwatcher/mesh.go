@@ -45,7 +45,7 @@ var _ mesh.Watcher = adapter{}
 // Mesh returns the current MeshConfig
 func (a adapter) Mesh() *meshconfig.MeshConfig {
 	// Just get the value; we know there is always one set due to the way the collection is setup.
-	v := a.Singleton.Get()
+	v := a.Get()
 	return v.MeshConfig
 }
 

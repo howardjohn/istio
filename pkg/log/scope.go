@@ -364,7 +364,7 @@ func (s *Scope) emitWithTime(level zapcore.Level, msg string, t time.Time) {
 			}
 			sb.WriteString(k)
 			sb.WriteString("=")
-			sb.WriteString(fmt.Sprint(s.labels[k]))
+			fmt.Fprint(sb, s.labels[k])
 			space = true
 		}
 		e.Message = sb.String()

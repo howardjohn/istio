@@ -199,7 +199,7 @@ func printHooks(writer io.Writer, namespaces []corev1.Namespace, hooks []admitv1
 	w := new(tabwriter.Writer).Init(writer, 0, 8, 1, ' ', 0)
 	fmt.Fprintln(w, "NAMESPACES\tINJECTOR-HOOK\tISTIO-REVISION\tSIDECAR-IMAGE")
 	for _, hook := range hooks {
-		revision := hook.ObjectMeta.GetLabels()[label.IoIstioRev.Name]
+		revision := hook.GetLabels()[label.IoIstioRev.Name]
 		namespaces := getMatchingNamespaces(&hook, namespaces)
 		if len(namespaces) == 0 {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", "DOES NOT AUTOINJECT", hook.Name, revision, injectedImages[revision])
@@ -220,7 +220,7 @@ func getInjector(namespace *corev1.Namespace, hooks []admitv1.MutatingWebhookCon
 			if err != nil {
 				continue
 			}
-			if nsSelector.Matches(api_pkg_labels.Set(namespace.ObjectMeta.Labels)) {
+			if nsSelector.Matches(api_pkg_labels.Set(namespace.Labels)) {
 				return &hook
 			}
 		}
@@ -231,10 +231,10 @@ func getInjector(namespace *corev1.Namespace, hooks []admitv1.MutatingWebhookCon
 func getInjectedRevision(namespace *corev1.Namespace, hooks []admitv1.MutatingWebhookConfiguration) string {
 	injector := getInjector(namespace, hooks)
 	if injector != nil {
-		return injector.ObjectMeta.GetLabels()[label.IoIstioRev.Name]
+		return injector.GetLabels()[label.IoIstioRev.Name]
 	}
-	newRev := namespace.ObjectMeta.GetLabels()[label.IoIstioRev.Name]
-	oldLabel, ok := namespace.ObjectMeta.GetLabels()[analyzer_util.InjectionLabelName]
+	newRev := namespace.GetLabels()[label.IoIstioRev.Name]
+	oldLabel, ok := namespace.GetLabels()[analyzer_util.InjectionLabelName]
 	// If there is no istio-injection=disabled and no istio.io/rev, the namespace isn't injected
 	if newRev == "" && (ok && oldLabel == "disabled" || !ok) {
 		return ""
@@ -293,7 +293,7 @@ func getInjectedImages(ctx context.Context, client kube.CLIClient) (map[string]s
 	for _, configMap := range configMaps.Items {
 		image := injection.GetIstioProxyImage(&configMap)
 		if image != "" {
-			retval[configMap.ObjectMeta.GetLabels()[label.IoIstioRev.Name]] = image
+			retval[configMap.GetLabels()[label.IoIstioRev.Name]] = image
 		}
 	}
 
@@ -326,8 +326,8 @@ func extractRevisionFromPod(pod *corev1.Pod) string {
 }
 
 func injectionDisabled(pod *corev1.Pod) bool {
-	inject := pod.ObjectMeta.GetAnnotations()[annotation.SidecarInject.Name]
-	if lbl, labelPresent := pod.ObjectMeta.GetLabels()[label.SidecarInject.Name]; labelPresent {
+	inject := pod.GetAnnotations()[annotation.SidecarInject.Name]
+	if lbl, labelPresent := pod.GetLabels()[label.SidecarInject.Name]; labelPresent {
 		inject = lbl
 	}
 	return strings.EqualFold(inject, "false")

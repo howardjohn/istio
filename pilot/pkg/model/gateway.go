@@ -565,9 +565,10 @@ func sanitizeServerHostNamespace(server *networking.Server, namespace string) {
 	for i, h := range server.Hosts {
 		if strings.Contains(h, "/") {
 			parts := strings.Split(h, "/")
-			if parts[0] == "." {
+			switch parts[0] {
+			case ".":
 				server.Hosts[i] = namespace + "/" + parts[1] // format: %s/%s
-			} else if parts[0] == "*" {
+			case "*":
 				if parts[1] == "*" {
 					server.Hosts = []string{"*"}
 					return

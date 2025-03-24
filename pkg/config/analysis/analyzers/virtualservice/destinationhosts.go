@@ -174,11 +174,12 @@ func checkServiceEntryPorts(ctx analysis.Context, r *resource.Instance, d *Annot
 			m := msg.NewVirtualServiceDestinationPortSelectorRequired(r, d.Destination.GetHost(), portNumbers)
 
 			var key string
-			if d.RouteRule == "http.mirror" {
+			switch d.RouteRule {
+			case "http.mirror":
 				key = fmt.Sprintf(util.MirrorHost, d.ServiceIndex)
-			} else if d.RouteRule == "http.mirrors" {
+			case "http.mirrors":
 				key = fmt.Sprintf(util.MirrorsHost, d.ServiceIndex, d.DestinationIndex)
-			} else {
+			default:
 				key = fmt.Sprintf(util.DestinationHost, d.RouteRule, d.ServiceIndex, d.DestinationIndex)
 			}
 			if line, ok := util.ErrorLine(r, key); ok {
@@ -206,11 +207,12 @@ func checkServiceEntryPorts(ctx analysis.Context, r *resource.Instance, d *Annot
 			fmt.Sprintf("%s:%d", d.Destination.GetHost(), d.Destination.GetPort().GetNumber()))
 
 		var key string
-		if d.RouteRule == "http.mirror" {
+		switch d.RouteRule {
+		case "http.mirror":
 			key = fmt.Sprintf(util.MirrorHost, d.ServiceIndex)
-		} else if d.RouteRule == "http.mirrors" {
+		case "http.mirrors":
 			key = fmt.Sprintf(util.MirrorsHost, d.ServiceIndex, d.DestinationIndex)
-		} else {
+		default:
 			key = fmt.Sprintf(util.DestinationHost, d.RouteRule, d.ServiceIndex, d.DestinationIndex)
 		}
 		if line, ok := util.ErrorLine(r, key); ok {

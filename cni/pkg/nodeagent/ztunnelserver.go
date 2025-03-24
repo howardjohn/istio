@@ -251,8 +251,8 @@ func (z *ztunnelServer) handleConn(ctx context.Context, conn ZtunnelConnection) 
 }
 
 func podToWorkload(pod *v1.Pod) *zdsapi.WorkloadInfo {
-	namespace := pod.ObjectMeta.Namespace
-	name := pod.ObjectMeta.Name
+	namespace := pod.Namespace
+	name := pod.Name
 	svcAccount := pod.Spec.ServiceAccountName
 	return &zdsapi.WorkloadInfo{
 		Namespace:      namespace,

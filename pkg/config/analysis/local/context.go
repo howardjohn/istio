@@ -115,7 +115,7 @@ func (i *istiodContext) Find(col config.GroupVersionKind, name resource.FullName
 		result, err := cfgToInstance(*cfg, col, colschema, id)
 		if err != nil {
 			log.Errorf("failed converting found config %s %s/%s to instance: %s, ",
-				cfg.Meta.GroupVersionKind.Kind, cfg.Meta.Namespace, cfg.Meta.Namespace, err)
+				cfg.GroupVersionKind.Kind, cfg.Namespace, cfg.Namespace, err)
 			return nil
 		}
 		i.found[k] = result
@@ -197,7 +197,7 @@ func cfgToInstance(cfg config.Config, col config.GroupVersionKind, colschema sre
 	error,
 ) {
 	res := resource.PilotConfigToInstance(&cfg, colschema)
-	fmstring := cfg.Meta.Annotations[file.FieldMapKey]
+	fmstring := cfg.Annotations[file.FieldMapKey]
 	var out map[string]int
 	if fmstring != "" {
 		err := json.Unmarshal([]byte(fmstring), &out)
@@ -205,7 +205,7 @@ func cfgToInstance(cfg config.Config, col config.GroupVersionKind, colschema sre
 			return nil, fmt.Errorf("error parsing fieldmap: %s", err)
 		}
 	}
-	refstring := cfg.Meta.Annotations[file.ReferenceKey]
+	refstring := cfg.Annotations[file.ReferenceKey]
 	var outref resource.Reference
 	if refstring != "" {
 		outref = &kube.Position{}

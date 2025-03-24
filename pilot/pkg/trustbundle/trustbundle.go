@@ -188,7 +188,7 @@ func (tb *TrustBundle) UpdateTrustAnchor(anchorConfig *TrustAnchorUpdate) error 
 
 	trustBundleLog.Infof("updating Source %v with certs %v",
 		anchorConfig.Source,
-		strings.Join(anchorConfig.TrustAnchorConfig.Certs, "\n"))
+		strings.Join(anchorConfig.Certs, "\n"))
 
 	if tb.updatecb != nil {
 		tb.updatecb()

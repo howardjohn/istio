@@ -110,8 +110,8 @@ func InsertedExtensionConfigurations(
 		if !hasName.Contains(p.ResourceName) {
 			continue
 		}
-		switch {
-		case p.Type == extensions.PluginType_NETWORK:
+		switch p.Type {
+		case extensions.PluginType_NETWORK:
 			wasmExtensionConfig := p.BuildNetworkWasmFilter(proxy)
 			if wasmExtensionConfig == nil {
 				continue

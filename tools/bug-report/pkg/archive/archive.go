@@ -97,7 +97,7 @@ func Create(srcDir, outPath string) error {
 		if err != nil {
 			return err
 		}
-		header.Name = strings.TrimPrefix(strings.Replace(file, srcDir, "", -1), string(filepath.Separator))
+		header.Name = strings.TrimPrefix(strings.ReplaceAll(file, srcDir, ""), string(filepath.Separator))
 		header.Size = fi.Size()
 		header.Mode = int64(fi.Mode())
 		header.ModTime = fi.ModTime()

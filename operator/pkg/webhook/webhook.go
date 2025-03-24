@@ -105,8 +105,8 @@ func CheckWebhooks(manifests []manifest.ManifestSet, iop values.Map, clt kube.Cl
 		return err
 	}
 	for i, obj := range inCluster.Items {
-		obj.TypeMeta.Kind = "MutatingWebhookConfiguration"
-		obj.TypeMeta.APIVersion = "admissionregistration.k8s.io/v1"
+		obj.Kind = "MutatingWebhookConfiguration"
+		obj.APIVersion = "admissionregistration.k8s.io/v1"
 		objYAML, err := yaml.Marshal(obj)
 		if err != nil {
 			return err

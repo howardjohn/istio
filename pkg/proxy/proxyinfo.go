@@ -49,7 +49,7 @@ func GetProxyInfo(kubeClient kube.CLIClient, istioNamespace string) (*[]istioVer
 		for _, ss := range sss {
 			pi = append(pi, istioVersion.ProxyInfo{
 				ID:           ss.ProxyID,
-				IstioVersion: ss.SyncStatus.IstioVersion,
+				IstioVersion: ss.IstioVersion,
 				Type:         istioVersion.ToUserFacingNodeType(string(ss.ProxyType)),
 			})
 		}

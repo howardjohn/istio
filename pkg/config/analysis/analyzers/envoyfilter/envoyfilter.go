@@ -113,7 +113,8 @@ func (*EnvoyPatchAnalyzer) analyzeEnvoyFilterPatch(r *resource.Instance, c analy
 		}
 
 		// check each operation type
-		if patch.Patch.Operation == network.EnvoyFilter_Patch_ADD {
+		switch patch.Patch.Operation {
+		case network.EnvoyFilter_Patch_ADD:
 			// the ADD operation is an absolute operation but provide a warning
 			// indicating that the operation will be ignored when applyTo is set to ROUTE_CONFIGURATION,
 			// or HTTP_ROUTE
@@ -127,7 +128,7 @@ func (*EnvoyPatchAnalyzer) analyzeEnvoyFilterPatch(r *resource.Instance, c analy
 
 				c.Report(gvk.EnvoyFilter, message)
 			}
-		} else if patch.Patch.Operation == network.EnvoyFilter_Patch_REMOVE {
+		case network.EnvoyFilter_Patch_REMOVE:
 			// the REMOVE operation is ignored when applyTo is set to ROUTE_CONFIGURATION, or HTTP_ROUTE.
 			if patch.ApplyTo == network.EnvoyFilter_ROUTE_CONFIGURATION || patch.ApplyTo == network.EnvoyFilter_HTTP_ROUTE {
 				// provide an error message indicating a mismatch between the operation type and the filter type
@@ -142,7 +143,7 @@ func (*EnvoyPatchAnalyzer) analyzeEnvoyFilterPatch(r *resource.Instance, c analy
 				// A relative operation (REMOVE) was used so check if priority is set and if not set provide a warning
 				relativeOperationMsg(r, c, index, ef.Priority, patchFilterNames, instanceName)
 			}
-		} else if patch.Patch.Operation == network.EnvoyFilter_Patch_REPLACE {
+		case network.EnvoyFilter_Patch_REPLACE:
 			// the REPLACE operation is only valid for HTTP_FILTER and NETWORK_FILTER.
 			if patch.ApplyTo != network.EnvoyFilter_NETWORK_FILTER && patch.ApplyTo != network.EnvoyFilter_HTTP_FILTER {
 				// provide an error message indicating an invalid filter type
@@ -157,7 +158,7 @@ func (*EnvoyPatchAnalyzer) analyzeEnvoyFilterPatch(r *resource.Instance, c analy
 				// A relative operation (REPLACE) was used so check if priority is set and if not set provide a warning
 				relativeOperationMsg(r, c, index, ef.Priority, patchFilterNames, instanceName)
 			}
-		} else if patch.Patch.Operation == network.EnvoyFilter_Patch_INSERT_BEFORE || patch.Patch.Operation == network.EnvoyFilter_Patch_INSERT_AFTER {
+		case network.EnvoyFilter_Patch_INSERT_BEFORE, network.EnvoyFilter_Patch_INSERT_AFTER:
 			// Also a relative operation (INSERT_BEFORE or INSERT_AFTER) was used so check if priority is set and if not set provide a warning
 			relativeOperationMsg(r, c, index, ef.Priority, patchFilterNames, instanceName)
 		}

@@ -78,12 +78,12 @@ func GetNamespacesWithTag(ctx context.Context, client kubernetes.Interface, tag 
 
 // GetWebhookTagName extracts tag name from webhook object.
 func GetWebhookTagName(wh admitv1.MutatingWebhookConfiguration) string {
-	return wh.ObjectMeta.Labels[label.IoIstioTag.Name]
+	return wh.Labels[label.IoIstioTag.Name]
 }
 
 // GetWebhookRevision extracts tag target revision from webhook object.
 func GetWebhookRevision(wh admitv1.MutatingWebhookConfiguration) (string, error) {
-	if tagName, ok := wh.ObjectMeta.Labels[label.IoIstioRev.Name]; ok {
+	if tagName, ok := wh.Labels[label.IoIstioRev.Name]; ok {
 		return tagName, nil
 	}
 	return "", fmt.Errorf("could not extract tag revision from webhook")

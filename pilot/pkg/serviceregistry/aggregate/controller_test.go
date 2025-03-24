@@ -302,9 +302,9 @@ func TestAddRegistry(t *testing.T) {
 		t.Fatalf("Expected length of the registries slice should be 3, got %d", l)
 	}
 
-	if ctrl.registries[0].Instance.Provider() != provider.Kubernetes {
+	if ctrl.registries[0].Provider() != provider.Kubernetes {
 		t.Errorf("expected first registry should be %s, but got %s", provider.Kubernetes,
-			ctrl.registries[0].Instance.Provider())
+			ctrl.registries[0].Provider())
 	}
 
 	registries[0].DiscoveryController.(*memory.ServiceDiscovery).AddService(mock.HelloService)

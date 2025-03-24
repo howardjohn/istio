@@ -319,7 +319,7 @@ func NewFakeDiscoveryServer(t test.Failer, opts FakeOptions) *FakeDiscoveryServe
 	grpcServer := grpc.NewServer()
 	s.Register(grpcServer)
 	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !(err == grpc.ErrServerStopped || err.Error() == "closed") {
+		if err := grpcServer.Serve(listener); err != nil && (err != grpc.ErrServerStopped && err.Error() != "closed") {
 			t.Fatal(err)
 		}
 	}()
@@ -539,7 +539,7 @@ func kubernetesObjectsFromString(s string) ([]runtime.Object, error) {
 
 // DisableAuthorizationForSecret makes the authorization check always pass. Should be used only for tests.
 func DisableAuthorizationForSecret(fake *fake.Clientset) {
-	fake.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+	fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, &authorizationv1.SubjectAccessReview{
 			Status: authorizationv1.SubjectAccessReviewStatus{
 				Allowed: true,

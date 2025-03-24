@@ -663,8 +663,8 @@ func unquoteUsage(flag *pflag.Flag) (name string, usage string) {
 }
 
 func normalizeID(id string) string {
-	id = strings.Replace(id, " ", "-", -1)
-	return strings.Replace(id, ".", "-", -1)
+	id = strings.ReplaceAll(id, " ", "-")
+	return strings.ReplaceAll(id, ".", "-")
 }
 
 func (g *generator) genVars(root *cobra.Command, selectFn SelectEnvFn) {

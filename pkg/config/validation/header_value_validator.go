@@ -110,16 +110,17 @@ func validateHeaderValue(headerValue string) error {
 
 		case StringParserState:
 			// Consume a JSON string (ignoring backslash-escaped chars).
-			if ch == '\\' {
+			switch ch {
+			case '\\':
 				if !hasNextCh {
 					return errors.New("invalid header configuration. Un-terminated backslash in JSON string")
 				}
 
 				// Skip escaped char.
 				pos++
-			} else if ch == ')' {
+			case ')':
 				state = ExpectVariableEndParserState
-			} else if ch == '"' {
+			case '"':
 				state = ExpectArrayDelimiterOrEndParserState
 			}
 

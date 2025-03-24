@@ -42,7 +42,7 @@ func TestConsolidateLog(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			if got, want := ConsolidateLog(tt.in), tt.want; !(got == want) {
+			if got, want := ConsolidateLog(tt.in), tt.want; got != want {
 				t.Errorf("%s: got:%s, want:%s", tt.desc, got, want)
 			}
 		})

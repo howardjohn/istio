@@ -736,7 +736,7 @@ func customizeVMEnvironment(ctx resource.Context, cfg echo.Config, clusterEnv st
 	}
 	if !ctx.Environment().(*kube.Environment).Settings().LoadBalancerSupported {
 		// customize cluster.env with NodePort mapping
-		_, err = f.WriteString(fmt.Sprintf("ISTIO_PILOT_PORT=%d\n", istiodAddr.Port()))
+		_, err = fmt.Fprintf(f, "ISTIO_PILOT_PORT=%d\n", istiodAddr.Port())
 		if err != nil {
 			return err
 		}

@@ -770,7 +770,7 @@ func reorderPod(pod *corev1.Pod, req InjectionParameters) error {
 	var merr error
 	mc := req.meshConfig
 	// Get copy of pod proxyconfig, to determine container ordering
-	if pca, f := req.pod.ObjectMeta.GetAnnotations()[annotation.ProxyConfig.Name]; f {
+	if pca, f := req.pod.GetAnnotations()[annotation.ProxyConfig.Name]; f {
 		mc, merr = mesh.ApplyProxyConfig(pca, req.meshConfig)
 		if merr != nil {
 			return merr
@@ -875,7 +875,7 @@ var emptyScrape = status.PrometheusScrapeConfiguration{}
 // pointing to the agent.
 func applyPrometheusMerge(pod *corev1.Pod, mesh *meshconfig.MeshConfig) error {
 	if getPrometheusScrape(pod) &&
-		enablePrometheusMerge(mesh, pod.ObjectMeta.Annotations) {
+		enablePrometheusMerge(mesh, pod.Annotations) {
 		targetPort := strconv.Itoa(int(mesh.GetDefaultConfig().GetStatusPort()))
 		if cur, f := getPrometheusPort(pod); f {
 			// We have already set the port, assume user is controlling this or, more likely, re-injected
@@ -1105,8 +1105,8 @@ func (wh *Webhook) inject(ar *kube.AdmissionReview, path string) *kube.Admission
 
 	// Deal with potential empty fields, e.g., when the pod is created by a deployment
 	podName := potentialPodName(pod.ObjectMeta)
-	if pod.ObjectMeta.Namespace == "" {
-		pod.ObjectMeta.Namespace = req.Namespace
+	if pod.Namespace == "" {
+		pod.Namespace = req.Namespace
 	}
 
 	log = log.WithLabels("pod", pod.Namespace+"/"+podName)

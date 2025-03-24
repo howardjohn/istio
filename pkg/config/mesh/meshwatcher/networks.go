@@ -25,7 +25,7 @@ type networksAdapter struct {
 }
 
 func (n networksAdapter) Networks() *meshconfig.MeshNetworks {
-	v := n.Singleton.Get()
+	v := n.Get()
 	return v.MeshNetworks
 }
 

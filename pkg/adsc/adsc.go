@@ -579,8 +579,8 @@ func (a *ADSC) mcpToPilot(m *mcp.Resource) (*config.Config, error) {
 		return nil, nil
 	}
 
-	if c.Meta.Annotations == nil {
-		c.Meta.Annotations = make(map[string]string)
+	if c.Annotations == nil {
+		c.Annotations = make(map[string]string)
 	}
 	nsn := strings.Split(m.Metadata.Name, "/")
 	if len(nsn) != 2 {

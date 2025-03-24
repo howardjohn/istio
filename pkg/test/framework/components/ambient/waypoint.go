@@ -167,7 +167,7 @@ func SetWaypointForService(t framework.TestContext, ns namespace.Instance, servi
 		if err != nil {
 			t.Fatalf("error getting svc %s, err %v", service, err)
 		}
-		oldLabels := oldSvc.ObjectMeta.GetLabels()
+		oldLabels := oldSvc.GetLabels()
 		if oldLabels == nil {
 			oldLabels = make(map[string]string, 1)
 		}
@@ -184,7 +184,7 @@ func SetWaypointForService(t framework.TestContext, ns namespace.Instance, servi
 			if err != nil {
 				return err
 			}
-			svc.ObjectMeta.SetLabels(labels)
+			svc.SetLabels(labels)
 			_, err = c.Kube().CoreV1().Services(ns.Name()).Update(t.Context(), svc, metav1.UpdateOptions{})
 			return err
 		}
@@ -232,10 +232,10 @@ func RemoveWaypointFromService(t framework.TestContext, ns namespace.Instance, s
 			if err != nil {
 				t.Fatalf("error getting svc %s, err %v", service, err)
 			}
-			labels := oldSvc.ObjectMeta.GetLabels()
+			labels := oldSvc.GetLabels()
 			if labels != nil {
 				delete(labels, label.IoIstioUseWaypoint.Name)
-				oldSvc.ObjectMeta.SetLabels(labels)
+				oldSvc.SetLabels(labels)
 			}
 			_, err = c.Kube().CoreV1().Services(ns.Name()).Update(t.Context(), oldSvc, metav1.UpdateOptions{})
 			if err != nil {

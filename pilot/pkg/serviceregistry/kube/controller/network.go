@@ -242,7 +242,7 @@ func (c *Controller) NetworkGateways() []model.NetworkGateway {
 // extractGatewaysFromService checks if the service is a cross-network gateway
 // and if it is, updates the controller's gateways.
 func (c *Controller) extractGatewaysFromService(svc *model.Service) bool {
-	changed := c.networkManager.extractGatewaysInner(svc)
+	changed := c.extractGatewaysInner(svc)
 	if changed {
 		c.NotifyGatewayHandlers()
 	}

@@ -283,7 +283,8 @@ func TestConversion(t *testing.T) {
 	for n, cfg := range cfgs {
 		vs := cfg.Spec.(*networking.VirtualService)
 
-		if n == "my.host.com" {
+		switch n {
+		case "my.host.com":
 			if vs.Hosts[0] != "my.host.com" {
 				t.Error("Unexpected host", vs)
 			}
@@ -297,7 +298,7 @@ func TestConversion(t *testing.T) {
 						i, expectedLength[i], expectedExact[i], length, exact)
 				}
 			}
-		} else if n == "my4.host.com" {
+		case "my4.host.com":
 			if vs.Hosts[0] != "my4.host.com" {
 				t.Error("Unexpected host", vs)
 			}

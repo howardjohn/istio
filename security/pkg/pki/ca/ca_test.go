@@ -792,7 +792,7 @@ func TestBuildSecret(t *testing.T) {
 	secretType := "secret-type"
 
 	caSecret := BuildSecret(CASecret, namespace, nil, nil, nil, CertPem, KeyPem, v1.SecretType(secretType))
-	if caSecret.ObjectMeta.Annotations != nil {
+	if caSecret.Annotations != nil {
 		t.Fatalf("Annotation should be nil but got %v", caSecret)
 	}
 	if _, ok := caSecret.Data[IstioGenerated]; ok {
@@ -811,7 +811,7 @@ func TestBuildSecret(t *testing.T) {
 		t.Fatalf("CA cert does not match, want %v got %v", KeyPem, caSecret.Data[CAPrivateKeyFile])
 	}
 	serverSecret := BuildSecret(CACertsSecret, namespace, CertPem, KeyPem, nil, nil, nil, v1.SecretType(secretType))
-	if serverSecret.ObjectMeta.Annotations != nil {
+	if serverSecret.Annotations != nil {
 		t.Fatalf("Annotation should be nil but got %v", serverSecret)
 	}
 	if _, ok := serverSecret.Data[IstioGenerated]; !ok {

@@ -184,7 +184,7 @@ func TestIPTablesRuleGeneration(t *testing.T) {
 			t.Setenv(dependencies.DryRunFilePath.Name, outputFilePath)
 
 			pod := buildFakeDryRunPod()
-			pod.ObjectMeta.Annotations = tt.annotations
+			pod.Annotations = tt.annotations
 			pod.Spec.Containers[1].Env = tt.proxyEnv
 
 			pod.Spec.Containers[1].SecurityContext = &corev1.SecurityContext{}

@@ -400,7 +400,7 @@ func TestMultipleConnectedZtunnelsGetEvents(t *testing.T) {
 	// For delete, both should get the delete msg, even though only client2 got the add.
 
 	go func() {
-		errChan <- srv.ztunServer.PodDeleted(ctx, string(firstNewPod.ObjectMeta.UID))
+		errChan <- srv.ztunServer.PodDeleted(ctx, string(firstNewPod.UID))
 	}()
 	// Synchronously process pod delete for client1
 	m4, fds4 := readRequest(t, client1)
@@ -511,7 +511,7 @@ func TestZtunnelLatestConnFallsBackToPreviousIfNewestDisconnects(t *testing.T) {
 	sendAck(client1)
 
 	go func() {
-		errChan <- srv.ztunServer.PodDeleted(ctx, string(firstNewPod.ObjectMeta.UID))
+		errChan <- srv.ztunServer.PodDeleted(ctx, string(firstNewPod.UID))
 	}()
 
 	// Synchronously process pod delete for client1

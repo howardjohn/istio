@@ -418,7 +418,7 @@ func TestGenerateMutatingWebhook(t *testing.T) {
 			t.Errorf("expected %d webhook(s) in MutatingWebhookConfiguration, found %d",
 				tc.numWebhooks, len(wh.Webhooks))
 		}
-		tag, exists := wh.ObjectMeta.Labels[label.IoIstioTag.Name]
+		tag, exists := wh.Labels[label.IoIstioTag.Name]
 		if !exists {
 			t.Errorf("expected tag webhook to have %s label, did not find", label.IoIstioTag.Name)
 		}

@@ -431,11 +431,12 @@ func reasonsUpdated(req *model.PushRequest) string {
 		reason0Cnt, reason1Cnt, idx int
 	)
 	for r, cnt := range req.Reason {
-		if idx == 0 {
+		switch idx {
+		case 0:
 			reason0, reason0Cnt = r, cnt
-		} else if idx == 1 {
+		case 1:
 			reason1, reason1Cnt = r, cnt
-		} else {
+		default:
 			break
 		}
 		idx++

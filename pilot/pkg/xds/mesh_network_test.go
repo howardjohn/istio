@@ -286,7 +286,7 @@ func TestMeshNetworking(t *testing.T) {
 			for name, networkConfig := range meshNetworkConfigs {
 				t.Run(name, func(t *testing.T) {
 					for _, cfg := range trafficConfigs {
-						t.Run(cfg.Meta.Name, func(t *testing.T) {
+						t.Run(cfg.Name, func(t *testing.T) {
 							pod := &workload{
 								kind: Pod,
 								name: "unlabeled", namespace: "pod",

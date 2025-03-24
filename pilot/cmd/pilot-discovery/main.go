@@ -17,6 +17,7 @@ package main
 import (
 	"os"
 
+	_ "istio.io/istio/istioctl/pkg/admin"
 	"istio.io/istio/pilot/cmd/pilot-discovery/app"
 	"istio.io/istio/pkg/log"
 )

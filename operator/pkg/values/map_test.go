@@ -264,7 +264,7 @@ func TestParseValue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			if got, want := parseValue(tt.in), tt.want; !(got == want) {
+			if got, want := parseValue(tt.in), tt.want; got != want {
 				t.Errorf("%s: got:%v, want:%v", tt.desc, got, want)
 			}
 		})

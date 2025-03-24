@@ -86,7 +86,7 @@ func TestDelayQueueOrdering(t *testing.T) {
 	}
 
 	mu.Lock()
-	if !(t2.After(t1) && t1.After(t0)) {
+	if !t2.After(t1) || !t1.After(t0) {
 		t.Errorf("expected jobs to be run in order based on delays")
 	}
 	mu.Unlock()

@@ -302,7 +302,7 @@ func TestLeaderElectionNoPermission(t *testing.T) {
 	client := fake.NewClientset()
 	watcher := &fakeDefaultWatcher{}
 	allowRbac := atomic.NewBool(true)
-	client.Fake.PrependReactor("update", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
+	client.PrependReactor("update", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		if allowRbac.Load() {
 			return false, nil, nil
 		}
@@ -348,7 +348,7 @@ func TestLeaderElectionDisabled(t *testing.T) {
 	watcher := &fakeDefaultWatcher{}
 	// Prevent LeaderElection from creating a lease, so that the runFn only runs
 	// if leader election is disabled.
-	client.Fake.PrependReactor("*", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
+	client.PrependReactor("*", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, fmt.Errorf("nope, out of luck")
 	})
 

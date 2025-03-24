@@ -113,7 +113,7 @@ func (c Component) Get(merged values.Map) ([]apis.GatewayComponentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !(spec.Enabled.GetValueOrTrue() || altEnabled) {
+	if !spec.Enabled.GetValueOrTrue() && !altEnabled {
 		return nil, nil
 	}
 	return []apis.GatewayComponentSpec{spec}, nil

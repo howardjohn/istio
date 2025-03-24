@@ -90,7 +90,7 @@ func (n *NodeUntainter) setup(stop <-chan struct{}, debugger *krt.DebugHandler) 
 		if p.Namespace != n.ourNs {
 			return nil
 		}
-		if !n.cnilabels.SubsetOf(p.ObjectMeta.Labels) {
+		if !n.cnilabels.SubsetOf(p.Labels) {
 			return nil
 		}
 		if !IsPodReadyConditionTrue(p.Status) {

@@ -95,9 +95,10 @@ func retrieveListenerType(l *listener.Listener) string {
 	nTCP := 0
 	for _, filterChain := range getFilterChains(l) {
 		for _, filter := range filterChain.GetFilters() {
-			if filter.Name == HTTPListener {
+			switch filter.Name {
+			case HTTPListener:
 				nHTTP++
-			} else if filter.Name == TCPListener {
+			case TCPListener:
 				if !strings.Contains(string(filter.GetTypedConfig().GetValue()), util.BlackHoleCluster) {
 					nTCP++
 				}
@@ -435,7 +436,8 @@ func getMatches(f *listener.FilterChainMatch) string {
 
 func getFilterType(filters []*listener.Filter) string {
 	for _, filter := range filters {
-		if filter.Name == HTTPListener {
+		switch filter.Name {
+		case HTTPListener:
 			httpProxy := &hcm.HttpConnectionManager{}
 			// Allow Unmarshal to work even if Envoy and istioctl are different
 			filter.GetTypedConfig().TypeUrl = "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
@@ -450,7 +452,7 @@ func getFilterType(filters []*listener.Filter) string {
 				return fmt.Sprintf("Route: %s", httpProxy.GetRds().GetRouteConfigName())
 			}
 			return "HTTP"
-		} else if filter.Name == TCPListener {
+		case TCPListener:
 			if !strings.Contains(string(filter.GetTypedConfig().GetValue()), util.BlackHoleCluster) {
 				tcpProxy := &tcp.TcpProxy{}
 				// Allow Unmarshal to work even if Envoy and istioctl are different

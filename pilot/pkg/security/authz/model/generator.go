@@ -176,7 +176,7 @@ func (srcNamespaceGenerator) permission(_, _ string, _ bool) (*rbacpb.Permission
 }
 
 func (srcNamespaceGenerator) principal(_, value string, _ bool, useAuthenticated bool) (*rbacpb.Principal, error) {
-	v := strings.Replace(value, "*", ".*", -1)
+	v := strings.ReplaceAll(value, "*", ".*")
 	m := matcher.StringMatcherRegex(fmt.Sprintf(".*/ns/%s/.*", v))
 	return principalAuthenticated(m, useAuthenticated), nil
 }

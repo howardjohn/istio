@@ -568,7 +568,7 @@ func hasEnvoy(pod corev1.Pod) bool {
 		// no proxy container
 		return false
 	}
-	for k, v := range pod.ObjectMeta.Annotations {
+	for k, v := range pod.Annotations {
 		if k == annotation.InjectTemplates.Name && strings.HasPrefix(v, "grpc-") {
 			// proxy container may run only agent for proxyless gRPC
 			return false
@@ -578,7 +578,7 @@ func hasEnvoy(pod corev1.Pod) bool {
 }
 
 func checkIfVM(pod corev1.Pod) bool {
-	for k := range pod.ObjectMeta.Labels {
+	for k := range pod.Labels {
 		if strings.Contains(k, "test-vm") {
 			return true
 		}

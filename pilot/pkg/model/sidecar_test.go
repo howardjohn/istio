@@ -3373,7 +3373,7 @@ func TestInboundConnectionPoolForPort(t *testing.T) {
 				Meta: config.Meta{
 					GroupVersionKind: gvk.Sidecar,
 					Name:             "sidecar",
-					Namespace:        strings.Replace(name, " ", "-", -1),
+					Namespace:        strings.ReplaceAll(name, " ", "-"),
 				},
 				Spec: tt.sidecar,
 			}

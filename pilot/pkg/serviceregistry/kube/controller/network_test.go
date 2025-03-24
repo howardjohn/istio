@@ -278,7 +278,7 @@ func TestAmbientSystemNamespaceNetworkChange(t *testing.T) {
 			}
 			podNames := sets.New[string]("pod1", "pod2")
 			svcNames := sets.New[string]("svc1")
-			addresses := c.ambientIndex.All()
+			addresses := c.All()
 			for _, addr := range addresses {
 				wl := addr.GetWorkload()
 				if wl != nil {
@@ -408,7 +408,7 @@ func TestAmbientSync(t *testing.T) {
 	}
 	gtw.Create(gateway)
 	assert.EventuallyEqual(t, func() int {
-		return len(s.ambientIndex.All())
+		return len(s.All())
 	}, 1)
 }
 

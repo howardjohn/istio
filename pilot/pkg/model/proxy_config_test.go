@@ -476,7 +476,7 @@ func newProxyConfigStore(t *testing.T, configs []config.Config) ConfigStore {
 }
 
 func setCreationTimestamp(c config.Config, t time.Time) config.Config {
-	c.Meta.CreationTimestamp = t
+	c.CreationTimestamp = t
 	return c
 }
 

@@ -697,7 +697,7 @@ func TestGenCertFromCSR(t *testing.T) {
 			t.Errorf("incorrect ID encoded: %v VS (expected) %v", ids[0], c.subjectIDs[0])
 		}
 		if len(c.subjectIDs) == 2 {
-			if !(c.subjectIDs[0] == ids[0] && c.subjectIDs[1] == ids[1] || c.subjectIDs[0] == ids[1] && c.subjectIDs[1] == ids[0]) {
+			if (c.subjectIDs[0] != ids[0] || c.subjectIDs[1] != ids[1]) && (c.subjectIDs[0] != ids[1] || c.subjectIDs[1] != ids[0]) {
 				t.Errorf("incorrect IDs encoded: %v, %v VS (expected) %v, %v", ids[0], ids[1], c.subjectIDs[0], c.subjectIDs[1])
 			}
 		}
@@ -918,7 +918,7 @@ func getPublicKeySizeInBits(keyPem []byte) (int, error) {
 		return 0, err
 	}
 	k := privateKey.(*rsa.PrivateKey)
-	return k.PublicKey.Size() * 8, nil
+	return k.Size() * 8, nil
 }
 
 // TestMergeCertOptions verifies that cert option fields are overwritten.

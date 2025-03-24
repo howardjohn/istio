@@ -231,7 +231,7 @@ func TestCmdAddAmbientEnabledOnNS(t *testing.T) {
 	cniConf := buildMockConf(true)
 
 	pod, ns := buildFakePodAndNSForClient()
-	ns.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
+	ns.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
 
 	testDoAddRun(t, cniConf, testNSName, pod, ns)
 
@@ -246,7 +246,7 @@ func TestCmdAddAmbientEnabledOnNSServerFails(t *testing.T) {
 	cniConf := buildMockConf(true)
 
 	pod, ns := buildFakePodAndNSForClient()
-	ns.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
+	ns.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
 
 	testCmdAddExpectFail(t, cniConf, pod, ns)
 
@@ -266,8 +266,8 @@ func TestCmdAddPodWithProxySidecarAmbientEnabledNS(t *testing.T) {
 	app := corev1.Container{Name: "app"}
 
 	pod.Spec.Containers = []corev1.Container{app, proxy}
-	pod.ObjectMeta.Annotations = map[string]string{annotation.SidecarStatus.Name: "true"}
-	ns.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
+	pod.Annotations = map[string]string{annotation.SidecarStatus.Name: "true"}
+	ns.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
 
 	testDoAddRun(t, cniConf, testNSName, pod, ns)
 
@@ -287,7 +287,7 @@ func TestCmdAddPodWithGenericSidecar(t *testing.T) {
 	app := corev1.Container{Name: "app"}
 
 	pod.Spec.Containers = []corev1.Container{app, proxy}
-	ns.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
+	ns.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
 
 	testDoAddRun(t, cniConf, testNSName, pod, ns)
 
@@ -304,8 +304,8 @@ func TestCmdAddPodDisabledLabel(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
 
 	app := corev1.Container{Name: "app"}
-	ns.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
-	pod.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeNone}
+	ns.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
+	pod.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeNone}
 	pod.Spec.Containers = []corev1.Container{app}
 
 	testDoAddRun(t, cniConf, testNSName, pod, ns)
@@ -323,7 +323,7 @@ func TestCmdAddPodEnabledNamespaceDisabled(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
 
 	app := corev1.Container{Name: "app"}
-	pod.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
+	pod.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.DataplaneModeAmbient}
 	pod.Spec.Containers = []corev1.Container{app}
 
 	testDoAddRun(t, cniConf, testNSName, pod, ns)
@@ -341,10 +341,10 @@ func TestCmdAddPodInExcludedNamespace(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
 
 	app := corev1.Container{Name: "app"}
-	ns.ObjectMeta.Name = excludedNS
-	ns.ObjectMeta.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.AmbientRedirectionEnabled}
+	ns.Name = excludedNS
+	ns.Labels = map[string]string{label.IoIstioDataplaneMode.Name: constants.AmbientRedirectionEnabled}
 
-	pod.ObjectMeta.Namespace = excludedNS
+	pod.Namespace = excludedNS
 	pod.Spec.Containers = []corev1.Container{app}
 
 	testDoAddRun(t, cniConf, excludedNS, pod, ns)
@@ -365,7 +365,7 @@ func TestCmdAddTwoContainersWithAnnotation(t *testing.T) {
 
 	pod.Spec.Containers[0].Name = "mockContainer"
 	pod.Spec.Containers[1].Name = "istio-proxy"
-	pod.ObjectMeta.Annotations[injectAnnotationKey] = "false"
+	pod.Annotations[injectAnnotationKey] = "false"
 
 	testDoAddRun(t, buildMockConf(true), testNSName, pod, ns)
 }
@@ -374,7 +374,7 @@ func TestCmdAddTwoContainersWithLabel(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
 	pod.Spec.Containers[0].Name = "mockContainer"
 	pod.Spec.Containers[1].Name = "istio-proxy"
-	pod.ObjectMeta.Annotations[label.SidecarInject.Name] = "false"
+	pod.Annotations[label.SidecarInject.Name] = "false"
 
 	testDoAddRun(t, buildMockConf(true), testNSName, pod, ns)
 }
@@ -384,7 +384,7 @@ func TestCmdAddTwoContainers(t *testing.T) {
 
 	pod.Spec.Containers[0].Name = "mockContainer"
 	pod.Spec.Containers[1].Name = "istio-proxy"
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[sidecarStatusKey] = "true"
 
 	mockIntercept := testDoAddRun(t, buildMockConf(false), testNSName, pod, ns)
 
@@ -402,8 +402,8 @@ func TestCmdAddTwoContainersWithStarInboundPort(t *testing.T) {
 
 	pod.Spec.Containers[0].Name = "mockContainer"
 	pod.Spec.Containers[1].Name = "istio-proxy"
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
-	pod.ObjectMeta.Annotations[includeInboundPortsKey] = "*"
+	pod.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[includeInboundPortsKey] = "*"
 
 	mockIntercept := testDoAddRun(t, buildMockConf(true), testNSName, pod, ns)
 
@@ -421,8 +421,8 @@ func TestCmdAddTwoContainersWithEmptyInboundPort(t *testing.T) {
 
 	pod.Spec.Containers[0].Name = "mockContainer"
 	pod.Spec.Containers[1].Name = "istio-proxy"
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
-	pod.ObjectMeta.Annotations[includeInboundPortsKey] = ""
+	pod.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[includeInboundPortsKey] = ""
 
 	mockIntercept := testDoAddRun(t, buildMockConf(true), testNSName, pod, ns)
 
@@ -439,8 +439,8 @@ func TestCmdAddTwoContainersWithEmptyExcludeInboundPort(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
 	pod.Spec.Containers[0].Name = "mockContainer"
 	pod.Spec.Containers[1].Name = "istio-proxy"
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
-	pod.ObjectMeta.Annotations[excludeInboundPortsKey] = ""
+	pod.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[excludeInboundPortsKey] = ""
 
 	mockIntercept := testDoAddRun(t, buildMockConf(true), testNSName, pod, ns)
 
@@ -457,8 +457,8 @@ func TestCmdAddTwoContainersWithExplictExcludeInboundPort(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
 	pod.Spec.Containers[0].Name = "mockContainer"
 	pod.Spec.Containers[1].Name = "istio-proxy"
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
-	pod.ObjectMeta.Annotations[excludeInboundPortsKey] = "3306"
+	pod.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[excludeInboundPortsKey] = "3306"
 
 	mockIntercept := testDoAddRun(t, buildMockConf(true), testNSName, pod, ns)
 
@@ -494,7 +494,7 @@ func TestCmdAddExcludePod(t *testing.T) {
 
 func TestCmdAddExcludePodWithIstioInitContainer(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[sidecarStatusKey] = "true"
 	pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{Name: "istio-init"})
 
 	mockIntercept := testDoAddRun(t, buildMockConf(true), testNSName, pod, ns)
@@ -506,7 +506,7 @@ func TestCmdAddExcludePodWithIstioInitContainer(t *testing.T) {
 
 func TestCmdAddExcludePodWithEnvoyDisableEnv(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[sidecarStatusKey] = "true"
 	pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{
 		Name: "istio-init",
 		Env:  []corev1.EnvVar{{Name: "DISABLE_ENVOY", Value: "true"}},
@@ -545,7 +545,7 @@ func TestCmdAddNoPrevResult(t *testing.T) {
 
 func TestCmdAddEnableDualStack(t *testing.T) {
 	pod, ns := buildFakePodAndNSForClient()
-	pod.ObjectMeta.Annotations[sidecarStatusKey] = "true"
+	pod.Annotations[sidecarStatusKey] = "true"
 	pod.Spec.Containers = []corev1.Container{
 		{
 			Name: "istio-proxy",

@@ -921,7 +921,7 @@ func (lb *ListenerBuilder) buildGatewayNetworkFiltersFromTLSRoutes(server *netwo
 						if duplicateSniHosts := model.CheckDuplicates(match.SniHosts, server.Bind, tlsHostsByPort[listenerPort]); len(duplicateSniHosts) != 0 {
 							log.Warnf(
 								"skipping VirtualService %s rule #%v on server port %d of gateway %s, duplicate SNI host names: %v",
-								v.Meta.Name, i, port.Port, gatewayName, duplicateSniHosts)
+								v.Name, i, port.Port, gatewayName, duplicateSniHosts)
 							model.RecordRejectedConfig(gatewayName)
 							continue
 						}

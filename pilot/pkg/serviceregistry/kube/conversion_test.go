@@ -94,7 +94,7 @@ func TestConvertProtocol(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		testName := strings.Replace(fmt.Sprintf("%s_%s_%d", c.name, c.proto, c.port), "-", "_", -1)
+		testName := strings.ReplaceAll(fmt.Sprintf("%s_%s_%d", c.name, c.proto, c.port), "-", "_")
 		t.Run(testName, func(t *testing.T) {
 			out := kube.ConvertProtocol(c.port, c.name, c.proto, c.appProtocol)
 			if out != c.out {
@@ -117,7 +117,7 @@ func BenchmarkConvertProtocol(b *testing.B) {
 	}
 
 	for _, c := range cases {
-		testName := strings.Replace(c.name, "-", "_", -1)
+		testName := strings.ReplaceAll(c.name, "-", "_")
 		b.Run(testName, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				out := kube.ConvertProtocol(8888, c.name, c.proto, nil)

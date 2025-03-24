@@ -114,7 +114,7 @@ func getTopics() []topic {
 }
 
 func normalize(input string) string {
-	return strings.Replace(input, "/", "-", -1)
+	return strings.ReplaceAll(input, "/", "-")
 }
 
 // Run starts up the ControlZ listeners.

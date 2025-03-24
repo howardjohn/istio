@@ -290,7 +290,7 @@ func TestController_GetPodLocality(t *testing.T) {
 					}
 				} else {
 					if az != "" {
-						t.Fatalf("Unexpectedly found az: %s for pod: %s", az, pod.ObjectMeta.Name)
+						t.Fatalf("Unexpectedly found az: %s for pod: %s", az, pod.Name)
 					}
 				}
 			}
@@ -2436,7 +2436,7 @@ func TestVisibilityNoneService(t *testing.T) {
 		}
 		fx.ConfigUpdate(pushReq)
 	}
-	controller.Controller.AppendServiceHandler(serviceHandler)
+	controller.AppendServiceHandler(serviceHandler)
 
 	// Create an initial pod with a service with None visibility, and endpoint.
 	pod1 := generatePod([]string{"172.0.1.1"}, "pod1", "nsA", "", "node1", map[string]string{"app": "prod-app"}, map[string]string{})

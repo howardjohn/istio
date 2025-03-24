@@ -220,7 +220,7 @@ func verifyRootCertFields(t *testing.T, oldCertItem, newCertItem rootCertItem) {
 func getPublicKeySizeInBits(keyPem []byte) int {
 	privateKey, _ := util.ParsePemEncodedKey(keyPem)
 	k := privateKey.(*rsa.PrivateKey)
-	return k.PublicKey.Size() * 8
+	return k.Size() * 8
 }
 
 // TestKeyCertBundleReloadInRootCertRotatorForSigningCitadel verifies that

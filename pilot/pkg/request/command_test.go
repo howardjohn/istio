@@ -51,15 +51,15 @@ func (p *pilotStubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(p.States[0].Response))
 			} else {
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(fmt.Sprintf("wanted body %q got %q", string(p.States[0].wantBody), string(body))))
+				fmt.Fprintf(w, "wanted body %q got %q", string(p.States[0].wantBody), string(body))
 			}
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf("wanted path %q got %q", p.States[0].wantPath, r.URL.Path)))
+			fmt.Fprintf(w, "wanted path %q got %q", p.States[0].wantPath, r.URL.Path)
 		}
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf("wanted method %q got %q", p.States[0].wantMethod, r.Method)))
+		fmt.Fprintf(w, "wanted method %q got %q", p.States[0].wantMethod, r.Method)
 	}
 
 	p.States[0] = ptr.Empty[pilotStubState]()

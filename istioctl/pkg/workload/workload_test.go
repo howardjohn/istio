@@ -423,7 +423,7 @@ func checkOutputFiles(t *testing.T, testdir string, checkFiles map[string]bool) 
 	for _, f := range outputFiles {
 		checkGolden, ok := checkFiles[f.Name()]
 		if !ok {
-			if checkGolden, ok := checkFiles[f.Name()[:len(f.Name())-len(goldenSuffix)]]; !(checkGolden && ok) {
+			if checkGolden, ok := checkFiles[f.Name()[:len(f.Name())-len(goldenSuffix)]]; !checkGolden || !ok {
 				t.Errorf("unexpected file in output dir: %s", f.Name())
 			}
 			continue

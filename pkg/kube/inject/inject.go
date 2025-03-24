@@ -466,9 +466,10 @@ func RunTemplate(params InjectionParameters) (mergedPod *corev1.Pod, templatePod
 		// move the container.
 		// The sidecar.istio.io/nativeSidecar annotation takes precedence over the global feature flag.
 		native := features.EnableNativeSidecars.Get()
-		if mergedPod.Annotations["sidecar.istio.io/nativeSidecar"] == "true" {
+		switch mergedPod.Annotations["sidecar.istio.io/nativeSidecar"] {
+		case "true":
 			native = true
-		} else if mergedPod.Annotations["sidecar.istio.io/nativeSidecar"] == "false" {
+		case "false":
 			native = false
 		}
 		if native &&
@@ -548,8 +549,8 @@ func stripPod(req InjectionParameters) *corev1.Pod {
 
 func injectionStatus(pod *corev1.Pod) *SidecarInjectionStatus {
 	var statusBytes []byte
-	if pod.ObjectMeta.Annotations != nil {
-		if value, ok := pod.ObjectMeta.Annotations[annotation.SidecarStatus.Name]; ok {
+	if pod.Annotations != nil {
+		if value, ok := pod.Annotations[annotation.SidecarStatus.Name]; ok {
 			statusBytes = []byte(value)
 		}
 	}

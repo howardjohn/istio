@@ -168,7 +168,7 @@ func (mgr *NetworkManager) reload() bool {
 	gatewaySet.InsertAll(mgr.env.NetworkGateways()...)
 	resolvedGatewaySet := mgr.resolveHostnameGateways(gatewaySet)
 
-	return mgr.NetworkGateways.update(resolvedGatewaySet) || mgr.Unresolved.update(gatewaySet)
+	return mgr.update(resolvedGatewaySet) || mgr.Unresolved.update(gatewaySet)
 }
 
 // update calls should with the lock held

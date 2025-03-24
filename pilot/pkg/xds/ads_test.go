@@ -150,7 +150,7 @@ func TestVersionNonce(t *testing.T) {
 	resp1 := ads.RequestResponseAck(t, nil)
 	fullPush(s)
 	resp2 := ads.ExpectResponse(t)
-	if !(resp1.VersionInfo < resp2.VersionInfo) {
+	if resp1.VersionInfo >= resp2.VersionInfo {
 		t.Fatalf("version should be incrementing: %v -> %v", resp1.VersionInfo, resp2.VersionInfo)
 	}
 	if resp1.Nonce == resp2.Nonce {

@@ -1119,7 +1119,7 @@ func (ps *PushContext) VirtualServicesForGateway(proxyNamespace, gateway string)
 		}
 	}
 	for _, vs := range ps.virtualServiceIndex.publicByGateway[gateway] {
-		if !(UseGatewaySemantics(vs) && vs.Namespace == proxyNamespace) {
+		if !UseGatewaySemantics(vs) || vs.Namespace != proxyNamespace {
 			res = append(res, vs)
 		}
 	}
@@ -1536,7 +1536,7 @@ func (ps *PushContext) initServiceRegistry(env *Environment, configsUpdate sets.
 		// However, the Service is from Kubernetes it should take precedence over ones not. This prevents someone from
 		// "domain squatting" on the hostname before a Kubernetes Service is created.
 		if existing := ps.ServiceIndex.HostnameAndNamespace[s.Hostname][s.Attributes.Namespace]; existing != nil &&
-			!(existing.Attributes.ServiceRegistry != provider.Kubernetes && s.Attributes.ServiceRegistry == provider.Kubernetes) {
+			(existing.Attributes.ServiceRegistry == provider.Kubernetes || s.Attributes.ServiceRegistry != provider.Kubernetes) {
 			log.Debugf("Service %s/%s from registry %s ignored by %s/%s/%s", s.Attributes.Namespace, s.Hostname, s.Attributes.ServiceRegistry,
 				existing.Attributes.ServiceRegistry, existing.Attributes.Namespace, existing.Hostname)
 		} else {
@@ -1591,7 +1591,7 @@ func resolveServiceAliases(allServices []*Service, configsUpdated sets.Set[Confi
 			Hostname:  s.Hostname,
 			Namespace: s.Attributes.Namespace,
 		}
-		rawAlias[nh] = host.Name(s.Attributes.K8sAttributes.ExternalName)
+		rawAlias[nh] = host.Name(s.Attributes.ExternalName)
 	}
 
 	// unnamespacedRawAlias is like rawAlias but without namespaces.

@@ -311,10 +311,8 @@ func (c *Client) dial(ctx context.Context) error {
 
 // runWithReconnects will create a new stream and schedule a retry once disconnected
 func (c *Client) runWithReconnects(ctx context.Context) {
-	for {
-		if c.closed.Load() {
-			break
-		}
+	for !c.closed.Load() {
+
 		err := c.runOnce(ctx)
 		if c.cfg.BackoffPolicy == nil {
 			log.Warnf("disconnected: %v", err)

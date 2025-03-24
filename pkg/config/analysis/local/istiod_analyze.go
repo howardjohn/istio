@@ -296,7 +296,7 @@ func (sa *IstiodAnalyzer) addReaderKubeSourceInternal(readers []ReaderSource, in
 			return false
 		}
 		meta := cfg.GetNamespace()
-		if cfg.Meta.GroupVersionKind.Kind == gvk.Namespace.Kind {
+		if cfg.GroupVersionKind.Kind == gvk.Namespace.Kind {
 			meta = cfg.GetName()
 		}
 		return !inject.IgnoredNamespaces.Contains(meta)

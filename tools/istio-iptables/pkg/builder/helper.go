@@ -34,14 +34,15 @@ func CheckRules(rules []Rule) []Rule {
 			if insertIndex >= 0 && i == insertIndex+2 {
 				continue
 			}
-			if element == "-A" || element == "--append" {
+			switch element {
+			case "-A", "--append":
 				// -A/--append is transformed to -D
 				modifiedParams = append(modifiedParams, "-C")
-			} else if element == "-I" || element == "--insert" {
+			case "-I", "--insert":
 				// -I/--insert is transformed to -D, insert index at i+2 must be skipped
 				insertIndex = i
 				modifiedParams = append(modifiedParams, "-C")
-			} else {
+			default:
 				// Every other flag/value is kept as it is
 				modifiedParams = append(modifiedParams, element)
 			}
@@ -72,14 +73,15 @@ func UndoRules(rules []Rule) []Rule {
 			if insertIndex >= 0 && i == insertIndex+2 {
 				continue
 			}
-			if element == "-A" || element == "--append" {
+			switch element {
+			case "-A", "--append":
 				// -A/--append is transformed to -D
 				modifiedParams = append(modifiedParams, "-D")
-			} else if element == "-I" || element == "--insert" {
+			case "-I", "--insert":
 				// -I/--insert is transformed to -D, insert index at i+2 must be skipped
 				insertIndex = i
 				modifiedParams = append(modifiedParams, "-D")
-			} else {
+			default:
 				// Every other flag/value is kept as it is
 				modifiedParams = append(modifiedParams, element)
 			}

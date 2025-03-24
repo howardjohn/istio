@@ -66,7 +66,7 @@ func CreateNamespace(cs kubernetes.Interface, namespace string, network string, 
 func PrometheusPathAndPort(pod *v1.Pod) (string, int, error) {
 	path := "/metrics"
 	port := 9090
-	for key, val := range pod.ObjectMeta.Annotations {
+	for key, val := range pod.Annotations {
 		switch strutil.SanitizeLabelName(key) {
 		case "prometheus_io_port":
 			p, err := strconv.Atoi(val)

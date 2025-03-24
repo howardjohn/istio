@@ -174,9 +174,10 @@ func newForwardRequest(opts echo.CallOptions) *proto.ForwardEchoRequest {
 }
 
 func getProxyProtoVersion(protoVer int) proto.ProxyProtoVersion {
-	if protoVer == 1 {
+	switch protoVer {
+	case 1:
 		return proto.ProxyProtoVersion_V1
-	} else if protoVer == 2 {
+	case 2:
 		return proto.ProxyProtoVersion_V2
 	}
 

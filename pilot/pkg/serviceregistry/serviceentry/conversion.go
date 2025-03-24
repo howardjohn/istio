@@ -459,11 +459,8 @@ func convertWorkloadInstanceToServiceInstance(workloadInstance *model.WorkloadIn
 func (s *Controller) convertWorkloadEntryToWorkloadInstance(cfg config.Config, clusterID cluster.ID) *model.WorkloadInstance {
 	we := ConvertWorkloadEntry(cfg)
 	addr := we.GetAddress()
-	dnsServiceEntryOnly := false
-	if strings.HasPrefix(addr, model.UnixAddressPrefix) {
-		// k8s can't use uds for service objects
-		dnsServiceEntryOnly = true
-	}
+	dnsServiceEntryOnly := strings.HasPrefix(addr, model.UnixAddressPrefix)
+
 	if addr != "" && !netutil.IsValidIPAddress(addr) {
 		// k8s can't use workloads with hostnames in the address field.
 		dnsServiceEntryOnly = true
