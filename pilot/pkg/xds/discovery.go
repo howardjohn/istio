@@ -52,10 +52,10 @@ type DebounceOptions struct {
 	// delaying until things settle.
 	DebounceAfter time.Duration
 
-	// debounceMax is the maximum time to wait for events
+	// DebounceMax is the maximum time to wait for events
 	// while debouncing. Defaults to 10 seconds. If events keep
 	// showing up with no break for this time, we'll trigger a push.
-	debounceMax time.Duration
+	DebounceMax time.Duration
 
 	// enableEDSDebounce indicates whether EDS pushes should be debounced.
 	enableEDSDebounce bool
@@ -154,7 +154,7 @@ func NewDiscoveryServer(env *model.Environment, clusterAliases map[string]string
 		krtDebugger:         debugger,
 		DebounceOptions: DebounceOptions{
 			DebounceAfter:     features.DebounceAfter,
-			debounceMax:       features.DebounceMax,
+			DebounceMax:       features.DebounceMax,
 			enableEDSDebounce: features.EnableEDSDebounce,
 		},
 		Cache:              env.Cache,
@@ -353,7 +353,7 @@ func debounce(ch chan *model.PushRequest, stopCh <-chan struct{}, opts DebounceO
 		eventDelay := time.Since(startDebounce)
 		quietTime := time.Since(lastConfigUpdateTime)
 		// it has been too long or quiet enough
-		if eventDelay >= opts.debounceMax || quietTime >= opts.DebounceAfter {
+		if eventDelay >= opts.DebounceMax || quietTime >= opts.DebounceAfter {
 			if req != nil {
 				pushCounter++
 				if req.ConfigsUpdated == nil {
@@ -485,8 +485,8 @@ func doSendPushes(stopCh <-chan struct{}, semaphore chan struct{}, queue *PushQu
 			}
 			go func() {
 				pushEv := &Event{
-					pushRequest: push,
-					done:        doneFunc,
+					PushRequst: push,
+					Done:       doneFunc,
 				}
 
 				select {

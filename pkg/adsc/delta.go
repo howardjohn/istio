@@ -364,6 +364,10 @@ func NewDeltaWithBackoffPolicy(discoveryAddr string, config *DeltaADSConfig, bac
 	return delta
 }
 
+func TypeName[T proto.Message]() string {
+	ft := new(T)
+	return pm.APITypePrefix + string((*ft).ProtoReflect().Descriptor().FullName())
+}
 func typeName[T proto.Message]() string {
 	ft := new(T)
 	return pm.APITypePrefix + string((*ft).ProtoReflect().Descriptor().FullName())

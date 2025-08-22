@@ -77,7 +77,7 @@ func TestSendPushesManyPushes(t *testing.T) {
 				select {
 				case ev := <-proxy.PushCh():
 					p := ev.(*Event)
-					p.done()
+					p.Done()
 					pushesMu.Lock()
 					pushes[proxy.ID()]++
 					pushesMu.Unlock()
@@ -130,7 +130,7 @@ func TestSendPushesSinglePush(t *testing.T) {
 				select {
 				case ev := <-proxy.PushCh():
 					p := ev.(*Event)
-					p.done()
+					p.Done()
 					pushesMu.Lock()
 					pushes[proxy.ID()]++
 					pushesMu.Unlock()
@@ -184,7 +184,7 @@ func TestDebounce(t *testing.T) {
 	// For now, this seems to work well
 	opts := DebounceOptions{
 		DebounceAfter:     time.Millisecond * 50,
-		debounceMax:       time.Millisecond * 100,
+		DebounceMax:       time.Millisecond * 100,
 		enableEDSDebounce: false,
 	}
 
@@ -281,7 +281,7 @@ func TestDebounce(t *testing.T) {
 						return
 					}
 					atomic.AddInt32(&fullPushes, 1)
-					time.Sleep(opts.debounceMax * 2)
+					time.Sleep(opts.DebounceMax * 2)
 					<-pushingCh
 				} else {
 					atomic.AddInt32(&partialPushes, 1)

@@ -137,7 +137,7 @@ func (s *DiscoveryServer) StreamDeltas(stream DeltaDiscoveryStream) error {
 		case ev := <-con.PushCh():
 			pushEv := ev.(*Event)
 			err := s.pushConnectionDelta(con, pushEv)
-			pushEv.done()
+			pushEv.Done()
 			if err != nil {
 				return err
 			}
@@ -149,7 +149,7 @@ func (s *DiscoveryServer) StreamDeltas(stream DeltaDiscoveryStream) error {
 
 // Compute and send the new configuration for a connection.
 func (s *DiscoveryServer) pushConnectionDelta(con *Connection, pushEv *Event) error {
-	pushRequest := pushEv.pushRequest
+	pushRequest := pushEv.PushRequst
 
 	if pushRequest.Full {
 		// Update Proxy with current information.

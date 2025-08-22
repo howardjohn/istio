@@ -96,11 +96,11 @@ func (conn *Connection) Proxy() *model.Proxy {
 
 // Event represents a config or registry event that results in a push.
 type Event struct {
-	// pushRequest PushRequest to use for the push.
-	pushRequest *model.PushRequest
+	// PushRequst PushRequest to use for the push.
+	PushRequst *model.PushRequest
 
 	// function to call once a push is finished. This must be called or future changes may be blocked.
-	done func()
+	Done func()
 }
 
 func newConnection(peerAddr string, stream DiscoveryStream) *Connection {
@@ -128,7 +128,7 @@ func (conn *Connection) Process(req *discovery.DiscoveryRequest) error {
 func (conn *Connection) Push(ev any) error {
 	pushEv := ev.(*Event)
 	err := conn.s.pushConnection(conn, pushEv)
-	pushEv.done()
+	pushEv.Done()
 	return err
 }
 
@@ -469,7 +469,7 @@ func (s *DiscoveryServer) DeltaAggregatedResources(stream discovery.AggregatedDi
 
 // Compute and send the new configuration for a connection.
 func (s *DiscoveryServer) pushConnection(con *Connection, pushEv *Event) error {
-	pushRequest := pushEv.pushRequest
+	pushRequest := pushEv.PushRequst
 
 	if pushRequest.Full {
 		// Update Proxy with current information.
