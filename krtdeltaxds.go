@@ -59,7 +59,7 @@ var log = istiolog.RegisterScope("krtxds", "delta xds debugging")
 type Registration func(map[string]krt.Collection[*discovery.Resource])
 
 func Collection[T proto.Message](collection krt.Collection[T]) Registration {
-	return func(m map[string]krt.Collection[*discovery.Resource]) {
+	return func(m map[string]krt.Collection[*discovery.Resource]) func(stop <-chan struct{}){
 		nc := krt.NewCollection(collection, func(ctx krt.HandlerContext, i T) **discovery.Resource {
 			return ptr.Of(&discovery.Resource{
 				Name:         krt.GetKey(i),
@@ -70,8 +70,17 @@ func Collection[T proto.Message](collection krt.Collection[T]) Registration {
 				Metadata:     nil,
 			})
 		})
+
 		t := adsc.TypeName[T]()
 		m[t] = nc
+		return func(stop <-chan struct{}) {
+			 if !nc.WaitUntilSynced(stop) {
+				 return
+			 }
+			 nc.RegisterBatch(func(o []krt.Event[*discovery.Resource]) {
+
+			 }, true)
+		}
 	}
 }
 
@@ -94,6 +103,7 @@ func NewDiscoveryServer(debugger *krt.DebugHandler, reg ...Registration) *Discov
 		Collections: make(map[string]krt.Collection[*discovery.Resource]),
 	}
 
+	out.pushQueue
 	for _, r := range reg {
 		r(out.Collections)
 	}
@@ -783,6 +793,94 @@ func (s *DiscoveryServer) removeCon(conID string) {
 	}
 }
 
+// Debouncing and push request happens in a separate thread, it uses locks
+// and we want to avoid complications, ConfigUpdate may already hold other locks.
+// handleUpdates processes events from pushChannel
+// It ensures that at minimum minQuiet time has elapsed since the last event before processing it.
+// It also ensures that at most maxDelay is elapsed between receiving an event and processing it.
+func (s *DiscoveryServer) handleUpdates(stopCh <-chan struct{}) {
+	debounce(s.pushChannel, stopCh, s.DebounceOptions, s.Push, s.CommittedUpdates)
+}
+
+
+// The debounce helper function is implemented to enable mocking
+func debounce(ch chan *PushRequest, stopCh <-chan struct{}, opts pilotxds.DebounceOptions, pushFn func(req *PushRequest), updateSent *atomic.Int64) {
+	var timeChan <-chan time.Time
+	var startDebounce time.Time
+	var lastConfigUpdateTime time.Time
+
+	pushCounter := 0
+	debouncedEvents := 0
+
+	// Keeps track of the push requests. If updates are debounce they will be merged.
+	var req *PushRequest
+
+	free := true
+	freeCh := make(chan struct{}, 1)
+
+	push := func(req *PushRequest, debouncedEvents int, startDebounce time.Time) {
+		pushFn(req)
+		updateSent.Add(int64(debouncedEvents))
+		//debounceTime.Record(time.Since(startDebounce).Seconds())
+		freeCh <- struct{}{}
+	}
+
+	pushWorker := func() {
+		eventDelay := time.Since(startDebounce)
+		quietTime := time.Since(lastConfigUpdateTime)
+		// it has been too long or quiet enough
+		if eventDelay >= opts.DebounceMax || quietTime >= opts.DebounceAfter {
+			if req != nil {
+				pushCounter++
+				if req.ConfigsUpdated == nil {
+					log.Infof("Push debounce stable[%d] %d: %v since last change, %v since last push",
+						pushCounter, debouncedEvents,
+						quietTime, eventDelay)
+				} else {
+					log.Infof("Push debounce stable[%d] %d for config %s: %v since last change, %v since last push",
+						pushCounter, debouncedEvents, configsUpdated(req),
+						quietTime, eventDelay)
+				}
+				free = false
+				go push(req, debouncedEvents, startDebounce)
+				req = nil
+				debouncedEvents = 0
+			}
+		} else {
+			timeChan = time.After(opts.DebounceAfter - quietTime)
+		}
+	}
+
+	for {
+		select {
+		case <-freeCh:
+			free = true
+			pushWorker()
+		case r := <-ch:
+			lastConfigUpdateTime = time.Now()
+			if debouncedEvents == 0 {
+				timeChan = time.After(opts.DebounceAfter)
+				startDebounce = lastConfigUpdateTime
+			}
+			debouncedEvents++
+
+			req = req.Merge(r)
+		case <-timeChan:
+			if free {
+				pushWorker()
+			}
+		case <-stopCh:
+			return
+		}
+	}
+}
+
+func configsUpdated(req *PushRequest) any {
+	// TODO(krt)
+	return nil
+}
+
+
 func nonce(noncePrefix string) string {
 	return noncePrefix + uuid.New().String()
 }
@@ -896,6 +994,30 @@ func (pr *PushRequest) PushReason() string {
 		return " request"
 	}
 	return ""
+}
+
+// Merge two update requests together
+// Merge behaves similarly to a list append; usage should in the form `a = a.merge(b)`.
+// Importantly, Merge may decide to allocate a new PushRequest object or reuse the existing one - both
+// inputs should not be used after completion.
+func (pr *PushRequest) Merge(other *PushRequest) *PushRequest {
+	if pr == nil {
+		return other
+	}
+	if other == nil {
+		return pr
+	}
+
+
+	if pr.ConfigsUpdated == nil {
+		pr.ConfigsUpdated = other.ConfigsUpdated
+	} else {
+		for k, v := range other.ConfigsUpdated {
+			sets.InsertOrNew(pr.ConfigsUpdated, k, v)
+		}
+	}
+
+	return pr
 }
 
 // Event represents a config or registry event that results in a push.
