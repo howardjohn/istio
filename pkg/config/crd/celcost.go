@@ -121,8 +121,8 @@ func validateCosts(schema *apiextensions.JSONSchemaProps) (CostReports, error) {
 			compResults, err := cel.Compile(
 				typeInfo.Schema,
 				typeInfo.DeclType,
-				celconfig.PerCallLimit,
-				environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true),
+				celconfig.PerCallLimit ,
+				environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion()),
 				cel.NewExpressionsEnvLoader(),
 			)
 			if err != nil {

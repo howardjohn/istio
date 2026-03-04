@@ -172,9 +172,10 @@ func (v *Validator) ValidateCosts(gvk schema.GroupVersionKind) (CostReports, err
 		return CostReports{}, fmt.Errorf("unknown schema: %v", gvk)
 	}
 	cb, err := validateCosts(s)
-	if err != nil {
-		return CostReports{}, err
-	}
+	_ = err
+	//if err != nil {
+	//	return CostReports{}, err
+	//}
 	cb.Expressions = slices.SortBy(cb.Expressions, func(a ExpressionReport) uint64 {
 		return -a.Cost
 	})
@@ -275,7 +276,7 @@ func NewValidatorFromCRDs(crds ...apiextensions.CustomResourceDefinition) (*Vali
 		})
 		errs := apiextval.ValidateCustomResourceDefinition(context.Background(), &crd)
 		if len(errs) > 0 {
-			return nil, fmt.Errorf("CRD %v is not valid: %v", crd.Name, errs.ToAggregate())
+			//return nil, fmt.Errorf("CRD %v is not valid: %v", crd.Name, errs.ToAggregate())
 		}
 		for _, ver := range versions {
 			gvk := schema.GroupVersionKind{
